@@ -177,16 +177,19 @@ def create(name: str | None, desc: str | None, base_path: str | None,
             type_options = ", ".join(BRAIN_TYPES.keys())
             brain_type = click.prompt(f"  Brain type ({type_options})", default="product-group", type=str)
         if not no_git:
-            use_git = click.confirm("  Initialize local git repo?", default=True)
-            no_git = not use_git
-            if not no_git and not remote:
-                remote = click.prompt(
-                    "  Git remote URL (optional, leave blank for local-only)",
-                    default="",
-                    type=str,
-                ) or None
-            if not no_git and branch_name is None:
-                branch_name = click.prompt("  Default branch", default="main", type=str)
+            git_choice = click.prompt(
+                "  Git setup (1=local, 2=with remote, 3=no git)",
+                default="1", type=str,
+            )
+            if git_choice == "3":
+                no_git = True
+            elif git_choice == "2":
+                remote = click.prompt("  Git remote URL", type=str) or None
+                if branch_name is None:
+                    branch_name = click.prompt("  Default branch", default="main", type=str)
+            else:
+                if branch_name is None:
+                    branch_name = click.prompt("  Default branch", default="main", type=str)
         console.print()
 
     # Defaults for non-interactive
