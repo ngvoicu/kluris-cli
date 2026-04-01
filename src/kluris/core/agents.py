@@ -450,11 +450,17 @@ def _render_toml(cmd_name: str, cmd: dict, args_placeholder: str) -> str:
 
 def _render_skill_md(commands: dict, args_placeholder: str) -> str:
     """Render a single SKILL.md containing all commands."""
+    frontmatter = (
+        "---\n"
+        "name: kluris\n"
+        "description: Git-backed AI brain — shared, versioned knowledge base for your team\n"
+        "---\n\n"
+    )
     sections = []
     for name, cmd in commands.items():
         body = cmd["body"].replace("{args}", args_placeholder)
         sections.append(f"## /{name}\n\n{cmd['description']}\n\n{body}")
-    return "# Kluris Brain Skill\n\n" + "\n---\n\n".join(sections) + "\n"
+    return frontmatter + "# Kluris Brain Skill\n\n" + "\n---\n\n".join(sections) + "\n"
 
 
 def render_commands(agent_name: str, output_dir: Path) -> list[Path]:
