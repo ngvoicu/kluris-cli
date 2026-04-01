@@ -26,7 +26,7 @@ def test_scaffold_team(tmp_path):
 def test_scaffold_personal(tmp_path):
     scaffold_brain(tmp_path / "brain", "brain", "Personal", "personal")
     brain = tmp_path / "brain"
-    for lobe in ["projects", "tasks", "releases", "notes"]:
+    for lobe in ["projects", "tasks", "notes"]:
         assert (brain / lobe).is_dir()
     assert not (brain / "architecture").exists()
 

@@ -46,7 +46,6 @@ BRAIN_TYPES: dict[str, dict] = {
         "structure": {
             "projects": "Sub-folder per project: branches, status, TODOs",
             "tasks": "Current priorities, blockers, in-progress work",
-            "releases": "What needs releasing, changelogs, blocklists",
             "notes": "Daily notes, ideas, learnings",
         },
         "neuron_templates": {},
@@ -282,6 +281,20 @@ kluris help            # All commands
 ```
 {tree_output}
 ```
+
+## Neuron templates
+
+Use templates for consistent structure. Run `kluris templates` to see what's available.
+
+```bash
+kluris neuron use-raw-sql.md --lobe decisions --template decision
+```
+
+| Template | Sections |
+|----------|----------|
+| `decision` | Context, Decision, Rationale, Alternatives considered, Consequences |
+| `incident` | Summary, Timeline, Root cause, Impact, Resolution, Lessons learned |
+| `runbook` | Purpose, Prerequisites, Steps, Rollback, Contacts |
 
 ## File format
 

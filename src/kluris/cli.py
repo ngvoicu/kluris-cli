@@ -383,12 +383,25 @@ def recall(query: str, brain_name: str | None, as_json: bool):
 @cli.command()
 @click.argument("file_path")
 @click.option("--lobe", help="Target lobe folder")
-@click.option("--template", "template_name", help="Neuron template name")
+@click.option("--template", "template_name", help="Neuron template (e.g. decision, incident, runbook)")
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def neuron(file_path: str, lobe: str | None, template_name: str | None,
            brain_name: str | None, as_json: bool):
-    """Create a new neuron."""
+    """Create a new neuron (knowledge file).
+
+    \b
+    Templates give neurons a consistent structure:
+      decision  — Context, Decision, Rationale, Alternatives, Consequences
+      incident  — Summary, Timeline, Root cause, Impact, Resolution, Lessons
+      runbook   — Purpose, Prerequisites, Steps, Rollback, Contacts
+
+    \b
+    Examples:
+      kluris neuron auth.md --lobe architecture
+      kluris neuron use-raw-sql.md --lobe decisions --template decision
+      kluris neuron outage-jan.md --lobe wisdom --template incident
+    """
     brains = _resolve_brains(brain_name, multi=False)
     name, entry = brains[0]
     brain_path = Path(entry["path"])
@@ -726,6 +739,43 @@ def doctor(as_json: bool):
         raise SystemExit(1)
 
 
+@cli.command()
+@click.option("--brain", "brain_name", help="Specific brain")
+@click.option("--json", "as_json", is_flag=True, help="JSON output")
+def templates(brain_name: str | None, as_json: bool):
+    """List available neuron templates for the current brain."""
+    brains = _resolve_brains(brain_name, multi=False)
+    name, entry = brains[0]
+    brain_path = Path(entry["path"])
+    brain_config = read_brain_config(brain_path)
+    tmpls = brain_config.neuron_templates
+
+    if as_json:
+        data = {
+            k: {"description": v.description, "sections": v.sections}
+            for k, v in tmpls.items()
+        }
+        click.echo(json_lib.dumps({"ok": True, "brain": name, "templates": data}))
+        return
+
+    if not tmpls:
+        console.print(f"Brain '{name}' has no neuron templates.")
+        console.print("Templates are defined in kluris.yml under neuron_templates.")
+        return
+
+    from rich.table import Table
+    table = Table(title=f"Neuron Templates — {name}")
+    table.add_column("Template")
+    table.add_column("Description")
+    table.add_column("Sections")
+
+    for tname, tmpl in tmpls.items():
+        table.add_row(tname, tmpl.description, ", ".join(tmpl.sections))
+
+    console.print(table)
+    console.print(f"\nUsage: kluris neuron <file>.md --lobe <lobe> --template <name>")
+
+
 @cli.command("help")
 @click.argument("command", required=False)
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
@@ -744,6 +794,7 @@ def help_cmd(command: str | None, as_json: bool):
         ("mri", "Generate interactive HTML brain visualization"),
         ("install", "Install slash commands for all AI agents"),
         ("remove", "Unregister a brain (keeps files on disk)"),
+        ("templates", "List available neuron templates for the current brain"),
         ("doctor", "Check prerequisites (git, Python, config dir)"),
         ("help", "Show this help"),
     ]
