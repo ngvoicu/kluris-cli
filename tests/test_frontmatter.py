@@ -8,7 +8,7 @@ from kluris.core.frontmatter import read_frontmatter, update_frontmatter, write_
 
 def test_read_frontmatter(tmp_path):
     f = tmp_path / "test.md"
-    f.write_text("---\ntitle: Hello\ntags: [a, b]\n---\n# Content\n")
+    f.write_text("---\ntitle: Hello\ntags: [a, b]\n---\n# Content\n", encoding="utf-8")
     meta, content = read_frontmatter(f)
     assert meta["title"] == "Hello"
     assert meta["tags"] == ["a", "b"]
@@ -28,7 +28,7 @@ def test_read_neuron_fields(tmp_path):
     f = tmp_path / "neuron.md"
     f.write_text(
         "---\nparent: ../map.md\nrelated:\n  - ../other.md\n"
-        "tags: [auth]\ncreated: 2026-01-01\nupdated: 2026-03-15\n---\n# Neuron\n"
+        "tags: [auth]\ncreated: 2026-01-01\nupdated: 2026-03-15\n---\n# Neuron\n", encoding="utf-8"
     )
     meta, _ = read_frontmatter(f)
     assert meta["parent"] == "../map.md"
@@ -42,7 +42,7 @@ def test_read_map_fields(tmp_path):
     f = tmp_path / "map.md"
     f.write_text(
         "---\nauto_generated: true\nparent: ../brain.md\n"
-        "siblings:\n  - ../product/map.md\nupdated: 2026-04-01\n---\n# Map\n"
+        "siblings:\n  - ../product/map.md\nupdated: 2026-04-01\n---\n# Map\n", encoding="utf-8"
     )
     meta, _ = read_frontmatter(f)
     assert meta["auto_generated"] is True
@@ -52,7 +52,7 @@ def test_read_map_fields(tmp_path):
 
 def test_update_field(tmp_path):
     f = tmp_path / "test.md"
-    f.write_text("---\ntitle: Old\nupdated: 2026-01-01\n---\n# Body\n")
+    f.write_text("---\ntitle: Old\nupdated: 2026-01-01\n---\n# Body\n", encoding="utf-8")
     update_frontmatter(f, {"updated": "2026-04-01"})
     meta, _ = read_frontmatter(f)
     assert meta["updated"] == "2026-04-01"
@@ -62,7 +62,7 @@ def test_update_field(tmp_path):
 def test_preserves_content(tmp_path):
     f = tmp_path / "test.md"
     body = "# Title\n\nSome detailed content here.\n\n- Item 1\n- Item 2\n"
-    f.write_text(f"---\ntitle: Test\n---\n{body}")
+    f.write_text(f"---\ntitle: Test\n---\n{body}", encoding="utf-8")
     update_frontmatter(f, {"title": "Updated"})
     meta, content = read_frontmatter(f)
     assert meta["title"] == "Updated"
@@ -72,7 +72,7 @@ def test_preserves_content(tmp_path):
 
 def test_missing_frontmatter(tmp_path):
     f = tmp_path / "plain.md"
-    f.write_text("# Just markdown, no frontmatter\n")
+    f.write_text("# Just markdown, no frontmatter\n", encoding="utf-8")
     meta, content = read_frontmatter(f)
     assert meta == {} or meta is not None
     assert "Just markdown" in content

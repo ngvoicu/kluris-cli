@@ -6,13 +6,13 @@ from kluris.core.mri import build_graph, generate_mri_html
 def _make_brain_with_neurons(tmp_path):
     brain = tmp_path / "brain"
     brain.mkdir()
-    (brain / "brain.md").write_text("---\nauto_generated: true\n---\n# Brain\n")
-    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n")
-    (brain / "glossary.md").write_text("---\n---\n# Glossary\n")
+    (brain / "brain.md").write_text("---\nauto_generated: true\n---\n# Brain\n", encoding="utf-8")
+    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n", encoding="utf-8")
+    (brain / "glossary.md").write_text("---\n---\n# Glossary\n", encoding="utf-8")
     for lobe in ["arch", "std", "product"]:
         d = brain / lobe
         d.mkdir()
-        (d / "map.md").write_text(f"---\nauto_generated: true\nparent: ../brain.md\n---\n# {lobe}\n")
+        (d / "map.md").write_text(f"---\nauto_generated: true\nparent: ../brain.md\n---\n# {lobe}\n", encoding="utf-8")
     # 5 neurons
     for i, (lobe, name) in enumerate([
         ("arch", "auth.md"), ("arch", "data.md"),
@@ -26,7 +26,7 @@ def _make_brain_with_neurons(tmp_path):
             f"---\nparent: ./map.md\nrelated: {related}\n"
             f"tags: [t{i}]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# {name}\n"
         )
-        (brain / lobe / name).write_text(content)
+        (brain / lobe / name).write_text(content, encoding="utf-8")
     return brain
 
 
@@ -57,7 +57,7 @@ def test_graph_inline_edges(tmp_path):
     auth = brain / "arch" / "auth.md"
     auth.write_text(
         "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n"
-        "# Auth\n\nSee [data flow](../arch/data.md)\n"
+        "# Auth\n\nSee [data flow](../arch/data.md)\n", encoding="utf-8"
     )
     graph = build_graph(brain)
     inline_edges = [e for e in graph["edges"] if e["type"] == "inline"]

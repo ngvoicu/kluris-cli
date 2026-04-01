@@ -10,7 +10,7 @@ def test_recall_finds_match(tmp_path, monkeypatch):
     runner = CliRunner()
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
-        "---\nparent: ./map.md\n---\n# Keycloak Auth Design\n"
+        "---\nparent: ./map.md\n---\n# Keycloak Auth Design\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["recall", "Keycloak"])
     assert "Keycloak" in result.output or "auth" in result.output

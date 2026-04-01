@@ -189,7 +189,7 @@ def scaffold_brain(
     )
     config_data = config.model_dump(exclude_none=True)
     (brain_path / "kluris.yml").write_text(
-        yaml.dump(config_data, default_flow_style=False, sort_keys=False)
+        yaml.dump(config_data, default_flow_style=False, sort_keys=False), encoding="utf-8"
     )
 
     # Write brain.md

@@ -25,7 +25,7 @@ def test_git_init(tmp_path):
 
 def test_git_add_commit(tmp_path):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("hello")
+    (tmp_path / "test.md").write_text("hello", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "initial commit")
     entries = git_log(tmp_path)
@@ -36,7 +36,7 @@ def test_git_add_commit(tmp_path):
 def test_git_log(tmp_path):
     git_init(tmp_path)
     for i in range(3):
-        (tmp_path / f"file{i}.md").write_text(f"content {i}")
+        (tmp_path / f"file{i}.md").write_text(f"content {i}", encoding="utf-8")
         git_add(tmp_path)
         git_commit(tmp_path, f"commit {i}")
     entries = git_log(tmp_path)
@@ -45,7 +45,7 @@ def test_git_log(tmp_path):
 
 def test_git_status_clean(tmp_path):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("hello")
+    (tmp_path / "test.md").write_text("hello", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "initial")
     status = git_status(tmp_path)
@@ -54,17 +54,17 @@ def test_git_status_clean(tmp_path):
 
 def test_git_status_dirty(tmp_path):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("hello")
+    (tmp_path / "test.md").write_text("hello", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "initial")
-    (tmp_path / "test.md").write_text("modified")
+    (tmp_path / "test.md").write_text("modified", encoding="utf-8")
     status = git_status(tmp_path)
     assert "test.md" in status
 
 
 def test_git_push(tmp_path, bare_remote):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("hello")
+    (tmp_path / "test.md").write_text("hello", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "initial")
     import subprocess
@@ -86,7 +86,7 @@ def test_git_clone(tmp_path, bare_remote):
     source = tmp_path / "source"
     source.mkdir()
     git_init(source)
-    (source / "test.md").write_text("hello")
+    (source / "test.md").write_text("hello", encoding="utf-8")
     git_add(source)
     git_commit(source, "initial")
     import subprocess
@@ -105,7 +105,7 @@ def test_git_clone(tmp_path, bare_remote):
 
 def test_git_file_last_modified(tmp_path):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("v1")
+    (tmp_path / "test.md").write_text("v1", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "first")
     date = git_file_last_modified(tmp_path, "test.md")
@@ -116,10 +116,10 @@ def test_git_file_last_modified(tmp_path):
 
 def test_git_file_created_date(tmp_path):
     git_init(tmp_path)
-    (tmp_path / "test.md").write_text("v1")
+    (tmp_path / "test.md").write_text("v1", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "first")
-    (tmp_path / "test.md").write_text("v2")
+    (tmp_path / "test.md").write_text("v2", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "second")
     date = git_file_created_date(tmp_path, "test.md")

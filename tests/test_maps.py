@@ -15,10 +15,10 @@ def _make_brain(tmp_path):
         lobe_dir = brain / lobe
         lobe_dir.mkdir()
         (lobe_dir / "map.md").write_text(
-            f"---\nauto_generated: true\nparent: ../brain.md\nupdated: 2026-04-01\n---\n# {lobe.title()}\n"
+            f"---\nauto_generated: true\nparent: ../brain.md\nupdated: 2026-04-01\n---\n# {lobe.title()}\n", encoding="utf-8"
         )
-    (brain / "glossary.md").write_text("---\nauto_generated: false\n---\n# Glossary\n")
-    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n")
+    (brain / "glossary.md").write_text("---\nauto_generated: false\n---\n# Glossary\n", encoding="utf-8")
+    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n", encoding="utf-8")
     return brain
 
 
@@ -29,7 +29,7 @@ def _make_brain_with_git(tmp_path):
     subprocess.run(["git", "checkout", "-b", "main"], cwd=brain, capture_output=True)
     # Add a neuron
     neuron = brain / "architecture" / "auth.md"
-    neuron.write_text("---\nparent: ../map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth Design\n")
+    neuron.write_text("---\nparent: ../map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth Design\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=brain, capture_output=True)
     subprocess.run(["git", "commit", "-m", "brain: add auth"], cwd=brain, capture_output=True)
     return brain
@@ -99,7 +99,7 @@ def test_map_nested_lobe(tmp_path):
     # Create a nested lobe
     nested = brain / "architecture" / "patterns"
     nested.mkdir()
-    (nested / "map.md").write_text("---\nauto_generated: true\nparent: ../map.md\n---\n# Patterns\n")
+    (nested / "map.md").write_text("---\nauto_generated: true\nparent: ../map.md\n---\n# Patterns\n", encoding="utf-8")
     generate_map_md(brain, nested)
     content = (nested / "map.md").read_text()
     # Parent should be architecture/map.md, not brain.md
@@ -129,7 +129,7 @@ def test_index_lists_all_neurons(tmp_path):
     brain = _make_brain_with_git(tmp_path)
     # Add more neurons
     (brain / "decisions" / "use-sql.md").write_text(
-        "---\nparent: ../map.md\ntags: [sql]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Use Raw SQL\n"
+        "---\nparent: ../map.md\ntags: [sql]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Use Raw SQL\n", encoding="utf-8"
     )
     subprocess.run(["git", "add", "-A"], cwd=brain, capture_output=True)
     subprocess.run(["git", "commit", "-m", "add sql"], cwd=brain, capture_output=True)

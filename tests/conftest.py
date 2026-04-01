@@ -49,7 +49,7 @@ def temp_brain(tmp_path, temp_config):
         "git": {"default_branch": "main", "auto_push": True,
                 "commit_prefix": "brain:"},
         "agents": {"commands_for": ["claude"]},
-    }))
+    }), encoding="utf-8")
 
     for lobe in ["architecture", "decisions", "product", "standards",
                  "services", "infrastructure", "cortex", "wisdom"]:
@@ -57,19 +57,19 @@ def temp_brain(tmp_path, temp_config):
         lobe_dir.mkdir()
         (lobe_dir / "map.md").write_text(
             f"---\nauto_generated: true\nparent: ../brain.md\n"
-            f"updated: 2026-04-01\n---\n# {lobe.title()}\n"
+            f"updated: 2026-04-01\n---\n# {lobe.title()}\n", encoding="utf-8"
         )
 
     (brain_path / "brain.md").write_text(
-        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Test Brain\n"
+        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Test Brain\n", encoding="utf-8"
     )
     (brain_path / "index.md").write_text(
-        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Neuron Index\n"
+        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Neuron Index\n", encoding="utf-8"
     )
     (brain_path / "glossary.md").write_text(
-        "---\nauto_generated: false\nupdated: 2026-04-01\n---\n# Glossary\n"
+        "---\nauto_generated: false\nupdated: 2026-04-01\n---\n# Glossary\n", encoding="utf-8"
     )
-    (brain_path / "README.md").write_text("# Test Brain\n")
+    (brain_path / "README.md").write_text("# Test Brain\n", encoding="utf-8")
 
     subprocess.run(["git", "init"], cwd=brain_path, capture_output=True)
     subprocess.run(["git", "checkout", "-b", "main"], cwd=brain_path, capture_output=True)
@@ -91,7 +91,7 @@ def temp_brain(tmp_path, temp_config):
             }
         },
     }
-    temp_config.write_text(yaml.dump(config_data))
+    temp_config.write_text(yaml.dump(config_data), encoding="utf-8")
 
     return brain_path
 

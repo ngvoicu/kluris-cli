@@ -95,7 +95,7 @@ def test_install_clean_slate(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     # Create a stale file
     stale = tmp_path / ".claude" / "commands" / "kluris.old-command.md"
-    stale.write_text("stale content")
+    stale.write_text("stale content", encoding="utf-8")
     runner.invoke(cli, ["install"])
     assert not stale.exists()
 

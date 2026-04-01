@@ -61,7 +61,7 @@ def test_create_fails_existing(tmp_path, monkeypatch):
     runner = CliRunner()
     brain_path = tmp_path / "my-brain"
     brain_path.mkdir()
-    (brain_path / "kluris.yml").write_text("name: test\n")
+    (brain_path / "kluris.yml").write_text("name: test\n", encoding="utf-8")
     result = runner.invoke(cli, ["create", str(brain_path)])
     assert result.exit_code != 0
     assert "already contains" in result.output

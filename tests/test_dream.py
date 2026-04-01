@@ -12,7 +12,7 @@ def test_dream_regenerates_maps(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     # Add a neuron manually
     (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
-        "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n"
+        "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream"])
     map_content = (tmp_path / "my-brain" / "architecture" / "map.md").read_text().lower()
@@ -57,7 +57,7 @@ def test_dream_regenerates_index(tmp_path, monkeypatch):
     runner = CliRunner()
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
-        "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n"
+        "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
     runner.invoke(cli, ["dream"])
     index = (tmp_path / "my-brain" / "index.md").read_text()
@@ -71,7 +71,7 @@ def test_dream_reports_broken_links(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n"
-        "# Bad\n\n[broken](./nonexistent.md)\n"
+        "# Bad\n\n[broken](./nonexistent.md)\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream", "--json"])
     data = json.loads(result.output)
@@ -84,10 +84,10 @@ def test_dream_reports_one_way_synapse(tmp_path, monkeypatch):
     runner = CliRunner()
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
-        "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n"
+        "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n", encoding="utf-8"
     )
     (tmp_path / "my-brain" / "standards" / "b.md").write_text(
-        "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# B\n"
+        "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# B\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream", "--json"])
     data = json.loads(result.output)
@@ -100,7 +100,7 @@ def test_dream_exit_1_issues(tmp_path, monkeypatch):
     runner = CliRunner()
     runner.invoke(cli, ["create", str(tmp_path / "my-brain")])
     (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
-        "---\nparent: ./map.md\n---\n# Bad\n\n[broken](./nope.md)\n"
+        "---\nparent: ./map.md\n---\n# Bad\n\n[broken](./nope.md)\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream"])
     assert result.exit_code == 1

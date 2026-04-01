@@ -73,7 +73,7 @@ def test_clone_invalid_repo(tmp_path, monkeypatch):
     subprocess.run(["git", "checkout", "-b", "main"], cwd=src, capture_output=True)
     subprocess.run(["git", "config", "user.email", "x@x"], cwd=src, capture_output=True)
     subprocess.run(["git", "config", "user.name", "x"], cwd=src, capture_output=True)
-    (src / "readme.md").write_text("not a brain\n")
+    (src / "readme.md").write_text("not a brain\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=src, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=src, capture_output=True)
     subprocess.run(["git", "remote", "add", "origin", str(bare)], cwd=src, capture_output=True)
