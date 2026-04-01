@@ -1,4 +1,4 @@
-"""Tests for brain.md, map.md, and index.md generation."""
+"""Tests for brain.md and map.md generation."""
 
 import subprocess
 from pathlib import Path
@@ -18,7 +18,6 @@ def _make_brain(tmp_path):
             f"---\nauto_generated: true\nparent: ../brain.md\nupdated: 2026-04-01\n---\n# {lobe.title()}\n", encoding="utf-8"
         )
     (brain / "glossary.md").write_text("---\nauto_generated: false\n---\n# Glossary\n", encoding="utf-8")
-    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n", encoding="utf-8")
     return brain
 
 
@@ -51,7 +50,7 @@ def test_brain_md_links_index(tmp_path):
     brain = _make_brain(tmp_path)
     generate_brain_md(brain, "test-brain", "A test brain")
     content = (brain / "brain.md").read_text()
-    assert "index.md" in content
+    # index is now in brain.md
 
 
 def test_brain_md_links_glossary(tmp_path):
@@ -122,42 +121,33 @@ def test_map_empty_lobe(tmp_path):
     assert "# Decisions" in content or "# decisions" in content.lower()
 
 
-# --- [TEST-KLU-15] index.md generation ---
+# --- Neuron index (now in brain.md) ---
 
 
-def test_index_lists_all_neurons(tmp_path):
+def test_brain_md_has_neuron_index(tmp_path):
     brain = _make_brain_with_git(tmp_path)
-    # Add more neurons
     (brain / "decisions" / "use-sql.md").write_text(
         "---\nparent: ../map.md\ntags: [sql]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Use Raw SQL\n", encoding="utf-8"
     )
-    subprocess.run(["git", "add", "-A"], cwd=brain, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "add sql"], cwd=brain, capture_output=True)
-    generate_index_md(brain)
-    content = (brain / "index.md").read_text()
-    assert "auth.md" in content or "Auth" in content
-    assert "use-sql.md" in content or "Use Raw SQL" in content
+    generate_brain_md(brain, "test", "Test brain")
+    content = (brain / "brain.md").read_text()
+    assert "Neuron Index" in content
+    assert "Auth" in content or "auth" in content
+    assert "Use Raw SQL" in content or "use-sql" in content
 
 
-def test_index_columns(tmp_path):
+def test_brain_md_index_columns(tmp_path):
     brain = _make_brain_with_git(tmp_path)
-    generate_index_md(brain)
-    content = (brain / "index.md").read_text()
+    generate_brain_md(brain, "test", "Test brain")
+    content = (brain / "brain.md").read_text()
     assert "Neuron" in content
     assert "Lobe" in content
     assert "Tags" in content
     assert "Updated" in content
 
 
-def test_index_empty_brain(tmp_path):
+def test_brain_md_empty_index(tmp_path):
     brain = _make_brain(tmp_path)
-    generate_index_md(brain)
-    content = (brain / "index.md").read_text()
+    generate_brain_md(brain, "test", "Test brain")
+    content = (brain / "brain.md").read_text()
     assert "0 neurons" in content
-
-
-def test_index_frontmatter(tmp_path):
-    brain = _make_brain(tmp_path)
-    generate_index_md(brain)
-    meta, _ = read_frontmatter(brain / "index.md")
-    assert meta.get("auto_generated") is True

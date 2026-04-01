@@ -63,9 +63,6 @@ def temp_brain(tmp_path, temp_config):
     (brain_path / "brain.md").write_text(
         "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Test Brain\n", encoding="utf-8"
     )
-    (brain_path / "index.md").write_text(
-        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Neuron Index\n", encoding="utf-8"
-    )
     (brain_path / "glossary.md").write_text(
         "---\nauto_generated: false\nupdated: 2026-04-01\n---\n# Glossary\n", encoding="utf-8"
     )

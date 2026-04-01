@@ -38,7 +38,7 @@ def test_full_workflow(tmp_path, monkeypatch):
     assert "auth.md" in arch_map
 
     # 6. Verify index has neurons
-    index = (brain / "index.md").read_text()
+    index = (brain / "brain.md").read_text()
     assert "auth" in index.lower() or "Auth" in index
 
     # 7. MRI

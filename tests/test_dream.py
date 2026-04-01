@@ -60,7 +60,7 @@ def test_dream_regenerates_index(tmp_path, monkeypatch):
         "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
     runner.invoke(cli, ["dream"])
-    index = (tmp_path / "my-brain" / "index.md").read_text()
+    index = (tmp_path / "my-brain" / "brain.md").read_text()
     assert "auth" in index.lower()
 
 

@@ -7,7 +7,6 @@ def _make_brain_with_neurons(tmp_path):
     brain = tmp_path / "brain"
     brain.mkdir()
     (brain / "brain.md").write_text("---\nauto_generated: true\n---\n# Brain\n", encoding="utf-8")
-    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n", encoding="utf-8")
     (brain / "glossary.md").write_text("---\n---\n# Glossary\n", encoding="utf-8")
     for lobe in ["arch", "std", "product"]:
         d = brain / lobe
@@ -33,8 +32,7 @@ def _make_brain_with_neurons(tmp_path):
 def test_graph_nodes(tmp_path):
     brain = _make_brain_with_neurons(tmp_path)
     graph = build_graph(brain)
-    # 3 maps + 5 neurons + brain.md + index.md + glossary.md = 11
-    assert len(graph["nodes"]) == 11
+    assert len(graph["nodes"]) == 10
 
 
 def test_graph_parent_edges(tmp_path):

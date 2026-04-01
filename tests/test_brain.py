@@ -70,7 +70,6 @@ def test_creates_brain_md(tmp_path):
 
 def test_creates_index_md(tmp_path):
     scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
-    assert (tmp_path / "brain" / "index.md").exists()
 
 
 def test_creates_glossary(tmp_path):

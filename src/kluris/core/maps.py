@@ -106,7 +106,7 @@ def _get_siblings(brain_path: Path, lobe_path: Path) -> list[dict]:
 
 
 def generate_brain_md(brain_path: Path, name: str, description: str) -> None:
-    """Generate the root brain.md index file."""
+    """Generate the root brain.md — lobes, neuron index, and glossary link."""
     lobes = _get_lobes(brain_path)
 
     lobe_links = "\n".join(
@@ -114,13 +114,39 @@ def generate_brain_md(brain_path: Path, name: str, description: str) -> None:
         for l in lobes
     )
 
-    neuron_count = sum(len(_get_neurons(l["path"])) for l in lobes)
+    # Build neuron index table (merged from index.md)
+    all_neurons = []
+    for lobe in lobes:
+        neurons = _get_neurons(lobe["path"])
+        for n in neurons:
+            rel_path = n["path"].relative_to(brain_path)
+            all_neurons.append({
+                "title": n["title"],
+                "path": str(rel_path),
+                "lobe": lobe["name"],
+                "tags": ", ".join(n["tags"]) if n["tags"] else "",
+                "updated": n["updated"],
+            })
+
+    neuron_count = len(all_neurons)
+    rows = "\n".join(
+        f"| [{n['title']}]({n['path']}) | {n['lobe']} | {n['tags']} | {n['updated']} |"
+        for n in all_neurons
+    )
+
+    index_section = (
+        f"## Neuron Index\n\n"
+        f"{neuron_count} neurons across {len(lobes)} lobes.\n\n"
+        f"| Neuron | Lobe | Tags | Updated |\n"
+        f"|--------|------|------|---------|\n"
+        f"{rows}\n"
+    )
 
     content = (
         f"# {name}\n\n{description}\n\n"
         f"## Lobes\n\n{lobe_links}\n\n"
+        f"{index_section}\n"
         f"## Reference\n\n"
-        f"- [index.md](./index.md) — Complete neuron index ({neuron_count} neurons)\n"
         f"- [glossary.md](./glossary.md) — Domain-specific terms, acronyms, and conventions\n"
     )
 
@@ -184,37 +210,5 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
 
 
 def generate_index_md(brain_path: Path) -> None:
-    """Generate the flat neuron index file."""
-    all_neurons = []
-    lobes = _get_lobes(brain_path)
-
-    for lobe in lobes:
-        neurons = _get_neurons(lobe["path"])
-        for n in neurons:
-            rel_path = n["path"].relative_to(brain_path)
-            all_neurons.append({
-                "title": n["title"],
-                "path": str(rel_path),
-                "lobe": lobe["name"],
-                "tags": ", ".join(n["tags"]) if n["tags"] else "",
-                "updated": n["updated"],
-            })
-
-    neuron_count = len(all_neurons)
-    lobe_count = len(lobes)
-
-    rows = "\n".join(
-        f"| [{n['title']}]({n['path']}) | {n['lobe']} | {n['tags']} | {n['updated']} |"
-        for n in all_neurons
-    )
-
-    content = (
-        f"# Neuron Index\n\n"
-        f"{neuron_count} neurons across {lobe_count} lobes.\n\n"
-        f"| Neuron | Lobe | Tags | Updated |\n"
-        f"|--------|------|------|---------|\n"
-        f"{rows}\n"
-    )
-
-    metadata = {"auto_generated": True, "updated": _today()}
-    write_frontmatter(brain_path / "index.md", metadata, content)
+    """Deprecated — index is now part of brain.md. No-op for backward compat."""
+    pass

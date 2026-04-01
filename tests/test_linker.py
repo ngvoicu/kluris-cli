@@ -38,7 +38,6 @@ def _make_linked_brain(tmp_path):
         "- [architecture/](./architecture/map.md)\n"
         "- [standards/](./standards/map.md)\n", encoding="utf-8"
     )
-    (brain / "index.md").write_text("---\nauto_generated: true\n---\n# Index\n", encoding="utf-8")
     (brain / "glossary.md").write_text("---\n---\n# Glossary\n", encoding="utf-8")
     return brain
 
