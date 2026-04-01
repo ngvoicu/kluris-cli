@@ -247,11 +247,8 @@ def create(name: str, base_path: str | None, brain_type: str,
 @click.argument("url")
 @click.argument("path", required=False)
 @click.option("--branch", "branch_name", help="Branch to checkout (default: repo default)")
-@click.option("--type", "brain_type", default="team",
-              type=click.Choice(list(BRAIN_TYPES.keys())), help="Brain type for local config")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def clone_cmd(url: str, path: str | None, branch_name: str | None,
-              brain_type: str, as_json: bool):
+def clone_cmd(url: str, path: str | None, branch_name: str | None, as_json: bool):
     """Clone an existing brain from a git remote.
 
     \b
@@ -282,10 +279,22 @@ def clone_cmd(url: str, path: str | None, branch_name: str | None,
     # Create local kluris.yml (not in repo -- it's gitignored)
     if not (dest / "kluris.yml").exists():
         from kluris.core.config import BrainConfig, GitConfig, write_brain_config
+        # Detect type from structure on disk
+        detected_type = "team"
+        dirs = {d.name for d in dest.iterdir() if d.is_dir() and d.name != ".git"}
+        if {"projects", "tasks", "notes"} <= dirs:
+            detected_type = "personal"
+        elif {"prd", "features", "ux"} <= dirs:
+            detected_type = "product"
+        elif {"literature", "experiments", "findings"} <= dirs:
+            detected_type = "research"
+        elif {"architecture", "decisions", "services"} <= dirs:
+            detected_type = "team"
+
         local_config = BrainConfig(
             name=name,
             description=f"{name} knowledge base",
-            type=brain_type,
+            type=detected_type,
             git=GitConfig(default_branch=branch_name or "main"),
         )
         write_brain_config(local_config, dest)
@@ -441,10 +450,12 @@ def neuron(file_path: str, lobe: str | None, template_name: str | None,
     sections = None
     if template_name:
         brain_config = read_brain_config(brain_path)
-        templates = brain_config.neuron_templates
-        tmpl = lookup_template(template_name, {k: v.model_dump() for k, v in templates.items()})
+        from kluris.core.brain import get_type_defaults
+        defaults = get_type_defaults(brain_config.type)
+        templates = defaults.get("neuron_templates", {})
+        tmpl = lookup_template(template_name, templates)
         if tmpl is None:
-            available = ", ".join(templates.keys())
+            available = ", ".join(templates.keys()) if templates else "(none for this brain type)"
             raise click.ClickException(
                 f"Template '{template_name}' not found. Available: {available}"
             )
@@ -771,29 +782,27 @@ def templates(brain_name: str | None, as_json: bool):
     name, entry = brains[0]
     brain_path = Path(entry["path"])
     brain_config = read_brain_config(brain_path)
-    tmpls = brain_config.neuron_templates
+    from kluris.core.brain import get_type_defaults
+    defaults = get_type_defaults(brain_config.type)
+    tmpls = defaults.get("neuron_templates", {})
 
     if as_json:
-        data = {
-            k: {"description": v.description, "sections": v.sections}
-            for k, v in tmpls.items()
-        }
-        click.echo(json_lib.dumps({"ok": True, "brain": name, "templates": data}))
+        click.echo(json_lib.dumps({"ok": True, "brain": name, "type": brain_config.type, "templates": tmpls}))
         return
 
     if not tmpls:
-        console.print(f"Brain '{name}' has no neuron templates.")
-        console.print("Templates are defined in kluris.yml under neuron_templates.")
+        console.print(f"Brain '{name}' ({brain_config.type}) has no neuron templates.")
+        console.print("Only 'team' brains have built-in templates (decision, incident, runbook).")
         return
 
     from rich.table import Table
-    table = Table(title=f"Neuron Templates — {name}")
+    table = Table(title=f"Neuron Templates — {name} ({brain_config.type})")
     table.add_column("Template")
     table.add_column("Description")
     table.add_column("Sections")
 
     for tname, tmpl in tmpls.items():
-        table.add_row(tname, tmpl.description, ", ".join(tmpl.sections))
+        table.add_row(tname, tmpl["description"], ", ".join(tmpl["sections"]))
 
     console.print(table)
     console.print(f"\nUsage: kluris neuron <file>.md --lobe <lobe> --template <name>")

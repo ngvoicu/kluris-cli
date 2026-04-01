@@ -9,7 +9,6 @@ from kluris.core.config import (
     BrainEntry,
     GitConfig,
     GlobalConfig,
-    NeuronTemplate,
     get_config_path,
     read_brain_config,
     read_global_config,
@@ -25,7 +24,7 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "0.2.0"
+    assert kluris.__version__ == "0.2.1"
 
 
 def test_global_config_defaults():
@@ -68,24 +67,8 @@ def test_brain_config_defaults():
     assert cfg.name == "x"
     assert cfg.description == ""
     assert cfg.type == "team"
-    assert cfg.neuron_templates == {}
     assert isinstance(cfg.git, GitConfig)
     assert isinstance(cfg.agents, AgentsConfig)
-
-
-def test_brain_config_neuron_templates():
-    cfg = BrainConfig(
-        name="x",
-        neuron_templates={
-            "decision": NeuronTemplate(
-                description="ADR",
-                sections=["Context", "Decision", "Rationale"],
-            )
-        },
-    )
-    tmpl = cfg.neuron_templates["decision"]
-    assert tmpl.description == "ADR"
-    assert tmpl.sections == ["Context", "Decision", "Rationale"]
 
 
 def test_git_config_defaults():

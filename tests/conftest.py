@@ -39,13 +39,6 @@ def temp_brain(tmp_path, temp_config):
         "name": "test-brain",
         "description": "Test brain",
         "type": "team",
-        "neuron_templates": {
-            "decision": {
-                "description": "Decision record",
-                "sections": ["Context", "Decision", "Rationale",
-                             "Alternatives considered", "Consequences"],
-            }
-        },
         "git": {"default_branch": "main", "auto_push": True,
                 "commit_prefix": "brain:"},
         "agents": {"commands_for": ["claude"]},

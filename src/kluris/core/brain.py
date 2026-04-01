@@ -178,14 +178,11 @@ def scaffold_brain(
         )
         (lobe_dir / "map.md").write_text(map_content, encoding="utf-8")
 
-    # Write kluris.yml (NO structure key)
+    # Write kluris.yml — local config only (gitignored)
     config = BrainConfig(
         name=name,
         description=description,
         type=brain_type,
-        neuron_templates={
-            k: NeuronTemplate(**v) for k, v in neuron_templates.items()
-        },
         git=GitConfig(),
         agents=AgentsConfig(),
     )

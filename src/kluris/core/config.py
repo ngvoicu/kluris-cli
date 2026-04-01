@@ -51,11 +51,10 @@ class StructureNode(BaseModel):
 
 
 class BrainConfig(BaseModel):
-    """Brain config stored in kluris.yml inside each brain repo."""
+    """Local brain config stored in kluris.yml (gitignored)."""
     name: str
     description: str = ""
     type: str = "team"
-    neuron_templates: dict[str, NeuronTemplate] = {}
     git: GitConfig = GitConfig()
     agents: AgentsConfig = AgentsConfig()
 

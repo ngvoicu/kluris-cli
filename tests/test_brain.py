@@ -85,9 +85,9 @@ def test_creates_readme(tmp_path):
 
 
 def test_team_has_neuron_templates(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
-    data = yaml.safe_load((tmp_path / "brain" / "kluris.yml").read_text())
-    templates = data.get("neuron_templates", {})
+    """Templates are built into kluris per brain type, not stored in kluris.yml."""
+    defaults = get_type_defaults("team")
+    templates = defaults.get("neuron_templates", {})
     assert "decision" in templates
     assert "incident" in templates
     assert "runbook" in templates
