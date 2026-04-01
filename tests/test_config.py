@@ -24,7 +24,7 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "0.3.1"
+    assert kluris.__version__ == "0.3.2"
 
 
 def test_global_config_defaults():
@@ -41,7 +41,7 @@ def test_global_config_with_brains():
                 path="/home/user/my-brain",
                 repo="https://github.com/team/brain.git",
                 description="Team brain",
-                type="team",
+                type="product-group",
             )
         },
     )
@@ -51,7 +51,7 @@ def test_global_config_with_brains():
     assert entry.path == "/home/user/my-brain"
     assert entry.repo == "https://github.com/team/brain.git"
     assert entry.description == "Team brain"
-    assert entry.type == "team"
+    assert entry.type == "product-group"
 
 
 def test_brain_entry_defaults():
@@ -59,7 +59,7 @@ def test_brain_entry_defaults():
     assert entry.path == "/x"
     assert entry.repo is None
     assert entry.description == ""
-    assert entry.type == "team"
+    assert entry.type == "product-group"
 
 
 def test_brain_config_defaults():

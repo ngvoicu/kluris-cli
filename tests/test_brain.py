@@ -12,7 +12,7 @@ from kluris.core.brain import NEURON_TEMPLATES, get_type_defaults, scaffold_brai
 
 
 def test_scaffold_team(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     brain = tmp_path / "brain"
     expected_lobes = [
         "architecture", "decisions", "product", "standards",
@@ -54,7 +54,7 @@ def test_scaffold_blank(tmp_path):
 
 
 def test_creates_kluris_yml(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     brain = tmp_path / "brain"
     assert (brain / "kluris.yml").exists()
     data = yaml.safe_load((brain / "kluris.yml").read_text())
@@ -64,21 +64,21 @@ def test_creates_kluris_yml(tmp_path):
 
 
 def test_creates_brain_md(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     assert (tmp_path / "brain" / "brain.md").exists()
 
 
 def test_creates_index_md(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
 
 
 def test_creates_glossary(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     assert (tmp_path / "brain" / "glossary.md").exists()
 
 
 def test_creates_readme(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     readme = (tmp_path / "brain" / "README.md").read_text()
     assert "/kluris.learn" in readme
     assert "/kluris.think" in readme
@@ -100,7 +100,7 @@ def test_from_custom_config(tmp_path):
     custom = {
         "structure": {"docs": "Documentation", "notes": "Notes"},
     }
-    scaffold_brain(tmp_path / "brain", "brain", "Custom", "team", custom_config=custom)
+    scaffold_brain(tmp_path / "brain", "brain", "Custom", "product-group", custom_config=custom)
     brain = tmp_path / "brain"
     assert (brain / "docs").is_dir()
     assert (brain / "notes").is_dir()
@@ -109,7 +109,7 @@ def test_from_custom_config(tmp_path):
 
 
 def test_creates_gitignore(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     gitignore = (tmp_path / "brain" / ".gitignore").read_text()
     assert ".env" in gitignore
     assert "*.key" in gitignore
@@ -131,7 +131,7 @@ def test_brain_name_sanitization():
 
 
 def test_paths_use_pathlib(tmp_path):
-    scaffold_brain(tmp_path / "brain", "brain", "Test", "team")
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     # Verify the function accepted a Path object and created dirs correctly
     assert isinstance(tmp_path / "brain", Path)
     assert (tmp_path / "brain" / "kluris.yml").is_file()

@@ -35,7 +35,7 @@ kluris create        # Interactive wizard
 Or skip the wizard:
 
 ```bash
-kluris create my-brain --type team
+kluris create my-brain --type product-group
 kluris create my-brain --type personal --path ~/brains
 kluris create my-brain --remote git@github.com:team/brain.git
 ```
@@ -105,7 +105,7 @@ works the same -- all templates and commands are available regardless of type.
 
 | Type | Lobes | Use case |
 |------|-------|----------|
-| `team` (default) | architecture, decisions, product, standards, services, infrastructure, cortex, wisdom | Shared team knowledge |
+| `product-group` (default) | architecture, decisions, product, standards, services, infrastructure, cortex, wisdom | Shared team knowledge |
 | `personal` | projects, tasks, notes | Individual developer |
 | `product` | prd, features, ux, analytics, competitors, decisions | Product management |
 | `research` | literature, experiments, findings, datasets, tools, questions | Research projects |
@@ -146,7 +146,7 @@ as an expert. `/kluris.recall` just searches and reports what the brain knows
 
 | Command | What it does |
 |---------|-------------|
-| `kluris create` | Create a new brain (interactive wizard or `kluris create <name> --type team`) |
+| `kluris create` | Create a new brain (interactive wizard or `kluris create <name> --type product-group`) |
 | `kluris clone` | Clone a brain from git (interactive or `kluris clone <url> --branch develop`) |
 | `kluris list` | List all registered brains |
 | `kluris status` | Show brain tree, recent changes, neuron counts |

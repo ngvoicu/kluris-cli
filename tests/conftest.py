@@ -38,7 +38,7 @@ def temp_brain(tmp_path, temp_config):
     (brain_path / "kluris.yml").write_text(yaml.dump({
         "name": "test-brain",
         "description": "Test brain",
-        "type": "team",
+        "type": "product-group",
         "git": {"default_branch": "main",
                 "commit_prefix": "brain:"},
         "agents": {"commands_for": ["claude"]},
@@ -77,7 +77,7 @@ def temp_brain(tmp_path, temp_config):
             "test-brain": {
                 "path": str(brain_path),
                 "description": "Test brain",
-                "type": "team",
+                "type": "product-group",
             }
         },
     }

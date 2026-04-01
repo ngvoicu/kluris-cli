@@ -14,7 +14,7 @@ class BrainEntry(BaseModel):
     path: str
     repo: str | None = None
     description: str = ""
-    type: str = "team"
+    type: str = "product-group"
 
 
 class GlobalConfig(BaseModel):

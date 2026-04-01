@@ -155,7 +155,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
             base_path = click.prompt("  Location", default=str(Path.home()), type=str)
         if brain_type is None:
             type_options = ", ".join(BRAIN_TYPES.keys())
-            brain_type = click.prompt(f"  Brain type ({type_options})", default="team", type=str)
+            brain_type = click.prompt(f"  Brain type ({type_options})", default="product-group", type=str)
         if not no_git:
             use_git = click.confirm("  Initialize git?", default=True)
             no_git = not use_git
@@ -167,7 +167,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
 
     # Defaults for non-interactive
     if brain_type is None:
-        brain_type = "team"
+        brain_type = "product-group"
     if branch_name is None:
         branch_name = "main"
     if not validate_brain_name(name):

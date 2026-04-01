@@ -33,7 +33,7 @@ NEURON_TEMPLATES: dict[str, dict] = {
 
 # Brain types -- only used for initial scaffolding
 BRAIN_TYPES: dict[str, dict] = {
-    "team": {
+    "product-group": {
         "structure": {
             "architecture": "System design, technical patterns",
             "decisions": "ADRs and key decisions across all domains",
