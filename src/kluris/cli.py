@@ -122,6 +122,7 @@ def cli():
 
 @cli.command()
 @click.argument("name", required=False)
+@click.option("--description", "desc", help="What this brain covers (one sentence)")
 @click.option("--path", "base_path", type=click.Path(),
               help="Directory to create the brain in (default: current dir)")
 @click.option("--type", "brain_type", default=None,
@@ -132,9 +133,9 @@ def cli():
 @click.option("--from-config", "from_config", type=click.Path(exists=True),
               help="Custom YAML config file for structure")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def create(name: str | None, base_path: str | None, brain_type: str | None,
-           remote: str | None, branch_name: str | None, no_git: bool,
-           from_config: str | None, as_json: bool):
+def create(name: str | None, desc: str | None, base_path: str | None,
+           brain_type: str | None, remote: str | None, branch_name: str | None,
+           no_git: bool, from_config: str | None, as_json: bool):
     """Create a new brain.
 
     Run with no arguments for an interactive wizard, or pass options directly:
@@ -148,6 +149,8 @@ def create(name: str | None, base_path: str | None, brain_type: str | None,
     if not name:
         console.print("\n[bold]Create a new brain[/bold]\n")
         name = click.prompt("  Brain name (lowercase, hyphens ok)", type=str)
+        if not desc:
+            desc = click.prompt("  What does this brain cover? (one sentence)", type=str)
         if not base_path:
             base_path = click.prompt("  Location", default=str(Path.home()), type=str)
         if brain_type is None:
@@ -223,7 +226,8 @@ def create(name: str | None, base_path: str | None, brain_type: str | None,
         import yaml
         custom_config = yaml.safe_load(Path(from_config).read_text(encoding="utf-8"))
 
-    scaffold_brain(brain_path, name, f"{name} knowledge base", brain_type, custom_config)
+    description = desc or f"{name} knowledge base"
+    scaffold_brain(brain_path, name, description, brain_type, custom_config)
 
     if not no_git:
         git_init(brain_path)
@@ -237,7 +241,7 @@ def create(name: str | None, base_path: str | None, brain_type: str | None,
             _run(["git", "remote", "add", "origin", remote], cwd=brain_path)
 
     config = read_global_config()
-    entry = BrainEntry(path=str(brain_path), description=f"{name} knowledge base", type=brain_type)
+    entry = BrainEntry(path=str(brain_path), description=description, type=brain_type)
     register_brain(name, entry)
 
     if config.default_brain is None or len(config.brains) == 0:

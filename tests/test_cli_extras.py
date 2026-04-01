@@ -92,7 +92,7 @@ def test_push_no_brains(tmp_path, monkeypatch):
 def test_version():
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
-    assert "0.2" in result.output
+    assert "0.3" in result.output
 
 
 def test_main_help():

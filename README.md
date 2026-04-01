@@ -134,8 +134,6 @@ All slash commands accept free text. Examples:
 | `/kluris.recall <topic>` | Search the brain and summarize what it knows (read-only). |
 | `/kluris.learn [focus]` | Scan a project or learn about a topic and store it in the brain. |
 | `/kluris.remember [topic]` | Extract and store knowledge -- from the session or a specific topic. |
-| `/kluris.neuron <topic>` | Create a new knowledge file (supports `--template`). |
-| `/kluris.lobe <name>` | Create a new knowledge region (folder). |
 | `/kluris.push [msg]` | Commit and push brain changes to git. |
 | `/kluris.dream [focus]` | AI-powered brain analysis. Run `kluris dream` CLI for mechanical fixes. |
 | `/kluris.mri` | Generate an interactive brain visualization (runs CLI). |
@@ -153,8 +151,6 @@ as an expert. `/kluris.recall` just searches and reports what the brain knows
 | `kluris list` | List all registered brains |
 | `kluris status` | Show brain tree, recent changes, neuron counts |
 | `kluris recall <query>` | Search brain and show results |
-| `kluris neuron <file>` | Create a neuron (`--lobe`, `--template decision`) |
-| `kluris lobe <name>` | Create a lobe (`--parent` for nesting) |
 | `kluris dream` | Regenerate maps and neuron index, validate links |
 | `kluris push` | Commit and push brain changes to git |
 | `kluris mri` | Generate interactive HTML brain visualization |
@@ -172,7 +168,6 @@ All commands support `--json` for machine-readable output.
 Available in every brain. Use `kluris templates` to see them.
 
 ```bash
-kluris neuron auth-migration.md --lobe decisions --template decision
 ```
 
 | Template | Sections |
