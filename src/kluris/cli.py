@@ -121,31 +121,52 @@ def cli():
 
 
 @cli.command()
-@click.argument("name")
+@click.argument("name", required=False)
 @click.option("--path", "base_path", type=click.Path(),
               help="Directory to create the brain in (default: current dir)")
-@click.option("--type", "brain_type", default="team",
-              type=click.Choice(list(BRAIN_TYPES.keys())), help="Brain type: team, personal, product, research, blank")
+@click.option("--type", "brain_type", default=None,
+              type=click.Choice(list(BRAIN_TYPES.keys())), help="Brain type")
 @click.option("--remote", help="Git remote URL to set as origin")
-@click.option("--branch", "branch_name", default="main", help="Default git branch (default: main)")
-@click.option("--no-git", "no_git", is_flag=True, help="Skip git init (for embedding in existing repos)")
+@click.option("--branch", "branch_name", default=None, help="Default git branch")
+@click.option("--no-git", "no_git", is_flag=True, help="Skip git init")
 @click.option("--from-config", "from_config", type=click.Path(exists=True),
               help="Custom YAML config file for structure")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def create(name: str, base_path: str | None, brain_type: str,
-           remote: str | None, branch_name: str, no_git: bool,
+def create(name: str | None, base_path: str | None, brain_type: str | None,
+           remote: str | None, branch_name: str | None, no_git: bool,
            from_config: str | None, as_json: bool):
     """Create a new brain.
 
-    NAME is the brain name (lowercase, hyphens ok). Examples:
+    Run with no arguments for an interactive wizard, or pass options directly:
 
     \b
-      kluris create my-team-brain
+      kluris create
       kluris create my-brain --type personal
-      kluris create research-notes --type research --path ~/brains
       kluris create team-brain --remote git@github.com:team/brain.git
-      kluris create embedded-brain --no-git
     """
+    # Interactive wizard if no name provided
+    if not name:
+        console.print("\n[bold]Create a new brain[/bold]\n")
+        name = click.prompt("  Brain name (lowercase, hyphens ok)", type=str)
+        if not base_path:
+            base_path = click.prompt("  Location", default=str(Path.home()), type=str)
+        if brain_type is None:
+            type_options = ", ".join(BRAIN_TYPES.keys())
+            brain_type = click.prompt(f"  Brain type ({type_options})", default="team", type=str)
+        if not no_git:
+            use_git = click.confirm("  Initialize git?", default=True)
+            no_git = not use_git
+            if not no_git and not remote:
+                remote = click.prompt("  Git remote URL (optional, Enter to skip)", default="", type=str) or None
+            if not no_git and branch_name is None:
+                branch_name = click.prompt("  Default branch", default="main", type=str)
+        console.print()
+
+    # Defaults for non-interactive
+    if brain_type is None:
+        brain_type = "team"
+    if branch_name is None:
+        branch_name = "main"
     if not validate_brain_name(name):
         raise click.ClickException(
             f"Brain name '{name}' is invalid. "
@@ -244,18 +265,29 @@ def create(name: str, base_path: str | None, brain_type: str,
 
 
 @cli.command("clone")
-@click.argument("url")
+@click.argument("url", required=False)
 @click.argument("path", required=False)
-@click.option("--branch", "branch_name", help="Branch to checkout (default: repo default)")
+@click.option("--branch", "branch_name", help="Branch to checkout")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def clone_cmd(url: str, path: str | None, branch_name: str | None, as_json: bool):
+def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_json: bool):
     """Clone an existing brain from a git remote.
 
+    Run with no arguments for an interactive wizard:
+
     \b
-    Examples:
+      kluris clone
       kluris clone git@github.com:team/brain.git
       kluris clone git@github.com:team/brain.git ~/my-copy --branch develop
     """
+    if not url:
+        console.print("\n[bold]Clone a brain[/bold]\n")
+        url = click.prompt("  Git remote URL", type=str)
+        if not path:
+            default_path = str(Path.home() / url.rstrip("/").split("/")[-1].replace(".git", ""))
+            path = click.prompt("  Clone to", default=default_path, type=str)
+        if not branch_name:
+            branch_name = click.prompt("  Branch (Enter for default)", default="", type=str) or None
+        console.print()
     dest = Path(path) if path else Path(url.rstrip("/").split("/")[-1].replace(".git", ""))
     dest = dest.resolve()
 
