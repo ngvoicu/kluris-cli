@@ -102,4 +102,6 @@ def bare_remote(tmp_path_factory):
     remote_path = tmp_path_factory.mktemp("remote")
     subprocess.run(["git", "init", "--bare"], cwd=remote_path,
                    capture_output=True)
+    subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"],
+                   cwd=remote_path, capture_output=True)
     return remote_path
