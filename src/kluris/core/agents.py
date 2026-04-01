@@ -174,17 +174,12 @@ Examine systematically:
 
 ## Step 3: Classify into lobes
 
-- **architecture/** — system design, service boundaries, data flow, tech stack
-- **product/** — features, user flows, business logic
-- **standards/** — coding patterns, naming conventions, error handling
-- **services/** — individual services, APIs, ownership, responsibilities
-- **infrastructure/** — hosting, CI/CD, Docker, networking, deployment
-- **decisions/** — key decisions and their rationale
-- **cortex/** — runbooks, playbooks, dev workflows, onboarding
-- **wisdom/** — domain expertise, learnings, things figured out
+Read brain.md to see which lobes exist and what each covers. Then read the
+map.md of relevant lobes to understand their contents before adding neurons.
 
-If the right lobe doesn't exist, create the directory (`mkdir -p`) but do NOT
-create map.md — remind the user to run `kluris dream` to generate it.
+Place each piece of knowledge in the lobe that best matches its topic.
+If no existing lobe fits, create a new directory (`mkdir -p`) but do NOT
+create map.md -- remind the user to run `kluris dream` to generate it.
 
 ## Step 4: Write neurons
 
