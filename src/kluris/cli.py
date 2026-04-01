@@ -145,6 +145,14 @@ def create(name: str, base_path: str | None, brain_type: str,
             "Use lowercase letters, numbers, and hyphens only."
         )
 
+    # Guard: reject if brain name already registered
+    existing_config = read_global_config()
+    if name in existing_config.brains:
+        raise click.ClickException(
+            f"A brain named '{name}' is already registered at "
+            f"{existing_config.brains[name].path}. Choose a different name."
+        )
+
     if base_path:
         base = Path(base_path).resolve()
         if not base.is_dir():
@@ -159,6 +167,18 @@ def create(name: str, base_path: str | None, brain_type: str,
         brain_path = base / name
     else:
         brain_path = (Path.cwd() / name).resolve()
+
+    # Guard: reject if target is inside an existing brain
+    for _, entry in existing_config.brains.items():
+        existing_brain = Path(entry.path).resolve()
+        try:
+            brain_path.resolve().relative_to(existing_brain)
+            raise click.ClickException(
+                f"Target path {brain_path} is inside existing brain '{entry.path}'. "
+                "Create the brain outside of other brains."
+            )
+        except ValueError:
+            pass  # Not inside this brain, good
 
     if brain_path.exists() and brain_path.is_dir() and any(brain_path.iterdir()):
         if (brain_path / "kluris.yml").exists():
