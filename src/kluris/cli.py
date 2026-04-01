@@ -126,10 +126,14 @@ def cli():
               help="Directory to create the brain in (default: current dir)")
 @click.option("--type", "brain_type", default="team",
               type=click.Choice(list(BRAIN_TYPES.keys())), help="Brain type: team, personal, product, research, blank")
+@click.option("--remote", help="Git remote URL to set as origin")
+@click.option("--branch", "branch_name", default="main", help="Default git branch (default: main)")
+@click.option("--no-git", "no_git", is_flag=True, help="Skip git init (for embedding in existing repos)")
 @click.option("--from-config", "from_config", type=click.Path(exists=True),
               help="Custom YAML config file for structure")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def create(name: str, base_path: str | None, brain_type: str,
+           remote: str | None, branch_name: str, no_git: bool,
            from_config: str | None, as_json: bool):
     """Create a new brain.
 
@@ -139,6 +143,8 @@ def create(name: str, base_path: str | None, brain_type: str,
       kluris create my-team-brain
       kluris create my-brain --type personal
       kluris create research-notes --type research --path ~/brains
+      kluris create team-brain --remote git@github.com:team/brain.git
+      kluris create embedded-brain --no-git
     """
     if not validate_brain_name(name):
         raise click.ClickException(
@@ -198,9 +204,16 @@ def create(name: str, base_path: str | None, brain_type: str,
 
     scaffold_brain(brain_path, name, f"{name} knowledge base", brain_type, custom_config)
 
-    git_init(brain_path)
-    git_add(brain_path)
-    git_commit(brain_path, f"brain: initialize {name}")
+    if not no_git:
+        git_init(brain_path)
+        if branch_name != "main":
+            from kluris.core.git import _run
+            _run(["git", "checkout", "-b", branch_name], cwd=brain_path)
+        git_add(brain_path)
+        git_commit(brain_path, f"brain: initialize {name}")
+        if remote:
+            from kluris.core.git import _run
+            _run(["git", "remote", "add", "origin", remote], cwd=brain_path)
 
     config = read_global_config()
     entry = BrainEntry(path=str(brain_path), description=f"{name} knowledge base", type=brain_type)
@@ -719,19 +732,19 @@ def doctor(as_json: bool):
 def help_cmd(command: str | None, as_json: bool):
     """Show help for kluris commands."""
     commands_info = [
-        ("create", "Create a new brain"),
+        ("create", "Create a new brain (--type, --remote, --no-git)"),
         ("clone", "Clone a brain from a git remote"),
         ("list", "List registered brains"),
-        ("status", "Show brain status"),
-        ("recall", "Search brain content"),
-        ("neuron", "Create a new neuron"),
-        ("lobe", "Create a new lobe"),
-        ("dream", "Brain maintenance — validate and regenerate"),
-        ("push", "Commit and push brain changes"),
-        ("mri", "Generate interactive brain visualization"),
-        ("install", "Install slash commands for AI agents"),
-        ("remove", "Unregister a brain"),
-        ("doctor", "Check prerequisites and environment"),
+        ("status", "Show brain tree, recent changes, and neuron counts"),
+        ("recall", "Search brain and show what it knows (read-only)"),
+        ("neuron", "Create a new neuron (--template for structured formats)"),
+        ("lobe", "Create a new lobe (knowledge region)"),
+        ("dream", "Regenerate maps and neuron index, validate links"),
+        ("push", "Commit and push brain changes to git"),
+        ("mri", "Generate interactive HTML brain visualization"),
+        ("install", "Install slash commands for all AI agents"),
+        ("remove", "Unregister a brain (keeps files on disk)"),
+        ("doctor", "Check prerequisites (git, Python, config dir)"),
         ("help", "Show this help"),
     ]
 

@@ -121,21 +121,24 @@ kluris create product-brain --type product
 
 | Command | What it does |
 |---------|-------------|
-| `/kluris <anything>` | **Main command.** Natural language. |
-| `/kluris.think <task>` | Load brain context, work as team expert. |
-| `/kluris.remember [topic]` | Extract knowledge from session. |
-| `/kluris.learn [focus]` | Deep-scan project, populate brain. |
-| `/kluris.recall <topic>` | Search the brain. |
-| `/kluris.neuron <topic>` | Create a knowledge file. |
-| `/kluris.lobe <name>` | Create a knowledge region. |
-| `/kluris.push [msg]` | Commit and push to git. |
-| `/kluris.dream [focus]` | AI-powered brain maintenance. |
+| `/kluris <anything>` | **Main command.** Read, write, or search the brain. Natural language. |
+| `/kluris.think <task>` | Load brain knowledge, then work on the task as the team's expert. |
+| `/kluris.recall <topic>` | Search the brain and summarize what it knows (read-only). |
+| `/kluris.learn [focus]` | Deep-scan the current project and populate the brain. |
+| `/kluris.remember [topic]` | Extract knowledge from the current session into the brain. |
+| `/kluris.neuron <topic>` | Create a new knowledge file (supports --template). |
+| `/kluris.lobe <name>` | Create a new knowledge region (folder). |
+| `/kluris.push [msg]` | Commit and push brain changes to git. |
+| `/kluris.dream [focus]` | AI-powered brain analysis. Run `kluris dream` CLI for mechanical fixes. |
+
+**think vs recall:** `/kluris.think` reads the brain then works on your task as an expert.
+`/kluris.recall` just searches and reports what the brain knows -- it doesn't do any work.
 
 ## CLI commands
 
 | Command | Flags | What it does |
 |---------|-------|-------------|
-| `kluris create <name>` | `--path`, `--type`, `--from-config`, `--json` | Create a new brain |
+| `kluris create <name>` | `--path`, `--type`, `--remote`, `--branch`, `--no-git`, `--json` | Create a new brain |
 | `kluris clone <url> [path]` | `--json` | Clone an existing brain |
 | `kluris list` | `--json` | List all registered brains |
 | `kluris status` | `--brain`, `--json` | Brain tree and recent changes |

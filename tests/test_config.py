@@ -25,7 +25,7 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "0.1.7"
+    assert kluris.__version__ == "0.1.8"
 
 
 def test_global_config_defaults():

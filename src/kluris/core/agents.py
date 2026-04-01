@@ -109,7 +109,7 @@ to commit and push. Do NOT run git commands unless explicitly asked.
 """,
     },
     "kluris.think": {
-        "description": "You ARE the team's expert — load the brain, then work on the task",
+        "description": "Load brain knowledge, then work on the task as the team's expert",
         "allowed_tools": "Read, Write, Bash(cd:*), Bash(git:*), Bash(grep:*), Bash(find:*), Glob, Grep",
         "body": """\
 Task: {args}
@@ -264,7 +264,7 @@ When adding `related:` links, add the reverse link too (bidirectional).
 """,
     },
     "kluris.recall": {
-        "description": "Search the Kluris brain for a topic — load relevant context before working",
+        "description": "Search the brain and summarize what it knows about a topic (read-only)",
         "allowed_tools": "Read, Bash(grep:*), Bash(find:*), Bash(cd:*), Glob, Grep",
         "body": """\
 Search the brain for: {args}
@@ -422,6 +422,20 @@ Ask: "Want me to fix the structural issues?"
 **Important:** Do NOT auto-fix without asking. Present the report, let the
 user decide. If they approve, make fixes but do NOT commit — remind them
 to run `/kluris.push`.
+
+### Tip: Run the CLI for mechanical fixes
+
+For regenerating maps and the neuron index in brain.md, tell the user to run
+the CLI command in their terminal:
+
+```bash
+kluris dream
+```
+
+The CLI `kluris dream` mechanically regenerates all map.md files and the
+neuron index in brain.md. This slash command (`/kluris.dream`) adds AI-powered
+analysis on top — synapse suggestions, staleness checks, content quality.
+Use both: CLI for mechanics, slash command for intelligence.
 """,
     },
 }
