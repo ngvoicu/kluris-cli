@@ -160,7 +160,6 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
     neurons = _get_neurons(lobe_path)
     sub_lobes = _get_sub_lobes(lobe_path)
     siblings = _get_siblings(brain_path, lobe_path)
-    recent = _get_recent_changes(brain_path, lobe_path)
 
     # Determine parent
     if lobe_path.parent == brain_path:
@@ -183,22 +182,13 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
         f"[{s['name']}]({s['path']})" for s in siblings
     )
 
-    # Build recent changes
-    changes_lines = []
-    for c in recent:
-        changes_lines.append(f"- {c['date']}: {c['action']}")
-    changes = "\n".join(changes_lines) if changes_lines else "(none)"
-
     content = (
         f"# {lobe_name.replace('-', ' ').title()}\n\n"
         f"up [{parent_name}]({parent_path})\n"
     )
     if sibling_links:
         content += f"sideways {sibling_links}\n"
-    content += (
-        f"\n## Contents\n\n{contents}\n\n"
-        f"## Recent Changes\n\n{changes}\n"
-    )
+    content += f"\n## Contents\n\n{contents}\n"
 
     metadata = {
         "auto_generated": True,

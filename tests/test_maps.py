@@ -106,11 +106,12 @@ def test_map_nested_lobe(tmp_path):
     assert meta.get("parent") == "../map.md"
 
 
-def test_map_recent_changes(tmp_path):
+def test_map_no_recent_changes(tmp_path):
+    """Recent Changes section was removed -- maps are cleaner now."""
     brain = _make_brain_with_git(tmp_path)
     generate_map_md(brain, brain / "architecture")
     content = (brain / "architecture" / "map.md").read_text()
-    assert "Recent Changes" in content
+    assert "Recent Changes" not in content
 
 
 def test_map_empty_lobe(tmp_path):

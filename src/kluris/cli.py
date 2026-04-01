@@ -246,28 +246,51 @@ def create(name: str, base_path: str | None, brain_type: str,
 @cli.command("clone")
 @click.argument("url")
 @click.argument("path", required=False)
+@click.option("--branch", "branch_name", help="Branch to checkout (default: repo default)")
+@click.option("--type", "brain_type", default="team",
+              type=click.Choice(list(BRAIN_TYPES.keys())), help="Brain type for local config")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def clone_cmd(url: str, path: str | None, as_json: bool):
-    """Clone an existing brain from a git remote."""
+def clone_cmd(url: str, path: str | None, branch_name: str | None,
+              brain_type: str, as_json: bool):
+    """Clone an existing brain from a git remote.
+
+    \b
+    Examples:
+      kluris clone git@github.com:team/brain.git
+      kluris clone git@github.com:team/brain.git ~/my-copy --branch develop
+    """
     dest = Path(path) if path else Path(url.rstrip("/").split("/")[-1].replace(".git", ""))
     dest = dest.resolve()
 
     git_clone(url, dest)
 
-    if not (dest / "kluris.yml").exists():
+    if branch_name:
+        from kluris.core.git import _run
+        _run(["git", "checkout", branch_name], cwd=dest)
+
+    # Verify this is a brain (has brain.md -- kluris.yml is local-only now)
+    if not (dest / "brain.md").exists():
         raise click.ClickException(
-            "Cloned repository does not contain kluris.yml. This is not a Kluris brain."
+            "Cloned repository does not contain brain.md. This is not a Kluris brain."
         )
+
+    name = dest.name
+    if not validate_brain_name(name):
+        # Fall back to a sanitized version
+        name = dest.name.lower().replace(" ", "-")
+
+    # Create local kluris.yml (not in repo -- it's gitignored)
+    if not (dest / "kluris.yml").exists():
+        from kluris.core.config import BrainConfig, GitConfig, write_brain_config
+        local_config = BrainConfig(
+            name=name,
+            description=f"{name} knowledge base",
+            type=brain_type,
+            git=GitConfig(default_branch=branch_name or "main"),
+        )
+        write_brain_config(local_config, dest)
 
     brain_config = read_brain_config(dest)
-    name = brain_config.name
-
-    if not validate_brain_name(name):
-        raise click.ClickException(
-            f"Brain name '{name}' is invalid. "
-            "Use lowercase letters, numbers, and hyphens only."
-        )
-
     entry = BrainEntry(path=str(dest), repo=url, description=brain_config.description, type=brain_config.type)
     register_brain(name, entry)
     _do_install()

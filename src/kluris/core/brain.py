@@ -90,6 +90,9 @@ GITIGNORE_CONTENT = """\
 credentials.*
 secrets.*
 
+# Local config (not shared — each user has their own agent/git settings)
+kluris.yml
+
 # Generated
 brain-mri.html
 
