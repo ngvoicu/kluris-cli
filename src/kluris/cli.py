@@ -731,6 +731,7 @@ def install_commands(as_json: bool):
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def uninstall_commands(as_json: bool):
     """Remove all kluris slash commands from AI agent directories."""
+    import os
     import shutil
     home = Path(os.environ.get("HOME", "")) if os.environ.get("HOME") else Path.home()
     removed = 0

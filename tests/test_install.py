@@ -112,3 +112,28 @@ def test_install_json(tmp_path, monkeypatch):
     assert data["ok"] is True
     assert data["agents"] == 8
     assert data["total_files"] > 0
+
+
+def test_uninstall_commands(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    # Verify commands exist
+    assert (tmp_path / ".claude" / "commands" / "kluris.md").exists()
+    # Uninstall
+    result = runner.invoke(cli, ["uninstall-commands"])
+    assert result.exit_code == 0
+    # Verify commands gone
+    assert not (tmp_path / ".claude" / "commands" / "kluris.md").exists()
+
+
+def test_uninstall_commands_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    result = runner.invoke(cli, ["uninstall-commands", "--json"])
+    data = json.loads(result.output)
+    assert data["ok"] is True
+    assert data["removed"] > 0
