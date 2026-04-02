@@ -140,61 +140,69 @@ discussed, or any knowledge valuable in future sessions.
         "description": "Scan a project or learn about a topic and store it in the brain",
         "allowed_tools": "Read, Write, Bash(cd:*), Bash(git:*), Bash(grep:*), Bash(find:*), Glob, Grep",
         "body": """\
-Analyze this project and populate the brain with what you learn.
+{args}
 
-Config: Read `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
-Select the relevant brain. Use `default_brain` if set.
+Config: `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
 
-Focus on: {args}
-(If no focus specified, do a general scan.)
+## Scope
 
-## Why this matters
+By default, document this project under `services/<project-name>/` in the brain.
+Only write to other lobes (architecture/, decisions/, etc.) if the user
+explicitly asks for it.
 
-This is the fastest way to turn a codebase into documented knowledge. After
-running this command, every AI agent on your team can answer questions about
-this project using the brain — architecture, conventions, deployment, APIs,
-everything.
+If the user specifies a focus (e.g., "focus on APIs", "learn about auth"),
+stay within that scope.
 
-## Step 1: Understand the brain
+## Step 1: Check what exists
 
-Read `<brain_path>/brain.md` to see what's
-already documented. Don't duplicate existing knowledge.
+Read brain.md for lobes. Then check if `services/<project-name>/` already has
+neurons -- read its map.md. **Never overwrite existing neurons.** If a neuron
+already exists, skip it.
 
 ## Step 2: Analyze the project
 
 Examine systematically:
 - README, docs/, documentation files
-- Project structure (package.json, pyproject.toml, pom.xml, etc.)
-- Key config files (Docker, CI/CD, infrastructure)
-- Source code architecture (entry points, modules, routing)
-- API contracts (OpenAPI, GraphQL, protobuf)
+- Project structure and tech stack
+- API routes and endpoints (extract as structured neurons)
 - Database schemas and migrations
-- Environment configuration patterns
+- Key config files (Docker, CI/CD, environment)
 - Dependencies and their purposes
 
-## Step 3: Classify into lobes
+## Step 3: Present a plan BEFORE writing
 
-Read brain.md to see which lobes exist and what each covers. Then read the
-map.md of relevant lobes to understand their contents before adding neurons.
+Tell the user what you want to document and where:
 
-Place each piece of knowledge in the lobe that best matches its topic.
-If no existing lobe fits, create a new directory (`mkdir -p`) but do NOT
-create map.md -- remind the user to run `kluris dream` to generate it.
+> I found the following in btb-backend-core:
+> - 12 API endpoints (POST /auth/login, GET /users/me, ...)
+> - Keycloak auth integration
+> - PostgreSQL with Flyway migrations
+> - 3 key architectural decisions
+>
+> I'll create these neurons in services/btb-backend-core/:
+> - overview.md -- tech stack, purpose, ownership
+> - endpoints.md -- all API routes with request/response
+> - data-model.md -- database schema summary
+> - auth-flow.md -- Keycloak integration details
+>
+> Want me to proceed? Should I also document decisions in decisions/?
 
-## Step 4: Write neurons
+**Wait for approval before writing anything.**
 
-Create or update files with proper frontmatter. Focus on decisions and
-rationale.
-Good: "We use Keycloak because it supports multi-tenant OIDC out of the box"
-Bad: "The project uses Keycloak"
+## Step 4: Write neurons (after approval)
 
-When adding `related:` links, add the reverse link too (bidirectional).
+- Write to `services/<project-name>/` unless told otherwise
+- Focus on decisions and rationale, not just descriptions
+- For APIs: extract endpoint details (method, path, request, response, auth)
+- Use proper frontmatter (parent, related, tags, created, updated)
+- Bidirectional synapses -- add reverse links
+- Do NOT edit map.md or brain.md
 
-## Step 5: Do NOT edit map.md or brain.md
+## Step 5: Report and next steps
 
-## Step 6: Report what you documented, organized by lobe
-
-## Step 7: Remind the user to run `/kluris.push` when ready to commit
+Report what you created. Remind user to run:
+- `kluris dream` to regenerate maps
+- `/kluris.push` to commit
 """,
     },
     "kluris.recall": {
