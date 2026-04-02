@@ -165,22 +165,39 @@ Do NOT write anything to the project.
 
 ## Step 3: Present a plan BEFORE writing
 
-Tell the user what you found and where IN THE BRAIN you'll write:
-
-> Found 12 API endpoints in this project.
-> I'll create these neurons in <brain_path>/services/btb-backend-core/:
-> - endpoints.md
-> - auth-flow.md
->
-> Proceed?
-
-**Wait for approval.**
+Tell the user what you found and where IN THE BRAIN you'll write.
+**Wait for approval before writing anything.**
 
 ## Step 4: Write to the BRAIN (after approval)
 
-Write neurons to `<brain_path>/services/<project-name>/`, NOT to the
-current project directory. Include frontmatter (parent, related, tags,
-created, updated). Do NOT edit map.md or brain.md in the brain.
+Write to `<brain_path>/services/<project-name>/`, NOT to the current project.
+
+### If user asked for OpenAPI docs
+
+Generate a proper `openapi.yml` (OpenAPI 3.1) at:
+`<brain_path>/services/<project-name>/openapi.yml`
+
+Scan the project for all API routes, controllers, handlers. For each endpoint:
+- method, path, operationId
+- request parameters and body schema
+- response codes and schemas
+- auth/security requirements
+
+The openapi.yml is NOT a neuron (no frontmatter). It's a standalone YAML file
+that tools can consume directly. Also create an `api-overview.md` neuron that
+summarizes the API and links to the openapi.yml.
+
+### If user asked for endpoints (without OpenAPI)
+
+Create individual neurons per endpoint or a single `endpoints.md` with all
+routes documented in markdown with method, path, request, response, auth.
+
+### For all other topics
+
+Create neurons with frontmatter (parent, related, tags, created, updated).
+Focus on decisions and rationale.
+
+Do NOT edit map.md or brain.md in the brain.
 
 ## Step 5: Remind user to run `kluris dream` and `/kluris.push`
 """,
