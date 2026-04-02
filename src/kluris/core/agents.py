@@ -120,10 +120,11 @@ COMMANDS = {
 def render_skill(brain_info: str = "") -> str:
     """Render the kluris SKILL.md content."""
     body = SKILL_BODY.replace("{brain_info}", brain_info)
+    desc = SKILL_DESCRIPTION.replace('"', '\\"')
     return (
         "---\n"
         f"name: kluris\n"
-        f"description: {SKILL_DESCRIPTION}\n"
+        f'description: "{desc}"\n'
         "---\n\n"
         f"{body}\n"
     )
@@ -132,9 +133,10 @@ def render_skill(brain_info: str = "") -> str:
 def _render_workflow(brain_info: str = "") -> str:
     """Render a Windsurf workflow .md file (for /kluris manual invocation)."""
     body = SKILL_BODY.replace("{brain_info}", brain_info)
+    desc = SKILL_DESCRIPTION[:200].replace('"', '\\"')
     return (
         f"---\n"
-        f"description: {SKILL_DESCRIPTION[:200]}\n"
+        f'description: "{desc}"\n'
         f"---\n\n"
         f"{body}\n"
     )
