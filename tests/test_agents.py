@@ -80,11 +80,12 @@ def test_all_9_commands(tmp_path):
     assert len(files) == 8
 
 
-def test_all_reference_config(tmp_path):
-    files = render_commands("claude", tmp_path)
+def test_all_reference_brain(tmp_path):
+    brain_info = "## Your brains\n\n- **test**: `/tmp/test-brain`"
+    files = render_commands("claude", tmp_path, brain_info=brain_info)
     for f in files:
         content = f.read_text()
-        assert "config" in content.lower() or "KLURIS_CONFIG" in content
+        assert "test-brain" in content or "brain" in content.lower()
 
 
 def test_context_budget(tmp_path):

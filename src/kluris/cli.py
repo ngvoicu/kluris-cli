@@ -828,6 +828,18 @@ def _do_install(as_json: bool = False):
     config = read_global_config()
     all_agents: set[str] = set()
 
+    # Build brain_info with actual resolved paths
+    from kluris.core.config import get_config_path
+    config_path = get_config_path()
+    brain_lines = [f"## Your brains (resolved paths)\n\nConfig: `{config_path}`\n"]
+    default = config.default_brain
+    for bname, entry in config.brains.items():
+        marker = " (default)" if bname == default else ""
+        brain_lines.append(f"- **{bname}**{marker}: `{entry.path}`")
+    if not config.brains:
+        brain_lines.append("No brains registered. Tell user to run `kluris create`.")
+    brain_info = "\n".join(brain_lines)
+
     for name, entry in config.brains.items():
         brain_path = Path(entry.path)
         if (brain_path / "kluris.yml").exists():
@@ -862,7 +874,7 @@ def _do_install(as_json: bool = False):
                     pass
 
         try:
-            files = render_commands(agent_name, base)
+            files = render_commands(agent_name, base, brain_info=brain_info)
         except OSError:
             continue
         total_files += len(files)

@@ -24,12 +24,10 @@ COMMANDS = {
         "body": """\
 {args}
 
-## IMPORTANT: The brain is a SEPARATE directory
+{brain_info}
 
-1. Read `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var) to find the brain path
-2. The brain is at that path (e.g., `/Users/you/btb-brain`), NOT the current directory
-3. ANALYZE the current project, WRITE to the brain directory
-4. Never create brain.md, map.md, or kluris.yml in the current project
+ANALYZE the current project, WRITE to the brain directory.
+Never create brain.md, map.md, or kluris.yml in the current project.
 
 If no config or no brains: tell user to run `pipx install kluris && kluris create`.
 
@@ -67,7 +65,7 @@ If no config or no brains: tell user to run `pipx install kluris && kluris creat
         "body": """\
 Task: {args}
 
-Config: `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
+{brain_info}
 
 ## Your role
 
@@ -142,12 +140,10 @@ discussed, or any knowledge valuable in future sessions.
         "body": """\
 {args}
 
-## IMPORTANT: Find the brain path first
+{brain_info}
 
-1. Read the config file at `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var)
-2. Find the brain path from the config (e.g., `/Users/you/btb-brain`)
-3. ALL writes go to the BRAIN directory, NOT the current project directory
-4. The current project is what you ANALYZE. The brain is where you WRITE.
+ALL writes go to the BRAIN directory, NOT the current project.
+The current project is what you ANALYZE. The brain is where you WRITE.
 
 ## What to learn
 
@@ -348,9 +344,10 @@ with JavaScript, which the agent cannot do inline.
 
 
 def _render_md(cmd_name: str, cmd: dict, args_placeholder: str,
-               copilot: bool = False) -> str:
+               copilot: bool = False, brain_info: str = "") -> str:
     """Render a markdown slash command file."""
     body = cmd["body"].replace("{args}", args_placeholder)
+    body = body.replace("{brain_info}", brain_info)
     allowed = cmd.get("allowed_tools", "")
     fm = f"---\ndescription: {cmd['description']}\n"
     if copilot:
@@ -361,16 +358,18 @@ def _render_md(cmd_name: str, cmd: dict, args_placeholder: str,
     return fm + body + "\n"
 
 
-def _render_toml(cmd_name: str, cmd: dict, args_placeholder: str) -> str:
+def _render_toml(cmd_name: str, cmd: dict, args_placeholder: str, brain_info: str = "") -> str:
     """Render a TOML slash command file."""
     body = cmd["body"].replace("{args}", args_placeholder)
+    body = body.replace("{brain_info}", brain_info)
     body = body.replace('"""', '\\"\\"\\"')
     return f'description = "{cmd["description"]}"\n\nprompt = """\n{body}\n"""\n'
 
 
-def _render_skill_md(cmd_name: str, cmd: dict, args_placeholder: str) -> str:
+def _render_skill_md(cmd_name: str, cmd: dict, args_placeholder: str, brain_info: str = "") -> str:
     """Render a single SKILL.md for one command (spec-kit pattern)."""
     body = cmd["body"].replace("{args}", args_placeholder)
+    body = body.replace("{brain_info}", brain_info)
     # Convert kluris.think -> kluris-think for directory name
     skill_name = cmd_name.replace(".", "-")
     frontmatter = (
@@ -382,7 +381,7 @@ def _render_skill_md(cmd_name: str, cmd: dict, args_placeholder: str) -> str:
     return frontmatter + f"# {cmd['description']}\n\n{body}\n"
 
 
-def render_commands(agent_name: str, output_dir: Path) -> list[Path]:
+def render_commands(agent_name: str, output_dir: Path, brain_info: str = "") -> list[Path]:
     """Render all slash command files for an agent into output_dir."""
     reg = AGENT_REGISTRY[agent_name]
     fmt = reg["format"]
@@ -391,30 +390,29 @@ def render_commands(agent_name: str, output_dir: Path) -> list[Path]:
     files = []
 
     if fmt == "skill.md":
-        # Codex: one SKILL.md per command in separate directories (spec-kit pattern)
         for name, cmd in COMMANDS.items():
             skill_name = name.replace(".", "-")
             skill_dir = output_dir / skill_name
             skill_dir.mkdir(parents=True, exist_ok=True)
-            content = _render_skill_md(name, cmd, args)
+            content = _render_skill_md(name, cmd, args, brain_info)
             path = skill_dir / "SKILL.md"
             path.write_text(content, encoding="utf-8")
             files.append(path)
     elif fmt == "toml":
         for name, cmd in COMMANDS.items():
-            content = _render_toml(name, cmd, args)
+            content = _render_toml(name, cmd, args, brain_info)
             path = output_dir / f"{name}.toml"
             path.write_text(content, encoding="utf-8")
             files.append(path)
     elif fmt == "agent.md":
         for name, cmd in COMMANDS.items():
-            content = _render_md(name, cmd, args, copilot=True)
+            content = _render_md(name, cmd, args, copilot=True, brain_info=brain_info)
             path = output_dir / f"{name}.agent.md"
             path.write_text(content, encoding="utf-8")
             files.append(path)
     else:
         for name, cmd in COMMANDS.items():
-            content = _render_md(name, cmd, args)
+            content = _render_md(name, cmd, args, brain_info=brain_info)
             path = output_dir / f"{name}.md"
             path.write_text(content, encoding="utf-8")
             files.append(path)
