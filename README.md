@@ -185,32 +185,39 @@ Empty -- build your own structure from scratch.
 
 1. `kluris create` scaffolds a brain (interactive wizard or flags)
 2. `kluris install-commands` generates slash commands for 8 AI agents
-3. Agents use `/kluris.learn` to scan projects and populate the brain
-4. Team members use `/kluris.think <task>` to load brain context before working
-5. `kluris dream` validates links, regenerates maps and neuron index
+3. Use `/kluris.learn <focus>` to document specific aspects of each project
+4. Use `/kluris.think <task>` to load brain context before working
+5. `kluris dream` regenerates maps and validates links
 6. `kluris mri` generates an interactive HTML visualization
 
 ## Slash commands (used inside AI agents)
 
-All slash commands accept free text. Examples:
-- `/kluris.learn focus on authentication and API design`
-- `/kluris.think implement the new auth flow`
-- `/kluris.remember the decision about using raw SQL instead of ORM`
+All slash commands accept free text:
+
+```
+/kluris.learn API endpoints
+/kluris.learn database schema
+/kluris.remember we chose raw SQL over JPA for performance
+/kluris.think implement the new auth flow
+/kluris.recall what do we know about deployment
+```
 
 | Command | What it does |
 |---------|-------------|
-| `/kluris <anything>` | **Main command.** Read, write, or search the brain. Natural language. |
-| `/kluris.think <task>` | Load brain knowledge, then work on the task as the team's expert. |
-| `/kluris.recall <topic>` | Search the brain and summarize what it knows (read-only). |
-| `/kluris.learn [focus]` | Scan a project or learn about a topic and store it in the brain. |
-| `/kluris.remember [topic]` | Extract and store knowledge -- from the session or a specific topic. |
+| `/kluris <anything>` | **Main command.** Read, write, or search the brain. |
+| `/kluris.think <task>` | Load brain knowledge, work on the task as the team's expert. |
+| `/kluris.recall <topic>` | Search the brain and report what it knows (read-only). |
+| `/kluris.learn <focus>` | Learn a specific aspect of the project (APIs, schema, auth...). Asks before writing. |
+| `/kluris.remember <what>` | Store a specific piece of knowledge. Asks before writing. |
 | `/kluris.push [msg]` | Commit and push brain changes to git. |
-| `/kluris.dream [focus]` | AI-powered brain analysis. Run `kluris dream` CLI for mechanical fixes. |
-| `/kluris.mri` | Generate an interactive brain visualization (runs CLI). |
+| `/kluris.dream [focus]` | AI brain analysis. Run `kluris dream` CLI for mechanical fixes. |
+| `/kluris.mri` | Generate interactive brain visualization (runs CLI). |
 
-**think vs recall:** `/kluris.think` reads the brain then works on your task
-as an expert. `/kluris.recall` just searches and reports what the brain knows
--- it doesn't do any work.
+**learn vs remember:** `/kluris.learn` analyzes project code and extracts knowledge.
+`/kluris.remember` stores something you tell it directly. Both ask before writing.
+
+**think vs recall:** `/kluris.think` reads the brain then works on your task.
+`/kluris.recall` just searches and reports -- doesn't do any work.
 
 ## CLI commands
 

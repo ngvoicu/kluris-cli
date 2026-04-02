@@ -90,7 +90,7 @@ If this task produces new knowledge, suggest `/kluris.remember`.
 """,
     },
     "kluris.remember": {
-        "description": "Extract and store knowledge in the brain — from session or a specific topic",
+        "description": "Store a specific piece of knowledge in the brain",
         "allowed_tools": "Read, Write, Bash(cd:*), Bash(git:*), Bash(grep:*), Bash(find:*), Glob, Grep",
         "body": """\
 {args}

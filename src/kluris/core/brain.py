@@ -265,20 +265,20 @@ kluris clone <this-repo-url>
 
 ### Start populating the brain
 
-Run `/kluris.learn` in any project. The AI agent will scan the codebase and
+Run `/kluris.learn API endpoints` or `/kluris.learn database schema` in any project. The agent will analyze the specific aspect and
 document architecture, conventions, APIs, and decisions into this brain.
 
 ### Slash commands (inside AI agents)
 
-All commands accept free text: `/kluris.learn focus on auth`, `/kluris.remember the JWT decision`.
+All commands accept free text: `/kluris.learn API endpoints`, `/kluris.remember we chose raw SQL for performance`.
 
 | Command | What it does |
 |---------|-------------|
 | `/kluris <anything>` | **Main command.** Read, write, or search the brain. |
 | `/kluris.think <task>` | Load brain knowledge, then work on the task as the team's expert. |
 | `/kluris.recall <topic>` | Search and summarize what the brain knows (read-only). |
-| `/kluris.learn [focus]` | Scan a project or learn about a topic and store it in the brain. |
-| `/kluris.remember [topic]` | Extract and store knowledge -- from session or a specific topic. |
+| `/kluris.learn [focus]` | Learn a specific aspect of the project (APIs, schema, auth...). Asks before writing. |
+| `/kluris.remember [topic]` | Store a specific piece of knowledge. Asks before writing. |
 | `/kluris.push [msg]` | Commit and push to git. |
 | `/kluris.dream [focus]` | AI brain analysis. Run `kluris dream` CLI for mechanical fixes. |
 | `/kluris.mri` | Generate interactive brain visualization (runs CLI). |
