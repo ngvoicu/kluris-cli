@@ -299,7 +299,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         custom_config = yaml.safe_load(Path(from_config).read_text(encoding="utf-8"))
 
     description = desc or f"{name} knowledge base"
-    scaffold_brain(brain_path, name, description, brain_type, custom_config)
+    scaffold_brain(brain_path, name, description, brain_type, custom_config, branch=branch_name or "main")
 
     if not no_git:
         git_init(brain_path)

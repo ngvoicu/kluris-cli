@@ -180,6 +180,7 @@ def scaffold_brain(
     description: str,
     brain_type: str,
     custom_config: dict | None = None,
+    branch: str = "main",
 ) -> None:
     """Create a brain directory with all scaffolded files."""
     brain_path.mkdir(parents=True, exist_ok=True)
@@ -203,7 +204,7 @@ def scaffold_brain(
     config = BrainConfig(
         name=name,
         description=description,
-        git=GitConfig(),
+        git=GitConfig(default_branch=branch),
         agents=AgentsConfig(),
     )
     config_data = config.model_dump(exclude_none=True)
