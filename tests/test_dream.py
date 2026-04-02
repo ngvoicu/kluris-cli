@@ -65,6 +65,20 @@ def test_dream_updates_map_with_neuron(tmp_path, monkeypatch):
     assert "auth" in map_content.lower()
 
 
+def test_dream_preserves_lobe_descriptions(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+
+    runner.invoke(cli, ["dream"])
+    runner.invoke(cli, ["dream"])
+
+    brain_md = (tmp_path / "my-brain" / "brain.md").read_text(encoding="utf-8")
+    assert "- [architecture/](./architecture/map.md) — System design, technical patterns" in brain_md
+    assert "— auto_generated: true" not in brain_md
+
+
 def test_dream_reports_broken_links(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -105,3 +119,16 @@ def test_dream_exit_1_issues(tmp_path, monkeypatch):
     )
     result = runner.invoke(cli, ["dream"])
     assert result.exit_code == 1
+
+
+def test_dream_generates_nested_maps(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
+
+    result = runner.invoke(cli, ["dream"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / "my-brain" / "services" / "api" / "map.md").exists()

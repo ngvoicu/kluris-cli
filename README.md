@@ -43,9 +43,9 @@ kluris create my-brain --type personal --path ~/brains
 kluris create my-brain --remote git@github.com:team/brain.git
 ```
 
-Then open any project and run `/kluris.learn` -- the AI agent will analyze
-your codebase and populate the brain with architecture, conventions, APIs,
-and decisions.
+Then open any project and run `/kluris.learn <focus>` -- the AI agent will
+analyze that part of the codebase, show you a plan, and ask before writing
+knowledge into the brain.
 
 ### Example workflow
 

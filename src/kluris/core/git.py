@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,32 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         args, cwd=cwd, capture_output=True, text=True, check=True,
     )
+
+
+def _read_git_config(path: Path, key: str) -> str | None:
+    """Return a git config value, or None when it is unset."""
+    result = subprocess.run(
+        ["git", "config", "--get", key],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else None
+
+
+def _commit_env(path: Path) -> dict[str, str]:
+    """Provide transient identity only when git config does not already define one."""
+    env = os.environ.copy()
+    if _read_git_config(path, "user.name") and _read_git_config(path, "user.email"):
+        return env
+
+    env.setdefault("GIT_AUTHOR_NAME", "kluris")
+    env.setdefault("GIT_AUTHOR_EMAIL", "kluris@local")
+    env.setdefault("GIT_COMMITTER_NAME", env["GIT_AUTHOR_NAME"])
+    env.setdefault("GIT_COMMITTER_EMAIL", env["GIT_AUTHOR_EMAIL"])
+    return env
 
 
 def is_git_repo(path: Path) -> bool:
@@ -27,9 +54,6 @@ def git_init(path: Path) -> None:
     _run(["git", "init"], cwd=path)
     # Set default branch to main
     _run(["git", "checkout", "-b", "main"], cwd=path)
-    # Ensure git has user config for commits (needed in temp/CI environments)
-    _run(["git", "config", "user.email", "kluris@local"], cwd=path)
-    _run(["git", "config", "user.name", "kluris"], cwd=path)
 
 
 def git_add(path: Path, files: str = "-A") -> None:
@@ -39,7 +63,14 @@ def git_add(path: Path, files: str = "-A") -> None:
 
 def git_commit(path: Path, message: str) -> None:
     """Create a commit with the given message."""
-    _run(["git", "commit", "-m", message], cwd=path)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=_commit_env(path),
+    )
 
 
 def git_log(path: Path, limit: int = 10) -> list[dict]:

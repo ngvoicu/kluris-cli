@@ -51,12 +51,57 @@ from kluris.core.agents import AGENT_REGISTRY, COMMANDS, render_commands
 console = Console()
 
 
+def _read_brain_identity(brain_path: Path, fallback_name: str) -> tuple[str, str]:
+    """Infer the canonical brain name and description from brain.md."""
+    brain_md = brain_path / "brain.md"
+    default_description = f"{fallback_name} knowledge base"
+    if not brain_md.exists():
+        return fallback_name, default_description
+
+    try:
+        _, content = read_frontmatter(brain_md)
+    except Exception:
+        try:
+            content = brain_md.read_text(encoding="utf-8")
+        except OSError:
+            return fallback_name, default_description
+
+    title = ""
+    description = ""
+    title_seen = False
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("# ") and not title:
+            title = line[2:].strip()
+            title_seen = True
+            continue
+        if title_seen and not line.startswith("## "):
+            description = line
+            break
+
+    name = title if validate_brain_name(title) else fallback_name
+    return name, description or default_description
+
+
+def _brain_directories(brain_path: Path) -> list[Path]:
+    """Return all brain directories that should have map.md files."""
+    directories = [
+        path for path in brain_path.rglob("*")
+        if path.is_dir() and ".git" not in path.parts
+    ]
+    return sorted(
+        directories,
+        key=lambda path: (len(path.relative_to(brain_path).parts), str(path)),
+    )
+
+
 def _run_dream_on_brain(brain_path: Path) -> None:
     """Regenerate maps, brain.md, and index.md for a single brain."""
     try:
         brain_config = read_brain_config(brain_path)
-        lobes = [d for d in brain_path.iterdir() if d.is_dir() and d.name != ".git"]
-        for lobe in lobes:
+        for lobe in _brain_directories(brain_path):
             generate_map_md(brain_path, lobe)
         generate_brain_md(brain_path, brain_config.name, brain_config.description)
         generate_index_md(brain_path)
@@ -291,7 +336,9 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         console.print(f"  Path: {brain_path}")
         console.print(f"  Lobes: {lobe_count}")
         console.print()
-        console.print("[bold green]Run /kluris.learn in any project to start populating your brain.[/bold green]")
+        console.print(
+            "[bold green]Run /kluris.learn <focus> in any project to start populating your brain.[/bold green]"
+        )
 
 
 @cli.command("clone")
@@ -333,10 +380,19 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
             "Cloned repository does not contain brain.md. This is not a Kluris brain."
         )
 
-    name = dest.name
-    if not validate_brain_name(name):
-        # Fall back to a sanitized version
-        name = dest.name.lower().replace(" ", "-")
+    fallback_name = dest.name
+    if not validate_brain_name(fallback_name):
+        fallback_name = dest.name.lower().replace(" ", "-")
+    name, description = _read_brain_identity(dest, fallback_name)
+
+    existing_config = read_global_config()
+    if name in existing_config.brains:
+        existing_path = Path(existing_config.brains[name].path).resolve()
+        if existing_path != dest:
+            raise click.ClickException(
+                f"A brain named '{name}' is already registered at {existing_path}. "
+                "Use a different clone destination name only after removing or renaming the existing brain."
+            )
 
     # Create local kluris.yml (not in repo -- it's gitignored)
     inferred_type = infer_brain_type(dest)
@@ -344,7 +400,7 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
         from kluris.core.config import BrainConfig, GitConfig, write_brain_config
         local_config = BrainConfig(
             name=name,
-            description=f"{name} knowledge base",
+            description=description,
             git=GitConfig(default_branch=branch_name or "main"),
         )
         write_brain_config(local_config, dest)
@@ -353,7 +409,7 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
     entry = BrainEntry(
         path=str(dest),
         repo=url,
-        description=brain_config.description,
+        description=brain_config.description or description,
         type=inferred_type,
     )
     register_brain(name, entry)
@@ -563,6 +619,15 @@ def lobe_cmd(name: str, parent_dir: str | None, desc: str,
 
     lobe_path.mkdir(parents=True, exist_ok=True)
 
+    if desc:
+        from kluris.core.frontmatter import write_frontmatter
+        title = name.replace("-", " ").title()
+        write_frontmatter(
+            lobe_path / "map.md",
+            {"auto_generated": True, "description": desc},
+            f"# {title}\n\n{desc}\n",
+        )
+
     # Regenerate maps to include the new lobe
     _run_dream_on_brain(brain_path)
 
@@ -611,12 +676,8 @@ def dream(brain_name: str | None, as_json: bool):
                 pass
 
         # Regenerate maps
-        lobes = [d for d in brain_path.iterdir() if d.is_dir() and d.name != ".git"]
-        for lobe in lobes:
+        for lobe in _brain_directories(brain_path):
             generate_map_md(brain_path, lobe)
-            for sub in lobe.rglob("*"):
-                if sub.is_dir() and (sub / "map.md").exists():
-                    generate_map_md(brain_path, sub)
 
         generate_brain_md(brain_path, brain_config.name, brain_config.description)
         generate_index_md(brain_path)

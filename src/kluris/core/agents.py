@@ -7,7 +7,7 @@ from pathlib import Path
 AGENT_REGISTRY: dict[str, dict] = {
     "claude": {"dir": ".claude", "subdir": "commands", "format": "md", "args": "$ARGUMENTS"},
     "cursor": {"dir": ".cursor", "subdir": "commands", "format": "md", "args": "$ARGUMENTS"},
-    "windsurf": {"dir": ".windsurf", "subdir": "workflows", "format": "md", "args": "$ARGUMENTS"},
+    "windsurf": {"dir": ".codeium/windsurf", "subdir": "global_workflows", "format": "md", "args": "$ARGUMENTS"},
     "copilot": {"dir": ".copilot", "subdir": "agents", "format": "agent.md", "args": "$ARGUMENTS"},
     "codex": {"dir": ".codex", "subdir": "skills", "format": "skill.md", "args": "$ARGUMENTS"},
     "gemini": {"dir": ".gemini", "subdir": "commands", "format": "toml", "args": "{{args}}"},
@@ -109,7 +109,7 @@ discussed, or any knowledge valuable in future sessions.
 
 ## Process
 
-1. **Read brain.md to see root lobes, then read relevant map.md files
+1. **Read brain.md** to see root lobes, then read relevant map.md files
 2. **Read brain.md** to understand the lobe structure
 3. Analyze — either the specified topic or the session context
 4. Extract knowledge. Focus on:
@@ -203,7 +203,7 @@ Config: Read `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
 
 ## Steps
 
-1. **Read brain.md for lobes, then search relevant map.md files for matching neurons
+1. **Read brain.md** for lobes, then search relevant map.md files for matching neurons
 2. Search all brains: `grep -ri "{args}" <brain_path>/ --include="*.md" -l`
 3. Read the top matching neurons (max 10)
 4. Follow their `related:` synapses for additional context

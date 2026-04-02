@@ -62,6 +62,20 @@ def test_graph_inline_edges(tmp_path):
     assert len(inline_edges) >= 1
 
 
+def test_graph_ignores_invalid_frontmatter_links(tmp_path):
+    brain = _make_brain_with_neurons(tmp_path)
+    auth = brain / "arch" / "auth.md"
+    auth.write_text(
+        "---\nparent: ../../outside/map.md\nrelated:\n  - ../../outside/other.md\n"
+        "tags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n",
+        encoding="utf-8",
+    )
+
+    graph = build_graph(brain)
+
+    assert any(node["path"] == "arch/auth.md" for node in graph["nodes"])
+
+
 def test_node_colors_by_lobe(tmp_path):
     brain = _make_brain_with_neurons(tmp_path)
     graph = build_graph(brain)

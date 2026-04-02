@@ -47,6 +47,22 @@ def test_neuron_triggers_dream(tmp_path, monkeypatch):
     assert "auth.md" in map_content
 
 
+def test_neuron_nested_path_creates_nested_map(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+
+    result = runner.invoke(cli, ["neuron", "services/api/auth.md"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / "my-brain" / "services" / "api" / "auth.md").exists()
+    nested_map = tmp_path / "my-brain" / "services" / "api" / "map.md"
+    assert nested_map.exists()
+    map_content = nested_map.read_text(encoding="utf-8")
+    assert "auth.md" in map_content
+
+
 def test_neuron_template_not_found(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))

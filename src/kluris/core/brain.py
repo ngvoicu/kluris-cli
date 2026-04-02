@@ -193,7 +193,7 @@ def scaffold_brain(
         lobe_dir = brain_path / lobe_name
         lobe_dir.mkdir(exist_ok=True)
         map_content = (
-            f"---\nauto_generated: true\nparent: ../brain.md\n"
+            f"---\nauto_generated: true\nparent: ../brain.md\ndescription: {lobe_desc}\n"
             f"updated: {today}\n---\n# {lobe_name.replace('-', ' ').title()}\n\n"
             f"{lobe_desc}\n"
         )

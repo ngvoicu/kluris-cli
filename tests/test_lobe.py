@@ -22,6 +22,21 @@ def test_nested_lobe(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["lobe", "patterns", "--parent", "architecture"])
     assert result.exit_code == 0
     assert (tmp_path / "my-brain" / "architecture" / "patterns").is_dir()
+    assert (tmp_path / "my-brain" / "architecture" / "patterns" / "map.md").exists()
+
+
+def test_lobe_description_is_preserved(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+
+    result = runner.invoke(cli, ["lobe", "experiments", "--description", "Spike notes and discovery work"])
+
+    assert result.exit_code == 0
+    map_content = (tmp_path / "my-brain" / "experiments" / "map.md").read_text(encoding="utf-8")
+    assert "description: Spike notes and discovery work" in map_content
+    assert "Spike notes and discovery work" in map_content
 
 
 def test_lobe_triggers_dream(tmp_path, monkeypatch):

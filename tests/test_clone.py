@@ -5,7 +5,7 @@ import subprocess
 from click.testing import CliRunner
 
 from kluris.cli import cli
-from kluris.core.config import read_global_config
+from kluris.core.config import read_brain_config, read_global_config
 
 
 def _create_remote_brain(tmp_path, monkeypatch):
@@ -33,8 +33,14 @@ def _create_remote_brain(tmp_path, monkeypatch):
     return bare
 
 
+def _use_fresh_clone_registry(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "clone-config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
 def test_clone_brain(tmp_path, monkeypatch):
     bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
     runner = CliRunner()
     dest = tmp_path / "cloned-brain"
     result = runner.invoke(cli, ["clone", str(bare), str(dest)])
@@ -44,15 +50,35 @@ def test_clone_brain(tmp_path, monkeypatch):
 
 def test_clone_registers(tmp_path, monkeypatch):
     bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
     runner = CliRunner()
     dest = tmp_path / "cloned-brain"
     runner.invoke(cli, ["clone", str(bare), str(dest)])
     config = read_global_config()
     assert "source-brain" in config.brains
+    assert "cloned-brain" not in config.brains
+
+
+def test_clone_uses_canonical_brain_identity(tmp_path, monkeypatch):
+    bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
+    runner = CliRunner()
+    dest = tmp_path / "my-copy"
+
+    result = runner.invoke(cli, ["clone", str(bare), str(dest)])
+
+    assert result.exit_code == 0
+    config = read_global_config()
+    assert "source-brain" in config.brains
+    assert "my-copy" not in config.brains
+    brain_config = read_brain_config(dest)
+    assert brain_config.name == "source-brain"
+    assert brain_config.description == "source-brain knowledge base"
 
 
 def test_clone_runs_install(tmp_path, monkeypatch):
     bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
     runner = CliRunner()
     dest = tmp_path / "cloned-brain"
     result = runner.invoke(cli, ["clone", str(bare), str(dest)])
@@ -83,3 +109,18 @@ def test_clone_invalid_repo(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["clone", str(bare), str(tmp_path / "dest")])
     assert result.exit_code != 0
     assert "not a Kluris brain" in result.output
+
+
+def test_clone_rejects_duplicate_canonical_name(tmp_path, monkeypatch):
+    bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
+    runner = CliRunner()
+
+    first_dest = tmp_path / "first-copy"
+    second_dest = tmp_path / "second-copy"
+    first_result = runner.invoke(cli, ["clone", str(bare), str(first_dest)])
+    assert first_result.exit_code == 0
+
+    second_result = runner.invoke(cli, ["clone", str(bare), str(second_dest)])
+    assert second_result.exit_code != 0
+    assert "already registered" in second_result.output

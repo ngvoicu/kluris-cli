@@ -76,7 +76,10 @@ def build_graph(brain_path: Path) -> dict:
         # Parent edge
         parent = meta.get("parent")
         if parent:
-            parent_resolved = str((f.parent / parent).resolve().relative_to(brain_path.resolve()))
+            try:
+                parent_resolved = str((f.parent / parent).resolve().relative_to(brain_path.resolve()))
+            except (ValueError, OSError):
+                parent_resolved = ""
             if parent_resolved in node_ids:
                 edges.append({
                     "source": source_id,
@@ -88,7 +91,10 @@ def build_graph(brain_path: Path) -> dict:
         related = meta.get("related", [])
         if isinstance(related, list):
             for r in related:
-                r_resolved = str((f.parent / r).resolve().relative_to(brain_path.resolve()))
+                try:
+                    r_resolved = str((f.parent / r).resolve().relative_to(brain_path.resolve()))
+                except (ValueError, OSError):
+                    continue
                 if r_resolved in node_ids:
                     edges.append({
                         "source": source_id,

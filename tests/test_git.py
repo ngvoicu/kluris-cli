@@ -1,5 +1,6 @@
 """Tests for git operations wrapper."""
 
+import subprocess
 from pathlib import Path
 
 from kluris.core.git import (
@@ -21,6 +22,26 @@ from kluris.core.git import (
 def test_git_init(tmp_path):
     git_init(tmp_path)
     assert (tmp_path / ".git").is_dir()
+
+
+def test_git_init_does_not_override_local_identity(tmp_path):
+    git_init(tmp_path)
+    user_name = subprocess.run(
+        ["git", "config", "--local", "--get", "user.name"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    user_email = subprocess.run(
+        ["git", "config", "--local", "--get", "user.email"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert user_name.returncode != 0
+    assert user_email.returncode != 0
 
 
 def test_git_add_commit(tmp_path):
@@ -67,7 +88,6 @@ def test_git_push(tmp_path, bare_remote):
     (tmp_path / "test.md").write_text("hello", encoding="utf-8")
     git_add(tmp_path)
     git_commit(tmp_path, "initial")
-    import subprocess
     subprocess.run(
         ["git", "remote", "add", "origin", str(bare_remote)],
         cwd=tmp_path, capture_output=True,
@@ -89,7 +109,6 @@ def test_git_clone(tmp_path, bare_remote):
     (source / "test.md").write_text("hello", encoding="utf-8")
     git_add(source)
     git_commit(source, "initial")
-    import subprocess
     subprocess.run(
         ["git", "remote", "add", "origin", str(bare_remote)],
         cwd=source, capture_output=True,

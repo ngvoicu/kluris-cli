@@ -20,18 +20,42 @@ def _get_lobes(brain_path: Path) -> list[dict]:
     lobes = []
     for item in sorted(brain_path.iterdir()):
         if item.is_dir() and item.name not in SKIP_DIRS:
-            desc = ""
-            map_file = item / "map.md"
-            if map_file.exists():
-                # Try to extract description from map.md content
-                content = map_file.read_text(encoding="utf-8")
-                lines = content.split("\n")
-                for line in lines:
-                    if line.strip() and not line.startswith("#") and not line.startswith("---"):
-                        desc = line.strip()
-                        break
+            desc = _read_map_description(item / "map.md")
             lobes.append({"name": item.name, "description": desc, "path": item})
     return lobes
+
+
+def _read_map_description(map_file: Path) -> str:
+    """Read the persisted description for a map file, if available."""
+    if not map_file.exists():
+        return ""
+
+    try:
+        meta, content = read_frontmatter(map_file)
+        description = meta.get("description", "")
+        if isinstance(description, str) and description.strip():
+            return description.strip()
+    except Exception:
+        try:
+            content = map_file.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    title_seen = False
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("# "):
+            title_seen = True
+            continue
+        if not title_seen:
+            continue
+        if line.startswith(("up ", "sideways ", "## ", "- [" )):
+            continue
+        return line
+
+    return ""
 
 
 def _get_neurons(lobe_path: Path) -> list[dict]:
@@ -131,6 +155,7 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
     neurons = _get_neurons(lobe_path)
     sub_lobes = _get_sub_lobes(lobe_path)
     siblings = _get_siblings(brain_path, lobe_path)
+    description = _read_map_description(lobe_path / "map.md")
 
     # Determine parent
     if lobe_path.parent == brain_path:
@@ -155,8 +180,10 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
 
     content = (
         f"# {lobe_name.replace('-', ' ').title()}\n\n"
-        f"up [{parent_name}]({parent_path})\n"
     )
+    if description:
+        content += f"{description}\n\n"
+    content += f"up [{parent_name}]({parent_path})\n"
     if sibling_links:
         content += f"sideways {sibling_links}\n"
     content += f"\n## Contents\n\n{contents}\n"
@@ -167,6 +194,8 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
         "siblings": [s["path"] for s in siblings],
         "updated": _today(),
     }
+    if description:
+        metadata["description"] = description
     write_frontmatter(lobe_path / "map.md", metadata, content)
 
 
