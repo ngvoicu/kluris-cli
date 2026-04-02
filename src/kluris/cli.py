@@ -901,6 +901,20 @@ def _do_install(as_json: bool = False):
         total_files += len(files)
         agent_count += 1
 
+    # Also install to universal ~/.agents/skills/ path
+    universal = home / ".agents" / "skills"
+    universal_skill = universal / "kluris"
+    if universal_skill.exists():
+        try:
+            shutil.rmtree(universal_skill)
+        except OSError:
+            pass
+    try:
+        render_commands("claude", universal, brain_info=brain_info)
+        total_files += 1
+    except OSError:
+        pass
+
     return {"agents": agent_count, "commands_per_agent": len(COMMANDS), "total_files": total_files}
 
 
