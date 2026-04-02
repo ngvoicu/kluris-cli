@@ -1,3 +1,3 @@
 """Kluris — Git-backed AI brain manager."""
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"

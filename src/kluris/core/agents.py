@@ -24,12 +24,12 @@ COMMANDS = {
         "body": """\
 {args}
 
-## What is Kluris?
+## IMPORTANT: The brain is a SEPARATE directory
 
-A Kluris brain is a shared knowledge base -- a standalone git repo of structured
-markdown. You are the team's subject matter expert.
-
-**Config:** `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
+1. Read `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var) to find the brain path
+2. The brain is at that path (e.g., `/Users/you/btb-brain`), NOT the current directory
+3. ANALYZE the current project, WRITE to the brain directory
+4. Never create brain.md, map.md, or kluris.yml in the current project
 
 If no config or no brains: tell user to run `pipx install kluris && kluris create`.
 
@@ -142,53 +142,48 @@ discussed, or any knowledge valuable in future sessions.
         "body": """\
 {args}
 
-Config: `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
+## IMPORTANT: Find the brain path first
+
+1. Read the config file at `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var)
+2. Find the brain path from the config (e.g., `/Users/you/btb-brain`)
+3. ALL writes go to the BRAIN directory, NOT the current project directory
+4. The current project is what you ANALYZE. The brain is where you WRITE.
 
 ## What to learn
 
-You MUST have a focus. If no arguments were provided, ask the user:
-"What should I learn? Examples: API endpoints, database schema, auth flow,
-architecture, deployment setup"
+You MUST have a focus. If no arguments were provided, ask:
+"What should I learn? Examples: API endpoints, database schema, auth flow"
 
-Do NOT scan the entire project. Focus on the specific topic the user asked for.
+Do NOT scan the entire project. Focus only on the requested topic.
 
-Examples:
-- `/kluris.learn API endpoints` -- extract routes, methods, request/response
-- `/kluris.learn database schema` -- tables, relationships, migrations
-- `/kluris.learn auth flow` -- authentication, authorization, token handling
-- `/kluris.learn deployment` -- Docker, CI/CD, environments
-- `/kluris.learn tech stack overview` -- languages, frameworks, dependencies
+## Step 1: Find brain path and check what exists
 
-## Step 1: Check what exists
+Read `<brain_path>/brain.md` for lobes. Check if neurons about this topic
+already exist in the brain. **Never overwrite existing neurons.**
 
-Read brain.md for lobes. Check if neurons about this topic already exist.
-**Never overwrite existing neurons.** Skip what's already documented.
+## Step 2: Analyze the current project (read-only)
 
-## Step 2: Analyze only the relevant parts
-
-Only read files related to the focus topic. Don't scan the entire project.
+Read files in the CURRENT project directory related to the focus topic.
+Do NOT write anything to the project.
 
 ## Step 3: Present a plan BEFORE writing
 
-Tell the user what you found and what you'll create:
+Tell the user what you found and where IN THE BRAIN you'll write:
 
-> Found 12 API endpoints in btb-backend-core.
-> I'll create in services/btb-backend-core/endpoints/:
-> - post-auth-login.md
-> - get-users-me.md
-> - ...
+> Found 12 API endpoints in this project.
+> I'll create these neurons in <brain_path>/services/btb-backend-core/:
+> - endpoints.md
+> - auth-flow.md
 >
 > Proceed?
 
-**Wait for approval before writing.**
+**Wait for approval.**
 
-## Step 4: Write neurons (after approval)
+## Step 4: Write to the BRAIN (after approval)
 
-- Default location: `services/<project-name>/`
-- Focus on decisions and rationale
-- For APIs: method, path, request body, response, auth requirements
-- Frontmatter: parent, related, tags, created, updated
-- Do NOT edit map.md or brain.md
+Write neurons to `<brain_path>/services/<project-name>/`, NOT to the
+current project directory. Include frontmatter (parent, related, tags,
+created, updated). Do NOT edit map.md or brain.md in the brain.
 
 ## Step 5: Remind user to run `kluris dream` and `/kluris.push`
 """,
