@@ -137,72 +137,60 @@ discussed, or any knowledge valuable in future sessions.
 """,
     },
     "kluris.learn": {
-        "description": "Scan a project or learn about a topic and store it in the brain",
+        "description": "Learn a specific aspect of the project and store it in the brain",
         "allowed_tools": "Read, Write, Bash(cd:*), Bash(git:*), Bash(grep:*), Bash(find:*), Glob, Grep",
         "body": """\
 {args}
 
 Config: `~/.kluris/config.yml` (or `KLURIS_CONFIG` env var).
 
-## Scope
+## What to learn
 
-By default, document this project under `services/<project-name>/` in the brain.
-Only write to other lobes (architecture/, decisions/, etc.) if the user
-explicitly asks for it.
+You MUST have a focus. If no arguments were provided, ask the user:
+"What should I learn? Examples: API endpoints, database schema, auth flow,
+architecture, deployment setup"
 
-If the user specifies a focus (e.g., "focus on APIs", "learn about auth"),
-stay within that scope.
+Do NOT scan the entire project. Focus on the specific topic the user asked for.
+
+Examples:
+- `/kluris.learn API endpoints` -- extract routes, methods, request/response
+- `/kluris.learn database schema` -- tables, relationships, migrations
+- `/kluris.learn auth flow` -- authentication, authorization, token handling
+- `/kluris.learn deployment` -- Docker, CI/CD, environments
+- `/kluris.learn tech stack overview` -- languages, frameworks, dependencies
 
 ## Step 1: Check what exists
 
-Read brain.md for lobes. Then check if `services/<project-name>/` already has
-neurons -- read its map.md. **Never overwrite existing neurons.** If a neuron
-already exists, skip it.
+Read brain.md for lobes. Check if neurons about this topic already exist.
+**Never overwrite existing neurons.** Skip what's already documented.
 
-## Step 2: Analyze the project
+## Step 2: Analyze only the relevant parts
 
-Examine systematically:
-- README, docs/, documentation files
-- Project structure and tech stack
-- API routes and endpoints (extract as structured neurons)
-- Database schemas and migrations
-- Key config files (Docker, CI/CD, environment)
-- Dependencies and their purposes
+Only read files related to the focus topic. Don't scan the entire project.
 
 ## Step 3: Present a plan BEFORE writing
 
-Tell the user what you want to document and where:
+Tell the user what you found and what you'll create:
 
-> I found the following in btb-backend-core:
-> - 12 API endpoints (POST /auth/login, GET /users/me, ...)
-> - Keycloak auth integration
-> - PostgreSQL with Flyway migrations
-> - 3 key architectural decisions
+> Found 12 API endpoints in btb-backend-core.
+> I'll create in services/btb-backend-core/endpoints/:
+> - post-auth-login.md
+> - get-users-me.md
+> - ...
 >
-> I'll create these neurons in services/btb-backend-core/:
-> - overview.md -- tech stack, purpose, ownership
-> - endpoints.md -- all API routes with request/response
-> - data-model.md -- database schema summary
-> - auth-flow.md -- Keycloak integration details
->
-> Want me to proceed? Should I also document decisions in decisions/?
+> Proceed?
 
-**Wait for approval before writing anything.**
+**Wait for approval before writing.**
 
 ## Step 4: Write neurons (after approval)
 
-- Write to `services/<project-name>/` unless told otherwise
-- Focus on decisions and rationale, not just descriptions
-- For APIs: extract endpoint details (method, path, request, response, auth)
-- Use proper frontmatter (parent, related, tags, created, updated)
-- Bidirectional synapses -- add reverse links
+- Default location: `services/<project-name>/`
+- Focus on decisions and rationale
+- For APIs: method, path, request body, response, auth requirements
+- Frontmatter: parent, related, tags, created, updated
 - Do NOT edit map.md or brain.md
 
-## Step 5: Report and next steps
-
-Report what you created. Remind user to run:
-- `kluris dream` to regenerate maps
-- `/kluris.push` to commit
+## Step 5: Remind user to run `kluris dream` and `/kluris.push`
 """,
     },
     "kluris.recall": {
