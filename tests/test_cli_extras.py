@@ -92,7 +92,7 @@ def test_push_no_brains(tmp_path, monkeypatch):
 def test_version():
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
-    assert "0.3" in result.output
+    assert "0.5" in result.output
 
 
 def test_main_help():
@@ -101,7 +101,6 @@ def test_main_help():
     assert "create" in result.output
     assert "clone" in result.output
     assert "dream" in result.output
-    assert "use" in result.output
     assert "install-commands" in result.output
     assert "uninstall-commands" in result.output
     assert "templates" in result.output

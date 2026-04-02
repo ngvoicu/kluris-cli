@@ -207,39 +207,29 @@ Empty -- build your own structure from scratch.
 
 1. `kluris create` scaffolds a brain (interactive wizard or flags)
 2. `kluris install-commands` generates slash commands for 8 AI agents
-3. Use `/kluris.learn <focus>` to document specific aspects of each project
-4. Use `/kluris.think <task>` to load brain context before working
+3. Use `/kluris` to search, learn, remember, and work with brain knowledge
+4. Agents read the brain and apply team knowledge to tasks
 5. `kluris dream` regenerates maps and validates links
 6. `kluris mri` generates an interactive HTML visualization
 
-## Slash commands (used inside AI agents)
+## Slash command
 
-All slash commands accept free text:
+One command does everything: `/kluris <natural language>`
 
 ```
-/kluris.learn API endpoints
-/kluris.learn database schema
-/kluris.remember we chose raw SQL over JPA for performance
-/kluris.think implement the new auth flow
-/kluris.recall what do we know about deployment
+/kluris what do we know about auth
+/kluris learn the API endpoints from this project
+/kluris remember we chose raw SQL over JPA for performance
+/kluris implement the new auth flow using brain knowledge
+/kluris create a decision record about migrating to Keycloak
+/kluris create openapi docs for this service
 ```
 
-| Command | What it does |
-|---------|-------------|
-| `/kluris <anything>` | **Main command.** Read, write, or search the brain. |
-| `/kluris.think <task>` | Load brain knowledge, work on the task as the team's expert. |
-| `/kluris.recall <topic>` | Search the brain and report what it knows (read-only). |
-| `/kluris.learn <focus>` | Learn a specific aspect of the project (APIs, schema, auth...). Asks before writing. |
-| `/kluris.remember <what>` | Store a specific piece of knowledge. Asks before writing. |
-| `/kluris.push [msg]` | Commit and push brain changes to git. |
-| `/kluris.dream [focus]` | AI brain analysis. Run `kluris dream` CLI for mechanical fixes. |
-| `/kluris.mri` | Generate interactive brain visualization (runs CLI). |
+The agent reads your intent and acts accordingly -- search, learn, remember,
+think, create neurons, or generate OpenAPI docs. It reads the brain config
+to find your brain path, then reads from and writes to that directory.
 
-**learn vs remember:** `/kluris.learn` analyzes project code and extracts knowledge.
-`/kluris.remember` stores something you tell it directly. Both ask before writing.
-
-**think vs recall:** `/kluris.think` reads the brain then works on your task.
-`/kluris.recall` just searches and reports -- doesn't do any work.
+All writes ask for approval before creating files.
 
 ## CLI commands
 

@@ -80,8 +80,7 @@ def test_creates_glossary(tmp_path):
 def test_creates_readme(tmp_path):
     scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     readme = (tmp_path / "brain" / "README.md").read_text()
-    assert "/kluris.learn" in readme
-    assert "/kluris.think" in readme
+    assert "/kluris" in readme
 
 
 def test_team_has_neuron_templates(tmp_path):

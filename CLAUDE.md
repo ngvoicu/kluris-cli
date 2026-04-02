@@ -66,7 +66,7 @@ src/kluris/
 
 ## Slash Commands (8)
 
-kluris, kluris.think, kluris.recall, kluris.learn, kluris.remember, kluris.push, kluris.dream, kluris.mri
+kluris (single command, handles all intents)
 
 All defined in `src/kluris/core/agents.py` COMMANDS dict.
 

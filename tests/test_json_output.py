@@ -129,7 +129,7 @@ def test_install_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "agents" in data
-    assert data["commands_per_agent"] == 8
+    assert data["commands_per_agent"] == 1
     assert "total_files" in data
 
 

@@ -15,7 +15,7 @@ def test_install_creates_claude_commands(tmp_path, monkeypatch):
     claude_dir = tmp_path / ".claude" / "commands"
     assert claude_dir.exists()
     md_files = list(claude_dir.glob("kluris*.md"))
-    assert len(md_files) == 8
+    assert len(md_files) == 1
 
 
 def test_install_creates_gemini_toml(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def test_install_creates_gemini_toml(tmp_path, monkeypatch):
     gemini_dir = tmp_path / ".gemini" / "commands"
     assert gemini_dir.exists()
     toml_files = list(gemini_dir.glob("kluris*.toml"))
-    assert len(toml_files) == 8
+    assert len(toml_files) == 1
 
 
 def test_install_creates_codex_skill(tmp_path, monkeypatch):
@@ -36,8 +36,8 @@ def test_install_creates_codex_skill(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
     codex_dir = tmp_path / ".codex" / "skills"
     assert (codex_dir / "kluris" / "SKILL.md").exists()
-    assert (codex_dir / "kluris-think" / "SKILL.md").exists()
-    assert (codex_dir / "kluris-learn" / "SKILL.md").exists()
+    assert (codex_dir / "kluris" / "SKILL.md").exists()
+    # only 1 skill now / "SKILL.md").exists()
 
 
 def test_install_creates_copilot_agent_md(tmp_path, monkeypatch):
@@ -47,7 +47,7 @@ def test_install_creates_copilot_agent_md(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
     copilot_dir = tmp_path / ".copilot" / "agents"
     agent_files = list(copilot_dir.glob("*.agent.md"))
-    assert len(agent_files) == 8
+    assert len(agent_files) == 1
 
 
 def test_install_creates_junie(tmp_path, monkeypatch):
@@ -57,7 +57,7 @@ def test_install_creates_junie(tmp_path, monkeypatch):
     runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
     junie_dir = tmp_path / ".junie" / "commands"
     assert junie_dir.exists()
-    assert len(list(junie_dir.glob("kluris*.md"))) == 8
+    assert len(list(junie_dir.glob("kluris*.md"))) == 1
 
 
 def test_install_creates_kilocode(tmp_path, monkeypatch):

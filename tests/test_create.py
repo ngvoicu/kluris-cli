@@ -50,7 +50,7 @@ def test_create_prints_learn_hint(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     result = runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
-    assert "/kluris.learn <focus>" in result.output
+    assert "/kluris" in result.output
 
 
 def test_create_fails_existing(tmp_path, monkeypatch):

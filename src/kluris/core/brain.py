@@ -283,13 +283,12 @@ kluris clone <this-repo-url>
 ### Start populating the brain
 
 ```
-/kluris.learn API endpoints
-/kluris.learn database schema
-/kluris.learn auth flow
-/kluris.remember we chose raw SQL over JPA for performance
+/kluris learn the API endpoints from this project
+/kluris learn the database schema
+/kluris remember we chose raw SQL over JPA for performance
 ```
 
-Each command focuses on one topic, presents a plan, and asks before writing.
+One command does everything. The agent reads your intent and acts accordingly.
 
 {lobe_section}
 

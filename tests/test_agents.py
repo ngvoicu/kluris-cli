@@ -60,12 +60,12 @@ def test_render_toml(tmp_path):
 
 def test_render_skill_md(tmp_path):
     files = render_commands("codex", tmp_path)
-    assert len(files) == 8  # one SKILL.md per command (spec-kit pattern)
+    assert len(files) == 1  # one SKILL.md per command (spec-kit pattern)
     assert all(f.name == "SKILL.md" for f in files)
     # Each in its own directory: kluris/, kluris-think/, etc.
     dir_names = sorted(f.parent.name for f in files)
     assert "kluris" in dir_names
-    assert "kluris-think" in dir_names
+    assert "kluris" in dir_names
 
 
 def test_render_agent_md(tmp_path):
@@ -77,7 +77,7 @@ def test_render_agent_md(tmp_path):
 
 def test_all_9_commands(tmp_path):
     files = render_commands("claude", tmp_path)
-    assert len(files) == 8
+    assert len(files) == 1
 
 
 def test_all_reference_brain(tmp_path):
@@ -88,10 +88,3 @@ def test_all_reference_brain(tmp_path):
         assert "test-brain" in content or "brain" in content.lower()
 
 
-def test_context_budget(tmp_path):
-    files = render_commands("claude", tmp_path)
-    # think, recall, learn commands should mention max neurons or context budget
-    think_file = [f for f in files if "think" in f.name]
-    assert len(think_file) == 1
-    content = think_file[0].read_text()
-    assert "max" in content.lower() or "10" in content or "budget" in content.lower()
