@@ -328,15 +328,15 @@ it flags the conflict before proceeding.
 ```
 
 This is a collaborative wizard, not a dump. The agent analyzes the project,
-then walks through findings one at a time. For each piece of knowledge:
-1. It shows a small preview of what it would write
-2. It suggests which lobe and neuron name to use
-3. It asks: "Is this correct? Want to change anything?"
-4. You approve, edit, add context, or skip
-5. It writes only after your explicit approval
+then walks through findings one at a time:
+1. Shows the full neuron content it intends to write
+2. Suggests the target lobe and neuron name
+3. Asks: "Is this correct? Want to change anything?"
+4. You approve, edit, add context the code doesn't show, or skip
+5. Writes only after your explicit approval
 
-The agent routes findings to the correct lobes (projects, infrastructure,
-knowledge, glossary) and suggests cross-lobe links when a topic spans areas.
+The agent routes findings to the correct lobes and suggests cross-lobe
+links when a topic spans multiple areas.
 
 ### Remember -- store a specific decision or piece of knowledge
 
@@ -366,7 +366,6 @@ through sections one at a time so you can review each part.
 
 ```bash
 kluris status          # Brain tree, recent changes, neuron counts
-kluris recall <query>  # Search across neurons
 kluris use <name>      # Switch the default brain
 kluris templates       # List available neuron templates
 kluris dream           # Regenerate maps, auto-fix safe issues, validate remaining links
@@ -409,6 +408,6 @@ Content here.
 4. **Use standard markdown links** -- `[label](./relative/path.md)`
 5. **Focus on decisions and rationale** -- "we chose X because Y"
 6. **Bidirectional synapses** -- if A links to B, add the reverse link in B
-7. **Run `kluris push` to save** -- use the CLI command to commit and push
-8. **Run `kluris dream` after adding neurons** -- keeps maps and brain.md fresh
+7. **Run `kluris dream` after adding neurons** -- keeps maps and brain.md fresh
+8. **Run `kluris push` to save** -- commits and pushes to git (if brain uses git)
 """

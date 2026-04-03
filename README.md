@@ -52,21 +52,24 @@ pipx install kluris
 ## Quick start
 
 ```bash
-kluris doctor        # Check prerequisites
-kluris create        # Interactive wizard
+kluris doctor        # check prerequisites
+kluris create        # interactive wizard -- name, type, location, git
 ```
 
+Then open any project directory and use `/kluris`:
 
-Then open any project and run `/kluris learn the endpoints` -- the agent will
-analyze the codebase and walk you through its findings one at a time, asking
-for your review before writing anything to the brain.
+```
+/kluris learn everything about this service
+```
 
-### Setting up a new brain
+The agent analyzes your code and walks you through each finding one at a
+time. You see the full content before it's written, and you approve, edit,
+or skip every piece.
+
+### Joining an existing brain
 
 ```bash
-kluris create                    # wizard walks you through name, type, location, git
-kluris dream                     # regenerate maps after any manual edits
-kluris mri                       # interactive HTML visualization of your brain
+kluris clone git@github.com:team/brain.git    # clone and register
 ```
 
 ### Learning a project
@@ -221,144 +224,32 @@ Empty -- build your own structure from scratch.
 
 ## How it works
 
-1. `kluris create` scaffolds a brain (interactive wizard or flags)
-2. `kluris install-skills` installs the Kluris skill for 8 AI agents
-3. Use `/kluris` to search, learn, remember, and work with brain knowledge
-4. Agents read the brain and apply team knowledge to tasks
-5. `kluris dream` regenerates maps, auto-fixes safe issues, and validates remaining links
-6. `kluris mri` runs the same safe preflight fixes as `dream`, then generates an interactive HTML visualization
-
-## Release and publish
-
-The PyPI publish pipeline is triggered by pushing a git tag that matches `v*`.
-The workflow lives in [`.github/workflows/publish.yml`](/Users/gabrielvoicu/Projects/ngvoicu/kluris/kluris-cli/.github/workflows/publish.yml#L1) and listens for pushed tags such as `v1.0.8`.
-
-Typical release flow:
-
-```bash
-# 1. Bump the package version in pyproject.toml and src/kluris/__init__.py
-
-# 2. Verify the release candidate
-pytest tests/ -q
-
-# 3. Commit the release
-git add pyproject.toml src/kluris/__init__.py tests/
-git commit -m "chore: release v1.0.8"
-
-# 4. Create the publish tag
-git tag v1.0.8
-
-# 5. Push the commit and the tag
-git push origin main
-git push origin v1.0.8
-```
-
-Once the `v1.0.8` tag reaches GitHub, the publish pipeline builds the package and publishes that version to PyPI.
-
-## Slash command
-
-One command does everything: `/kluris <natural language>`
-
-The agent reads your intent and acts accordingly. The brain is treated as
-sacred -- every write is a collaborative, step-by-step process with human
-review. Nothing is written without your explicit approval.
-
-### Search -- ask the brain, get answers
-
-```
-/kluris what do we know about authentication?
-/kluris how does the Docker setup work?
-/kluris what conventions do we follow for API naming?
-/kluris find everything related to Keycloak
-/kluris what's the deployment process for btb-backend?
-```
-
-Read-only. The agent navigates the brain and summarizes findings. Use this
-when you need context before starting work.
-
-### Think -- work on a task, informed by brain knowledge
-
-```
-/kluris add a new API endpoint for user preferences
-/kluris fix the auth token refresh -- use brain knowledge
-/kluris refactor the data layer following our conventions
-/kluris implement the notification system
-```
-
-The agent reads the brain first (architecture, conventions, service docs),
-then works on the task. Flags conflicts with documented decisions.
-
-### Learn -- collaboratively document a project
-
-```
-/kluris learn the API endpoints from this project
-/kluris learn the database schema
-/kluris learn about the Docker and deployment setup
-/kluris learn everything about this service
-```
-
-A collaborative wizard. The agent analyzes the project, then walks through
-findings **one at a time**:
-
-1. Shows a small preview of what it would write
-2. Suggests the target lobe and neuron name
-3. If a topic spans lobes, suggests cross-links: "This also touches
-   infrastructure -- want a separate neuron there?"
-4. Asks: "Is this correct? Want to change anything?"
-5. You approve, edit, add context, or skip
-6. Writes only after explicit approval
-7. Moves to the next topic
-
-Findings are routed to the correct lobes automatically -- service-specific
-knowledge goes to `services/`, infrastructure facts go to `infrastructure/`,
-and domain terms go to `glossary.md`. The agent never duplicates content
-across lobes -- it links instead.
-
-Decisions, standards, and learnings are **not auto-generated** -- these
-require human intent. If the agent spots something that looks like a decision,
-it mentions it so you can add it manually.
-
-### Remember -- store a specific piece of knowledge
-
-```
-/kluris remember we chose raw SQL over JPA for performance
-/kluris remember the frontend health check is at /api/health
-/kluris remember we use Cloudflare Tunnel with zero public ports
-/kluris store that all timestamps must be TIMESTAMPTZ
-```
-
-Preview before writing. Confirmation required.
-
-### Create -- make a neuron from a template
-
-```
-/kluris create a decision record about migrating to Keycloak
-/kluris create an incident report for the January outage
-/kluris create a runbook for deploying to production
-/kluris create openapi docs for this service
-/kluris create a new lobe for monitoring
-```
-
-For structured templates, the agent walks through sections step by step.
+1. `kluris create` scaffolds a brain with an interactive wizard
+2. `kluris install-skills` installs the `/kluris` skill for your AI agents
+3. Open any project and use `/kluris` -- one command handles everything
+4. The agent reads your code, proposes what to document, you review and approve
+5. `kluris dream` regenerates maps, fixes links, validates structure
+6. `kluris push` commits and pushes to git
 
 ## CLI commands
 
 | Command | What it does |
 |---------|-------------|
-| `kluris create` | Create a new brain (interactive wizard or `kluris create <name> --type product-group`) |
-| `kluris clone` | Clone a brain from git (interactive or `kluris clone <url> --branch develop`) |
+| `kluris create` | Create a new brain (interactive wizard) |
+| `kluris clone <url>` | Clone a brain from git |
 | `kluris list` | List all registered brains |
-| `kluris status` | Show brain tree, recent changes, neuron counts |
-| `kluris dream` | Regenerate maps, auto-fix safe issues, and validate remaining links |
+| `kluris use <name>` | Switch the default brain |
+| `kluris status` | Brain tree, neuron counts, recent changes |
+| `kluris neuron <name>` | Create a neuron (optionally with `--lobe` and `--template`) |
+| `kluris lobe <name>` | Create a new lobe (optionally with `--parent` for nesting) |
+| `kluris dream` | Regenerate maps, fix links, validate structure |
 | `kluris push` | Commit and push brain changes to git |
-| `kluris mri` | Run preflight fixes, then generate an interactive HTML brain visualization |
-| `kluris use <name>` | Set the default brain |
+| `kluris mri` | Generate interactive HTML brain visualization |
 | `kluris templates` | List available neuron templates |
-| `kluris install-skills` | Install the Kluris skill into AI agent directories |
-| `kluris uninstall-skills` | Remove the Kluris skill from AI agent directories |
-| `kluris remove <name>` | Unregister a brain (keeps files) |
-| `kluris doctor` | Check prerequisites (git, Python, config dir) |
-| `kluris help` | Show all commands |
+| `kluris install-skills` | Install the `/kluris` skill for your AI agents |
+| `kluris uninstall-skills` | Remove the `/kluris` skill from AI agent directories |
+| `kluris remove <name>` | Unregister a brain (keeps files on disk) |
+| `kluris doctor` | Check prerequisites (git, Python, config) |
 
 All commands support `--json` for machine-readable output.
 
@@ -384,7 +275,7 @@ git:
   default_branch: main
   commit_prefix: "brain:"
 agents:
-  commands_for: [claude, cursor, windsurf, copilot, codex, kilocode, gemini, junie]
+  commands_for: [claude]  # add more: cursor, windsurf, copilot, codex, gemini, kilocode, junie
 ```
 
 ## Brain vocabulary
