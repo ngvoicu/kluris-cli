@@ -314,8 +314,8 @@ summarizes what it finds. Use this when you need context before starting work.
 /kluris implement the notification system
 ```
 
-The agent reads the brain first (architecture, conventions, related service
-docs), then works on the task. If the task contradicts a documented decision,
+The agent reads the brain first (project docs, infrastructure, knowledge),
+then works on the task. If the task contradicts a documented decision,
 it flags the conflict before proceeding.
 
 ### Learn -- collaboratively document a project into the brain
@@ -335,8 +335,8 @@ then walks through findings one at a time. For each piece of knowledge:
 4. You approve, edit, add context, or skip
 5. It writes only after your explicit approval
 
-The agent routes findings to the correct lobes (services, infrastructure,
-glossary) and suggests cross-lobe links when a topic spans multiple areas.
+The agent routes findings to the correct lobes (projects, infrastructure,
+knowledge, glossary) and suggests cross-lobe links when a topic spans areas.
 
 ### Remember -- store a specific decision or piece of knowledge
 
@@ -391,7 +391,7 @@ Every neuron uses YAML frontmatter + markdown:
 ---
 parent: ../map.md
 related:
-  - ../../standards/naming.md
+  - ../../infrastructure/environments.md
 tags: [auth, keycloak]
 created: 2026-03-15
 updated: 2026-03-31

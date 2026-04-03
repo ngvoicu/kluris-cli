@@ -949,13 +949,14 @@ def _do_install(as_json: bool = False):
     total_files = 0
     agent_count = 0
 
+    import shutil
+    failed_agents = []
+
     for agent_name in sorted(all_agents):
         if agent_name not in AGENT_REGISTRY:
             continue
         reg = AGENT_REGISTRY[agent_name]
         base = home / reg["dir"] / reg["subdir"]
-
-        import shutil
 
         # Clean old command directories (migration from commands to skills)
         for old_dir_rel in OLD_COMMAND_DIRS.get(agent_name, []):
@@ -981,7 +982,12 @@ def _do_install(as_json: bool = False):
 
         try:
             files = render_commands(agent_name, base, brain_info=brain_info)
-        except OSError:
+            # Verify the write succeeded
+            for f in files:
+                if not f.exists():
+                    raise OSError(f"Failed to write {f}")
+        except OSError as e:
+            failed_agents.append((agent_name, str(e)))
             continue
         total_files += len(files)
         agent_count += 1
@@ -1017,6 +1023,10 @@ def _do_install(as_json: bool = False):
         total_files += 1
     except OSError:
         pass
+
+    if failed_agents:
+        names = ", ".join(a for a, _ in failed_agents)
+        raise OSError(f"Skill installation failed for: {names}")
 
     return {"agents": agent_count, "commands_per_agent": len(COMMANDS), "total_files": total_files}
 
