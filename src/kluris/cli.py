@@ -787,7 +787,18 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
 
         git_add(brain_path)
         brain_config = read_brain_config(brain_path)
-        message = msg or f"{brain_config.git.commit_prefix} update"
+
+        if msg:
+            message = msg
+        elif not as_json:
+            # Show what changed so the human can write a good message
+            console.print(f"\n[bold]{name}[/bold] -- files changed:")
+            for line in status_out.strip().splitlines():
+                console.print(f"  {line.strip()}")
+            message = click.prompt("\n  Commit message")
+        else:
+            message = "brain: update"
+
         git_commit(brain_path, message)
 
         pushed = False
