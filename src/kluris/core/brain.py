@@ -411,19 +411,7 @@ description: my-brain knowledge base
 git:
   default_branch: main
   commit_prefix: "brain:"
-agents:
-  commands_for:            # which agents get /kluris installed
-    - claude
-    - cursor
-    - windsurf
-    - copilot
-    - codex
-    - kilocode
-    - gemini
-    - junie
 ```
-
-Trim `commands_for` to only the agents you use.
 
 ## Rules
 

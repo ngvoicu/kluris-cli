@@ -274,20 +274,7 @@ description: my-brain knowledge base
 git:
   default_branch: main
   commit_prefix: "brain:"
-agents:
-  commands_for:            # which agents get the /kluris skill installed
-    - claude
-    - cursor
-    - windsurf
-    - copilot
-    - codex
-    - kilocode
-    - gemini
-    - junie
 ```
-
-Trim `commands_for` to only the agents you use -- `kluris install-skills`
-will only write skill files for the agents listed here.
 
 ## Brain vocabulary
 
