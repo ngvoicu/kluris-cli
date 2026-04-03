@@ -56,16 +56,6 @@ kluris doctor        # Check prerequisites
 kluris create        # Interactive wizard
 ```
 
-By default, `kluris create <name>` makes a local git repo with no remote.
-Add `--remote <url>` to connect one, or `--no-git` to skip git entirely.
-
-Or skip the wizard:
-
-```bash
-kluris create my-brain --type product-group
-kluris create my-brain --type personal --path ~/brains
-kluris create my-brain --remote git@github.com:team/brain.git
-```
 
 Then open any project and run `/kluris learn the endpoints` -- the agent will
 analyze the codebase and walk you through its findings one at a time, asking
