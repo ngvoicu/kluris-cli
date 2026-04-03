@@ -18,11 +18,13 @@ globally installed agent skills and workflows.
   across them, or write back. Kluris brains are markdown in git -- AI-native.
 - **CLAUDE.md** is per-project and per-tool. A brain sits above all your
   projects and works with 8 different AI agents simultaneously.
-- **Agent memory** is session-scoped and ephemeral. A brain is persistent,
-  version-controlled, and shared across the entire team.
+- **Agent memory** is selective and agent-controlled -- the agent decides what
+  to keep. A brain is a collaboration: the agent reads your projects and
+  proposes what to document, but the human reviews every piece, decides what
+  to store, and corrects or enriches the content before it's written.
 
 One brain serves all your projects. Every AI agent on the team reads the same
-knowledge. When someone leaves, nothing is lost.
+knowledge. Version-controlled, human-curated, shared across the entire team.
 
 ## Install
 
@@ -334,7 +336,6 @@ For structured templates, the agent walks through sections step by step.
 | `kluris clone` | Clone a brain from git (interactive or `kluris clone <url> --branch develop`) |
 | `kluris list` | List all registered brains |
 | `kluris status` | Show brain tree, recent changes, neuron counts |
-| `kluris recall <query>` | Search brain and show results |
 | `kluris dream` | Regenerate maps, auto-fix safe issues, and validate remaining links |
 | `kluris push` | Commit and push brain changes to git |
 | `kluris mri` | Run preflight fixes, then generate an interactive HTML brain visualization |
