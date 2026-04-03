@@ -5,6 +5,7 @@ import subprocess
 from click.testing import CliRunner
 
 from kluris.cli import cli
+from conftest import create_test_brain
 from kluris.core.config import read_brain_config, read_global_config
 
 
@@ -13,7 +14,7 @@ def _create_remote_brain(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "source-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "source-brain", tmp_path)
 
     # Create bare remote and push
     bare = tmp_path / "remote.git"
@@ -40,7 +41,8 @@ def _create_remote_brain_on_branch(tmp_path, monkeypatch, branch_name):
     runner = CliRunner()
     runner.invoke(
         cli,
-        ["create", "source-brain", "--path", str(tmp_path), "--branch", branch_name, "--remote", str(tmp_path / "remote.git")],
+        ["create", "source-brain", "--path", str(tmp_path), "--description", "test",
+         "--branch", branch_name, "--remote", str(tmp_path / "remote.git"), "--json"],
     )
 
     bare = tmp_path / "remote.git"

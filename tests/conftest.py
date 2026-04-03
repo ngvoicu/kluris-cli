@@ -7,6 +7,21 @@ import yaml
 from click.testing import CliRunner
 from pathlib import Path
 
+from kluris.cli import cli
+
+
+def create_test_brain(runner, name, path, **extra_flags):
+    """Non-interactive brain creation for tests. Passes all flags to skip prompts."""
+    cmd = ["create", name, "--path", str(path),
+           "--description", f"{name} knowledge base", "--json"]
+    for k, v in extra_flags.items():
+        flag = f"--{k.replace('_', '-')}"
+        if isinstance(v, bool) and v:
+            cmd.append(flag)
+        else:
+            cmd.extend([flag, str(v)])
+    return runner.invoke(cli, cmd)
+
 
 @pytest.fixture
 def cli_runner():

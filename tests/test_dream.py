@@ -5,6 +5,7 @@ import json
 from click.testing import CliRunner
 
 from kluris.cli import cli
+from conftest import create_test_brain
 from kluris.core.frontmatter import read_frontmatter
 
 
@@ -12,7 +13,7 @@ def test_dream_regenerates_maps(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     # Add a neuron manually
     (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
         "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
@@ -26,7 +27,7 @@ def test_dream_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["dream", "--json"])
     data = json.loads(result.output)
     assert "healthy" in data
@@ -39,7 +40,7 @@ def test_dream_exit_0_healthy(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["dream"])
     assert result.exit_code == 0
 
@@ -48,7 +49,7 @@ def test_dream_regenerates_brain_md(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     # Add a lobe manually
     (tmp_path / "my-brain" / "experiments").mkdir()
     runner.invoke(cli, ["dream"])
@@ -61,7 +62,7 @@ def test_dream_updates_map_with_neuron(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
         "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
@@ -74,7 +75,7 @@ def test_dream_preserves_lobe_descriptions(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
 
     runner.invoke(cli, ["dream"])
     runner.invoke(cli, ["dream"])
@@ -88,7 +89,7 @@ def test_dream_reports_broken_links(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n"
         "# Bad\n\n[broken](./nonexistent.md)\n", encoding="utf-8"
@@ -102,7 +103,7 @@ def test_dream_fixes_one_way_synapse(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
         "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n", encoding="utf-8"
     )
@@ -122,7 +123,7 @@ def test_dream_adds_missing_parent_frontmatter(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     neuron = tmp_path / "my-brain" / "architecture" / "no-parent.md"
     neuron.write_text(
         "---\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# No Parent\n",
@@ -143,7 +144,7 @@ def test_dream_fixes_orphans_by_regenerating_parent_map(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     neuron = tmp_path / "my-brain" / "architecture" / "orphan.md"
     neuron.write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Orphan\n",
@@ -168,7 +169,7 @@ def test_dream_shows_fix_counts_in_output(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
         "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
         encoding="utf-8",
@@ -191,7 +192,7 @@ def test_dream_shows_lobes_and_maps(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
 
     result = runner.invoke(cli, ["dream"])
 
@@ -206,7 +207,7 @@ def test_dream_reports_broken_related_synapse(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
         "---\nparent: ./map.md\nrelated:\n  - ../standards/missing.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
         encoding="utf-8",
@@ -223,7 +224,7 @@ def test_dream_exit_1_issues(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
         "---\nparent: ./map.md\n---\n# Bad\n\n[broken](./nope.md)\n", encoding="utf-8"
     )
@@ -235,7 +236,7 @@ def test_dream_generates_nested_maps(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
 
     result = runner.invoke(cli, ["dream"])
@@ -249,7 +250,7 @@ def test_dream_sub_lobe_listed_in_parent_map(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
     (tmp_path / "my-brain" / "services" / "api" / "endpoints.md").write_text(
         "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Endpoints\n",
@@ -269,7 +270,7 @@ def test_dream_sibling_sub_lobes_see_each_other(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
     (tmp_path / "my-brain" / "services" / "web").mkdir(parents=True)
 

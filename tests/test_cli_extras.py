@@ -5,6 +5,7 @@ import json
 from click.testing import CliRunner
 
 from kluris.cli import cli
+from conftest import create_test_brain
 
 
 def test_templates_command(tmp_path, monkeypatch):
@@ -46,7 +47,7 @@ def test_remove_triggers_install(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     assert (tmp_path / ".claude" / "skills" / "kluris" / "SKILL.md").exists()
     runner.invoke(cli, ["remove", "my-brain"])
     # Commands should still exist (reinstalled for remaining brains)

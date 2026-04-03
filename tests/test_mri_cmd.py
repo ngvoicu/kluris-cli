@@ -5,13 +5,14 @@ import json
 from click.testing import CliRunner
 
 from kluris.cli import cli
+from conftest import create_test_brain
 
 
 def test_mri_generates_html(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["mri"])
     assert result.exit_code == 0
     assert (tmp_path / "my-brain" / "brain-mri.html").exists()
@@ -21,7 +22,7 @@ def test_mri_custom_output(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     custom = tmp_path / "custom-output.html"
     result = runner.invoke(cli, ["mri", "--output", str(custom)])
     assert result.exit_code == 0
@@ -32,7 +33,7 @@ def test_mri_summary(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["mri"])
     assert "nodes" in result.output.lower() or "MRI" in result.output
 
@@ -41,7 +42,7 @@ def test_mri_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["mri", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
@@ -54,7 +55,7 @@ def test_mri_runs_dream_preflight(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     neuron = tmp_path / "my-brain" / "architecture" / "orphan.md"
     neuron.write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Orphan\n",

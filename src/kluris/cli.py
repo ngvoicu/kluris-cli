@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json as json_lib
 import subprocess
+import sys
 from pathlib import Path
 
 import click
@@ -284,26 +285,27 @@ def create(name: str | None, desc: str | None, base_path: str | None,
            no_git: bool, from_config: str | None, as_json: bool):
     """Create a new brain.
 
-    Run with no arguments for an interactive wizard, or pass options directly:
+    Prompts for anything not provided via flags. Use --json to skip all prompts.
 
     \b
-      kluris create
-      kluris create my-brain          # local git only
-      kluris create my-brain --type personal
+      kluris create                    # full wizard
+      kluris create my-brain           # prompts for description, location, type, git
+      kluris create my-brain --type personal --path ~/brains --no-git  # no prompts
       kluris create team-brain --remote git@github.com:team/brain.git
     """
-    # Interactive wizard if no name provided
-    if not name:
-        console.print("\n[bold]Create a new brain[/bold]\n")
-        name = click.prompt("  Brain name (lowercase, hyphens ok)", type=str)
+    # Prompt for anything not provided, unless --json (fully non-interactive)
+    if not as_json:
+        if not name:
+            console.print("\n[bold]Create a new brain[/bold]\n")
+            name = click.prompt("  Brain name (lowercase, hyphens ok)", type=str)
         if not desc:
             desc = click.prompt("  What does this brain cover? (one sentence)", type=str)
         if not base_path:
-            base_path = click.prompt("  Location", default=str(Path.home()), type=str)
+            base_path = click.prompt("  Location", default=str(Path.cwd()), type=str)
         if brain_type is None:
             type_options = ", ".join(BRAIN_TYPES.keys())
             brain_type = click.prompt(f"  Brain type ({type_options})", default="product-group", type=str)
-        if not no_git:
+        if not no_git and remote is None:
             git_choice = click.prompt(
                 "  Git setup (1=local, 2=with remote, 3=no git)",
                 default="1", type=str,

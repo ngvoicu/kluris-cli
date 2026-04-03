@@ -5,10 +5,11 @@ import json
 from click.testing import CliRunner
 
 from kluris.cli import cli
+from conftest import create_test_brain
 
 
 def _create_brain(runner, tmp_path):
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
 
 
 def test_create_json(tmp_path, monkeypatch):

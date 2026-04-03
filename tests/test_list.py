@@ -6,6 +6,7 @@ from click.testing import CliRunner
 
 import kluris.cli as cli_module
 from kluris.cli import cli
+from conftest import create_test_brain
 from kluris.core.config import read_global_config, write_global_config
 
 
@@ -13,7 +14,7 @@ def test_list_shows_brains(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["list"])
     assert "my-brain" in result.output
 
@@ -29,7 +30,7 @@ def test_list_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path)])
+    create_test_brain(runner, "my-brain", tmp_path)
     result = runner.invoke(cli, ["list", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
@@ -40,8 +41,8 @@ def test_use_sets_default_brain(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "brain-a", "--path", str(tmp_path)])
-    runner.invoke(cli, ["create", "brain-b", "--path", str(tmp_path)])
+    create_test_brain(runner, "brain-a", tmp_path)
+    create_test_brain(runner, "brain-b", tmp_path)
     result = runner.invoke(cli, ["use", "brain-b", "--json"])
     data = json.loads(result.output)
     assert result.exit_code == 0
@@ -57,8 +58,8 @@ def test_use_reinstalls_skills(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "brain-a", "--path", str(tmp_path)])
-    runner.invoke(cli, ["create", "brain-b", "--path", str(tmp_path)])
+    create_test_brain(runner, "brain-a", tmp_path)
+    create_test_brain(runner, "brain-b", tmp_path)
 
     result = runner.invoke(cli, ["use", "brain-b"])
     assert result.exit_code == 0
@@ -75,8 +76,8 @@ def test_use_rolls_back_when_install_fails_without_existing_default(tmp_path, mo
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
-    runner.invoke(cli, ["create", "brain-a", "--path", str(tmp_path)])
-    runner.invoke(cli, ["create", "brain-b", "--path", str(tmp_path)])
+    create_test_brain(runner, "brain-a", tmp_path)
+    create_test_brain(runner, "brain-b", tmp_path)
 
     config = read_global_config()
     config.default_brain = None
