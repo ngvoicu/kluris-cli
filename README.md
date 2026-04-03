@@ -61,34 +61,57 @@ Then open any project and run `/kluris learn the endpoints` -- the agent will
 analyze the codebase and walk you through its findings one at a time, asking
 for your review before writing anything to the brain.
 
-### Example workflow
+### Setting up a new brain
 
 ```bash
-# 1. Create a brain
-kluris create
+kluris create                    # wizard walks you through name, type, location, git
+kluris dream                     # regenerate maps after any manual edits
+kluris mri                       # interactive HTML visualization of your brain
+```
 
-# 2. In your backend project -- learn collaboratively:
-#    /kluris learn the API endpoints and data model
-#    (agent walks through findings one at a time, you review each)
+### Learning a project
 
-# 3. In your frontend project:
-#    /kluris learn the components and routing
-#    (infra findings go to infrastructure/, service docs to services/)
+Open any project directory and use `/kluris` -- the agent analyzes your code
+and walks you through each finding. You review, edit, and approve before
+anything is written.
 
-# 4. Store decisions you made along the way:
-#    /kluris remember we chose raw SQL over JPA for query complexity
-#    /kluris create a decision record about the auth architecture
+```
+/kluris learn the API endpoints and data model
+/kluris learn the Docker and deployment setup
+/kluris learn everything about this service
+```
 
-# 5. Now any agent in any project can use the brain:
-#    /kluris what do we know about the auth flow?
-#    /kluris implement the new endpoint following our conventions
+The agent shows the full neuron content before writing. You can change the
+target lobe, edit the content, add context the code doesn't show, or skip.
 
-# 6. Validate and push
-kluris dream         # Regenerate maps, validate links
-kluris push          # Commit and push to git
+### Storing decisions and knowledge
 
-# 7. Visualize the brain
-kluris mri           # Generate interactive brain-mri.html
+```
+/kluris remember we chose raw SQL over JPA for query complexity
+/kluris remember all timestamps must be TIMESTAMPTZ
+/kluris create a decision record about the auth architecture
+/kluris create an incident report for the January outage
+```
+
+### Using brain knowledge while coding
+
+```
+/kluris what do we know about the auth flow?
+/kluris how does the Docker setup work?
+/kluris implement the new endpoint following our conventions
+/kluris fix the token refresh -- use brain knowledge
+```
+
+The agent reads the brain first, then works on the task. If your code
+contradicts a documented decision, it flags the conflict.
+
+### Maintaining the brain
+
+```bash
+kluris dream         # regenerate maps, fix links, validate structure
+kluris push          # commit and push to git (if brain uses git)
+kluris status        # brain tree, neuron counts, recent changes
+kluris mri           # interactive visualization
 ```
 
 ## What a brain looks like
