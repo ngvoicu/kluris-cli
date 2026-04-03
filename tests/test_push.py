@@ -47,6 +47,19 @@ def test_push_no_remote_warning(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
+def test_push_prompts_for_message(tmp_path, monkeypatch):
+    """kluris push without -m shows changed files and prompts for a message."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+    (tmp_path / "my-brain" / "projects" / "auth.md").write_text("# Auth\n", encoding="utf-8")
+    result = runner.invoke(cli, ["push"], input="add auth neuron\n")
+    assert result.exit_code == 0
+    assert "files changed" in result.output
+    assert "Commit message" in result.output
+
+
 def test_push_no_git_brain(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
