@@ -15,11 +15,11 @@ def test_dream_regenerates_maps(tmp_path, monkeypatch):
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
     # Add a neuron manually
-    (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "auth.md").write_text(
         "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream"])
-    map_content = (tmp_path / "my-brain" / "architecture" / "map.md").read_text().lower()
+    map_content = (tmp_path / "my-brain" / "projects" / "map.md").read_text().lower()
     assert "auth" in map_content
 
 
@@ -63,11 +63,11 @@ def test_dream_updates_map_with_neuron(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "auth.md").write_text(
         "---\nparent: ./map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n", encoding="utf-8"
     )
     runner.invoke(cli, ["dream"])
-    map_content = (tmp_path / "my-brain" / "architecture" / "map.md").read_text()
+    map_content = (tmp_path / "my-brain" / "projects" / "map.md").read_text()
     assert "auth" in map_content.lower()
 
 
@@ -81,7 +81,7 @@ def test_dream_preserves_lobe_descriptions(tmp_path, monkeypatch):
     runner.invoke(cli, ["dream"])
 
     brain_md = (tmp_path / "my-brain" / "brain.md").read_text(encoding="utf-8")
-    assert "- [architecture/](./architecture/map.md) — System design, technical patterns" in brain_md
+    assert "- [projects/](./projects/map.md)" in brain_md
     assert "— auto_generated: true" not in brain_md
 
 
@@ -90,7 +90,7 @@ def test_dream_reports_broken_links(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "bad.md").write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n"
         "# Bad\n\n[broken](./nonexistent.md)\n", encoding="utf-8"
     )
@@ -104,19 +104,19 @@ def test_dream_fixes_one_way_synapse(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
-        "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n", encoding="utf-8"
+    (tmp_path / "my-brain" / "projects" / "a.md").write_text(
+        "---\nparent: ./map.md\nrelated:\n  - ../knowledge/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n", encoding="utf-8"
     )
-    (tmp_path / "my-brain" / "standards" / "b.md").write_text(
+    (tmp_path / "my-brain" / "knowledge" / "b.md").write_text(
         "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# B\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream", "--json"])
     data = json.loads(result.output)
-    meta, _ = read_frontmatter(tmp_path / "my-brain" / "standards" / "b.md")
+    meta, _ = read_frontmatter(tmp_path / "my-brain" / "knowledge" / "b.md")
     assert result.exit_code == 0
     assert data["one_way_synapses"] == 0
     assert data["fixes"]["reverse_synapses_added"] == 1
-    assert "../architecture/a.md" in meta["related"]
+    assert "../projects/a.md" in meta["related"]
 
 
 def test_dream_adds_missing_parent_frontmatter(tmp_path, monkeypatch):
@@ -124,7 +124,7 @@ def test_dream_adds_missing_parent_frontmatter(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    neuron = tmp_path / "my-brain" / "architecture" / "no-parent.md"
+    neuron = tmp_path / "my-brain" / "projects" / "no-parent.md"
     neuron.write_text(
         "---\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# No Parent\n",
         encoding="utf-8",
@@ -145,19 +145,19 @@ def test_dream_fixes_orphans_by_regenerating_parent_map(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    neuron = tmp_path / "my-brain" / "architecture" / "orphan.md"
+    neuron = tmp_path / "my-brain" / "projects" / "orphan.md"
     neuron.write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Orphan\n",
         encoding="utf-8",
     )
-    (tmp_path / "my-brain" / "architecture" / "map.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "map.md").write_text(
         "---\nauto_generated: true\nparent: ../brain.md\nupdated: 2026-04-01\n---\n# Architecture\n",
         encoding="utf-8",
     )
 
     result = runner.invoke(cli, ["dream", "--json"])
     data = json.loads(result.output)
-    map_content = (tmp_path / "my-brain" / "architecture" / "map.md").read_text(encoding="utf-8")
+    map_content = (tmp_path / "my-brain" / "projects" / "map.md").read_text(encoding="utf-8")
 
     assert result.exit_code == 0
     assert data["orphans"] == 0
@@ -170,11 +170,11 @@ def test_dream_shows_fix_counts_in_output(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
-        "---\nparent: ./map.md\nrelated:\n  - ../standards/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
+    (tmp_path / "my-brain" / "projects" / "a.md").write_text(
+        "---\nparent: ./map.md\nrelated:\n  - ../knowledge/b.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
         encoding="utf-8",
     )
-    (tmp_path / "my-brain" / "standards" / "b.md").write_text(
+    (tmp_path / "my-brain" / "knowledge" / "b.md").write_text(
         "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# B\n",
         encoding="utf-8",
     )
@@ -198,8 +198,8 @@ def test_dream_shows_lobes_and_maps(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "Lobes:" in result.output
-    assert "architecture" in result.output
-    assert "services" in result.output
+    assert "projects" in result.output
+    assert "projects" in result.output
     assert "Maps regenerated:" in result.output
 
 
@@ -208,8 +208,8 @@ def test_dream_reports_broken_related_synapse(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "a.md").write_text(
-        "---\nparent: ./map.md\nrelated:\n  - ../standards/missing.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
+    (tmp_path / "my-brain" / "projects" / "a.md").write_text(
+        "---\nparent: ./map.md\nrelated:\n  - ../knowledge/missing.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# A\n",
         encoding="utf-8",
     )
 
@@ -225,7 +225,7 @@ def test_dream_exit_1_issues(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "bad.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "bad.md").write_text(
         "---\nparent: ./map.md\n---\n# Bad\n\n[broken](./nope.md)\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["dream"])
@@ -237,12 +237,12 @@ def test_dream_generates_nested_maps(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
+    (tmp_path / "my-brain" / "projects" / "api").mkdir(parents=True)
 
     result = runner.invoke(cli, ["dream"])
 
     assert result.exit_code == 0
-    assert (tmp_path / "my-brain" / "services" / "api" / "map.md").exists()
+    assert (tmp_path / "my-brain" / "projects" / "api" / "map.md").exists()
 
 
 def test_dream_sub_lobe_listed_in_parent_map(tmp_path, monkeypatch):
@@ -251,8 +251,8 @@ def test_dream_sub_lobe_listed_in_parent_map(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
-    (tmp_path / "my-brain" / "services" / "api" / "endpoints.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "api").mkdir(parents=True)
+    (tmp_path / "my-brain" / "projects" / "api" / "endpoints.md").write_text(
         "---\nparent: ./map.md\nrelated: []\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Endpoints\n",
         encoding="utf-8",
     )
@@ -260,7 +260,7 @@ def test_dream_sub_lobe_listed_in_parent_map(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["dream"])
 
     assert result.exit_code == 0
-    parent_map = (tmp_path / "my-brain" / "services" / "map.md").read_text(encoding="utf-8")
+    parent_map = (tmp_path / "my-brain" / "projects" / "map.md").read_text(encoding="utf-8")
     assert "api/" in parent_map
     assert "api/map.md" in parent_map
 
@@ -271,13 +271,13 @@ def test_dream_sibling_sub_lobes_see_each_other(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "services" / "api").mkdir(parents=True)
-    (tmp_path / "my-brain" / "services" / "web").mkdir(parents=True)
+    (tmp_path / "my-brain" / "projects" / "api").mkdir(parents=True)
+    (tmp_path / "my-brain" / "projects" / "web").mkdir(parents=True)
 
     result = runner.invoke(cli, ["dream"])
 
     assert result.exit_code == 0
-    api_map = (tmp_path / "my-brain" / "services" / "api" / "map.md").read_text(encoding="utf-8")
-    web_map = (tmp_path / "my-brain" / "services" / "web" / "map.md").read_text(encoding="utf-8")
+    api_map = (tmp_path / "my-brain" / "projects" / "api" / "map.md").read_text(encoding="utf-8")
+    web_map = (tmp_path / "my-brain" / "projects" / "web" / "map.md").read_text(encoding="utf-8")
     assert "web" in api_map, "api/map.md should list web as sibling"
     assert "api" in web_map, "web/map.md should list api as sibling"

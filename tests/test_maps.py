@@ -11,7 +11,7 @@ def _make_brain(tmp_path):
     """Helper: create a minimal brain with 3 lobes and some neurons."""
     brain = tmp_path / "brain"
     brain.mkdir()
-    for lobe in ["architecture", "decisions", "product"]:
+    for lobe in ["projects", "infrastructure", "knowledge"]:
         lobe_dir = brain / lobe
         lobe_dir.mkdir()
         (lobe_dir / "map.md").write_text(
@@ -27,7 +27,7 @@ def _make_brain_with_git(tmp_path):
     subprocess.run(["git", "init"], cwd=brain, capture_output=True)
     subprocess.run(["git", "checkout", "-b", "main"], cwd=brain, capture_output=True)
     # Add a neuron
-    neuron = brain / "architecture" / "auth.md"
+    neuron = brain / "projects" / "auth.md"
     neuron.write_text("---\nparent: ../map.md\ntags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth Design\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=brain, capture_output=True)
     subprocess.run(["git", "commit", "-m", "brain: add auth"], cwd=brain, capture_output=True)
@@ -41,9 +41,9 @@ def test_brain_md_links_all_lobes(tmp_path):
     brain = _make_brain(tmp_path)
     generate_brain_md(brain, "test-brain", "A test brain")
     content = (brain / "brain.md").read_text()
-    assert "[architecture/]" in content
-    assert "[decisions/]" in content
-    assert "[product/]" in content
+    assert "[projects/]" in content
+    assert "[infrastructure/]" in content
+    assert "[knowledge/]" in content
 
 
 def test_brain_md_links_index(tmp_path):
@@ -73,30 +73,30 @@ def test_brain_md_frontmatter(tmp_path):
 
 def test_map_lists_neurons(tmp_path):
     brain = _make_brain_with_git(tmp_path)
-    generate_map_md(brain, brain / "architecture")
-    content = (brain / "architecture" / "map.md").read_text()
+    generate_map_md(brain, brain / "projects")
+    content = (brain / "projects" / "map.md").read_text()
     assert "auth.md" in content
 
 
 def test_map_parent_link(tmp_path):
     brain = _make_brain(tmp_path)
-    generate_map_md(brain, brain / "architecture")
-    content = (brain / "architecture" / "map.md").read_text()
+    generate_map_md(brain, brain / "projects")
+    content = (brain / "projects" / "map.md").read_text()
     assert "brain.md" in content
 
 
 def test_map_sibling_links(tmp_path):
     brain = _make_brain(tmp_path)
-    generate_map_md(brain, brain / "architecture")
-    content = (brain / "architecture" / "map.md").read_text()
+    generate_map_md(brain, brain / "projects")
+    content = (brain / "projects" / "map.md").read_text()
     # Should link to sibling lobes
-    assert "decisions" in content or "product" in content
+    assert "infrastructure" in content or "knowledge" in content
 
 
 def test_map_nested_lobe(tmp_path):
     brain = _make_brain(tmp_path)
     # Create a nested lobe
-    nested = brain / "architecture" / "patterns"
+    nested = brain / "projects" / "patterns"
     nested.mkdir()
     (nested / "map.md").write_text("---\nauto_generated: true\nparent: ../map.md\n---\n# Patterns\n", encoding="utf-8")
     generate_map_md(brain, nested)
@@ -109,17 +109,17 @@ def test_map_nested_lobe(tmp_path):
 def test_map_no_recent_changes(tmp_path):
     """Recent Changes section was removed -- maps are cleaner now."""
     brain = _make_brain_with_git(tmp_path)
-    generate_map_md(brain, brain / "architecture")
-    content = (brain / "architecture" / "map.md").read_text()
+    generate_map_md(brain, brain / "projects")
+    content = (brain / "projects" / "map.md").read_text()
     assert "Recent Changes" not in content
 
 
 def test_map_empty_lobe(tmp_path):
     brain = _make_brain(tmp_path)
-    generate_map_md(brain, brain / "decisions")
-    content = (brain / "decisions" / "map.md").read_text()
+    generate_map_md(brain, brain / "knowledge")
+    content = (brain / "knowledge" / "map.md").read_text()
     # Should still have structure, just no neuron entries
-    assert "# Decisions" in content or "# decisions" in content.lower()
+    assert "# Knowledge" in content or "# knowledge" in content.lower()
 
 
 # --- brain.md is lightweight: lobes only, no neuron index ---
@@ -140,4 +140,4 @@ def test_brain_md_lobes_only(tmp_path):
     content = (brain / "brain.md").read_text()
     assert "## Lobes" in content
     assert "glossary.md" in content
-    assert "architecture" in content
+    assert "projects" in content

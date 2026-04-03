@@ -56,14 +56,14 @@ def test_mri_runs_dream_preflight(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    neuron = tmp_path / "my-brain" / "architecture" / "orphan.md"
+    neuron = tmp_path / "my-brain" / "projects" / "orphan.md"
     neuron.write_text(
         "---\nparent: ./map.md\ntags: []\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Orphan\n",
         encoding="utf-8",
     )
     result = runner.invoke(cli, ["mri", "--json"])
     data = json.loads(result.output)
-    map_content = (tmp_path / "my-brain" / "architecture" / "map.md").read_text(encoding="utf-8")
+    map_content = (tmp_path / "my-brain" / "projects" / "map.md").read_text(encoding="utf-8")
 
     assert result.exit_code == 0
     assert data["preflight_fixes"]["orphan_references_added"] >= 1

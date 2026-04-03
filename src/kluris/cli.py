@@ -643,9 +643,9 @@ def neuron(file_path: str, lobe: str | None, template_name: str | None,
 
     \b
     Examples:
-      kluris neuron auth.md --lobe architecture
-      kluris neuron use-raw-sql.md --lobe decisions --template decision
-      kluris neuron outage-jan.md --lobe learnings --template incident
+      kluris neuron auth.md --lobe projects/btb-backend
+      kluris neuron use-raw-sql.md --lobe knowledge --template decision
+      kluris neuron outage-jan.md --lobe knowledge --template incident
     """
     brains = _resolve_brains(brain_name, multi=False)
     name, entry = brains[0]

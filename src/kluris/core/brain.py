@@ -36,13 +36,9 @@ NEURON_TEMPLATES: dict[str, dict] = {
 BRAIN_TYPES: dict[str, dict] = {
     "product-group": {
         "structure": {
-            "architecture": "System design, technical patterns",
-            "decisions": "ADRs and key decisions across all domains",
-            "product": "PRDs, roadmap, features, user research",
-            "standards": "Coding standards, naming conventions, review checklists",
-            "services": "Per-service sub-folders with setup, APIs, data models",
-            "infrastructure": "Hosting, CI/CD, Docker, networking, deployment",
-            "learnings": "Domain knowledge, lessons learned, troubleshooting tips, dated notes",
+            "projects": "Per-project sub-folders with APIs, data models, setup, conventions",
+            "infrastructure": "Hosting, CI/CD, Docker, deployment, environments, env vars",
+            "knowledge": "Decisions, learnings, troubleshooting tips, domain expertise",
         },
     },
     "personal": {

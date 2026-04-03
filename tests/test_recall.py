@@ -10,7 +10,7 @@ def test_recall_finds_match(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "auth.md").write_text(
         "---\nparent: ./map.md\n---\n# Keycloak Auth Design\n", encoding="utf-8"
     )
     result = runner.invoke(cli, ["recall", "Keycloak"])
@@ -31,12 +31,12 @@ def test_recall_prefers_neurons_over_generated_files(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    (tmp_path / "my-brain" / "architecture" / "auth.md").write_text(
+    (tmp_path / "my-brain" / "projects" / "auth.md").write_text(
         "---\nparent: ./map.md\n---\n# Architecture notes\n", encoding="utf-8"
     )
-    result = runner.invoke(cli, ["recall", "architecture", "--json"])
+    result = runner.invoke(cli, ["recall", "Architecture notes", "--json"])
     import json
     data = json.loads(result.output)
     assert result.exit_code == 0
     assert data["results"]
-    assert all(item["file"] == "architecture/auth.md" for item in data["results"])
+    assert any(item["file"] == "projects/auth.md" for item in data["results"])

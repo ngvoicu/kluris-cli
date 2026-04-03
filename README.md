@@ -107,19 +107,19 @@ acme-brain/
 ├── brain.md                # Root lobes directory (auto-generated)
 ├── glossary.md             # Domain terms (hand-edited)
 ├── README.md               # Usage guide
-├── architecture/
+├── projects/
 │   ├── map.md              # Lobe index (auto-generated)
-│   ├── auth-keycloak.md    # <- neuron
-│   └── data-flow.md        # <- neuron
-├── decisions/
-│   ├── map.md
-│   └── use-raw-sql.md      # <- neuron (decision template)
-├── services/
-│   ├── map.md
 │   └── btb-backend/
 │       ├── map.md
-│       └── data-model.md
-└── ...
+│       ├── data-model.md   # <- neuron
+│       └── auth-flow.md    # <- neuron
+├── infrastructure/
+│   ├── map.md
+│   ├── docker-builds.md    # <- neuron
+│   └── environments.md     # <- neuron
+└── knowledge/
+    ├── map.md
+    └── use-raw-sql.md      # <- neuron (decision template)
 ```
 
 Folders are **lobes** (knowledge regions). Files are **neurons** (knowledge
@@ -139,18 +139,14 @@ with 3 backends, a frontend, and shared infrastructure.
 
 | Lobe | What goes in it |
 |------|----------------|
-| `architecture/` | System design, technical patterns, data flow, tech stack choices |
-| `decisions/` | ADRs and key decisions across all domains (tech, product, business) |
-| `product/` | PRDs, roadmap, features, user research |
-| `standards/` | Coding standards, naming conventions, review checklists |
-| `services/` | Per-service sub-folders -- each service gets its own map.md, APIs, data models |
-| `infrastructure/` | Hosting, CI/CD, Docker, networking, deployment, environments |
-| `learnings/` | Domain knowledge, lessons learned, troubleshooting tips, dated notes |
+| `projects/` | Per-project sub-folders -- APIs, data models, setup, conventions |
+| `infrastructure/` | Hosting, CI/CD, Docker, deployment, environments, env vars |
+| `knowledge/` | Decisions, learnings, troubleshooting tips, domain expertise |
 
-The `services/` lobe nests deeper -- one sub-folder per service:
+The `projects/` lobe nests deeper -- one sub-folder per project:
 
 ```
-services/
+projects/
 ├── map.md
 ├── btb-backend/
 │   ├── map.md
@@ -164,6 +160,9 @@ services/
 └── btb-summon/
     └── map.md
 ```
+
+Project neurons link to infrastructure neurons for deployment details
+and environments -- never duplicate infra content across lobes.
 
 ### personal
 

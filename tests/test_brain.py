@@ -15,8 +15,7 @@ def test_scaffold_team(tmp_path):
     scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     brain = tmp_path / "brain"
     expected_lobes = [
-        "architecture", "decisions", "product", "standards",
-        "services", "infrastructure", "learnings",
+        "projects", "infrastructure", "knowledge",
     ]
     for lobe in expected_lobes:
         assert (brain / lobe).is_dir(), f"Missing lobe: {lobe}"
@@ -28,7 +27,7 @@ def test_scaffold_personal(tmp_path):
     brain = tmp_path / "brain"
     for lobe in ["projects", "tasks", "notes"]:
         assert (brain / lobe).is_dir()
-    assert not (brain / "architecture").exists()
+    assert not (brain / "infrastructure").exists()
 
 
 def test_scaffold_product(tmp_path):
@@ -105,7 +104,7 @@ def test_from_custom_config(tmp_path):
     assert (brain / "docs").is_dir()
     assert (brain / "notes").is_dir()
     # Should NOT have default team lobes since custom overrides
-    assert not (brain / "architecture").exists()
+    assert not (brain / "projects").exists()
 
 
 def test_creates_gitignore(tmp_path):

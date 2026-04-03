@@ -53,7 +53,7 @@ def test_multi_brain_recall_all(tmp_path, monkeypatch):
     cfg.default_brain = None
     write_global_config(cfg)
     # recall operates on all when multi-brain
-    (tmp_path / "brain-a" / "architecture" / "auth.md").write_text("# Keycloak Auth\n", encoding="utf-8")
+    (tmp_path / "brain-a" / "projects" / "auth.md").write_text("# Keycloak Auth\n", encoding="utf-8")
     result = runner.invoke(cli, ["recall", "Keycloak", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
@@ -70,6 +70,6 @@ def test_multi_brain_neuron_error(tmp_path, monkeypatch):
     cfg.default_brain = None
     write_global_config(cfg)
     # neuron should error when multi-brain and no default
-    result = runner.invoke(cli, ["neuron", "test.md", "--lobe", "architecture"])
+    result = runner.invoke(cli, ["neuron", "test.md", "--lobe", "projects"])
     assert result.exit_code != 0
     assert "Multiple brains" in result.output or "Specify" in result.output

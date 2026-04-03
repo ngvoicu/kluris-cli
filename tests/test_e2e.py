@@ -20,14 +20,14 @@ def test_full_workflow(tmp_path, monkeypatch):
     brain = tmp_path / "my-brain"
 
     # 2. Add neurons
-    runner.invoke(cli, ["neuron", "auth.md", "--lobe", "architecture"])
-    runner.invoke(cli, ["neuron", "naming.md", "--lobe", "standards"])
+    runner.invoke(cli, ["neuron", "auth.md", "--lobe", "projects"])
+    runner.invoke(cli, ["neuron", "naming.md", "--lobe", "knowledge"])
     runner.invoke(cli, ["neuron", "deploy.md", "--lobe", "infrastructure"])
 
     # 3. Add neuron with decision template
-    result = runner.invoke(cli, ["neuron", "use-raw-sql.md", "--lobe", "decisions", "--template", "decision"])
+    result = runner.invoke(cli, ["neuron", "use-raw-sql.md", "--lobe", "knowledge", "--template", "decision"])
     assert result.exit_code == 0
-    content = (brain / "decisions" / "use-raw-sql.md").read_text()
+    content = (brain / "knowledge" / "use-raw-sql.md").read_text()
     assert "## Context" in content
 
     # 4. Dream — regenerate maps and validate
@@ -35,12 +35,12 @@ def test_full_workflow(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
     # 5. Verify maps list neurons
-    arch_map = (brain / "architecture" / "map.md").read_text()
+    arch_map = (brain / "projects" / "map.md").read_text()
     assert "auth.md" in arch_map
 
     # 6. Verify brain.md has lobes (neurons are in map.md, not brain.md)
     brain_content = (brain / "brain.md").read_text()
-    assert "architecture" in brain_content
+    assert "projects" in brain_content
 
     # 7. MRI
     result = runner.invoke(cli, ["mri"])

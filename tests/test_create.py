@@ -17,7 +17,7 @@ def test_create_team(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert (tmp_path / "my-brain" / "kluris.yml").exists()
     assert (tmp_path / "my-brain" / "brain.md").exists()
-    assert (tmp_path / "my-brain" / "architecture").is_dir()
+    assert (tmp_path / "my-brain" / "projects").is_dir()
 
 
 def test_create_git_repo(tmp_path, monkeypatch):
@@ -75,7 +75,7 @@ def test_create_personal(tmp_path, monkeypatch):
                                   "--description", "test", "--type", "personal", "--json"])
     assert result.exit_code == 0
     assert (tmp_path / "my-brain" / "projects").is_dir()
-    assert not (tmp_path / "my-brain" / "architecture").exists()
+    assert not (tmp_path / "my-brain" / "infrastructure").exists()
 
 
 def test_create_json(tmp_path, monkeypatch):

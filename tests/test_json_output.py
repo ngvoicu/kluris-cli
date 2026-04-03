@@ -55,7 +55,7 @@ def test_recall_json(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["recall", "architecture", "--json"])
+    result = runner.invoke(cli, ["recall", "projects", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "query" in data
@@ -67,7 +67,7 @@ def test_neuron_json(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["neuron", "auth.md", "--lobe", "architecture", "--json"])
+    result = runner.invoke(cli, ["neuron", "auth.md", "--lobe", "projects", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "path" in data

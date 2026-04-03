@@ -60,8 +60,7 @@ def temp_brain(tmp_path, temp_config):
         "agents": {"commands_for": ["claude"]},
     }), encoding="utf-8")
 
-    for lobe in ["architecture", "decisions", "product", "standards",
-                 "services", "infrastructure", "learnings"]:
+    for lobe in ["projects", "infrastructure", "knowledge"]:
         lobe_dir = brain_path / lobe
         lobe_dir.mkdir()
         (lobe_dir / "map.md").write_text(

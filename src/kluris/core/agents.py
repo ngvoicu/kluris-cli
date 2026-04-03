@@ -110,12 +110,11 @@ then `kluris push`.
 Lobe routing -- do NOT dump everything under one folder. Match each finding
 to the best lobe based on lobe descriptions in brain.md. When a topic spans
 multiple lobes, put it in the most specific one and link to related lobes --
-never duplicate content across neurons.
+never duplicate content across neurons. Project neurons link to infrastructure
+neurons for deployment, environments, and env vars -- never duplicate infra content.
 Read existing neurons in target lobes first -- update or extend, don't create duplicates.
 Domain terms and acronyms discovered → include as a wizard step: show the
 proposed glossary additions, ask for approval before appending to `glossary.md`.
-If you spot something that looks like a decision or convention, mention it so the
-human can add it manually -- don't auto-generate intent-driven content.
 
 **Remember** -- "remember we chose X", "store that we decided Y"
 Write a specific piece of knowledge to the brain.

@@ -20,10 +20,10 @@ def test_nested_lobe(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    result = runner.invoke(cli, ["lobe", "patterns", "--parent", "architecture"])
+    result = runner.invoke(cli, ["lobe", "patterns", "--parent", "projects"])
     assert result.exit_code == 0
-    assert (tmp_path / "my-brain" / "architecture" / "patterns").is_dir()
-    assert (tmp_path / "my-brain" / "architecture" / "patterns" / "map.md").exists()
+    assert (tmp_path / "my-brain" / "projects" / "patterns").is_dir()
+    assert (tmp_path / "my-brain" / "projects" / "patterns" / "map.md").exists()
 
 
 def test_lobe_description_is_preserved(tmp_path, monkeypatch):
