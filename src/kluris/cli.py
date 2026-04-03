@@ -252,15 +252,6 @@ def _set_default_brain(name: str | None) -> str | None:
     return name
 
 
-def _recall_match_tier(file_name: str) -> int:
-    """Rank recall matches so authored knowledge wins over generated files."""
-    if file_name in {"brain.md", "map.md", "index.md", "README.md"}:
-        return 2
-    if file_name == "glossary.md":
-        return 1
-    return 0
-
-
 @click.group(cls=KlurisGroup)
 @click.version_option(package_name="kluris")
 def cli():
@@ -583,49 +574,6 @@ def status(brain_name: str | None, as_json: bool):
 
 
 @cli.command()
-@click.argument("query")
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def recall(query: str, brain_name: str | None, as_json: bool):
-    """Search brain content."""
-    brains = _resolve_brains(brain_name)
-    matches_by_tier: dict[int, list[dict]] = {0: [], 1: [], 2: []}
-
-    for name, entry in brains:
-        brain_path = Path(entry["path"])
-        query_lower = query.lower()
-        for md_file in brain_path.rglob("*.md"):
-            if ".git" in md_file.parts:
-                continue
-            tier = _recall_match_tier(md_file.name)
-            try:
-                lines = md_file.read_text(encoding="utf-8").splitlines()
-                for i, line in enumerate(lines, 1):
-                    if query_lower in line.lower():
-                        rel = str(md_file.relative_to(brain_path))
-                        matches_by_tier[tier].append({
-                            "brain": name, "file": rel,
-                            "line": str(i), "text": line.strip(),
-                        })
-            except (OSError, UnicodeDecodeError):
-                continue
-
-    all_results = []
-    for tier in (0, 1, 2):
-        if matches_by_tier[tier]:
-            all_results = matches_by_tier[tier]
-            break
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "query": query, "results": all_results}))
-    else:
-        if not all_results:
-            console.print(f"No results for '{query}'")
-        for r in all_results:
-            console.print(f"  {r['brain']}/{r['file']}:{r['line']} {r['text']}")
-
-
-@cli.command()
 @click.argument("file_path")
 @click.option("--lobe", help="Target lobe folder")
 @click.option("--template", "template_name", help="Neuron template (e.g. decision, incident, runbook)")
@@ -927,9 +875,14 @@ def _do_install(as_json: bool = False):
     config_path = get_config_path()
     brain_lines = [f"## Your brains (resolved paths)\n\nConfig: `{config_path}`\n"]
     default = config.default_brain
+    any_has_git = False
     for bname, entry in config.brains.items():
         marker = " (default)" if bname == default else ""
-        brain_lines.append(f"- **{bname}**{marker}: `{entry.path}`")
+        has_git = (Path(entry.path) / ".git").exists()
+        if has_git:
+            any_has_git = True
+        git_label = "git" if has_git else "no git"
+        brain_lines.append(f"- **{bname}**{marker}: `{entry.path}` ({git_label})")
     if not config.brains:
         brain_lines.append("No brains registered. Tell user to run `kluris create`.")
     brain_info = "\n".join(brain_lines)
@@ -1184,7 +1137,6 @@ def help_cmd(command: str | None, as_json: bool):
         ("clone", "Clone a brain from a git remote"),
         ("list", "List registered brains"),
         ("status", "Show brain tree, recent changes, and neuron counts"),
-        ("recall", "Search brain and show what it knows (read-only)"),
         ("neuron", "Create a new neuron (--template for structured formats)"),
         ("lobe", "Create a new lobe (knowledge region)"),
         ("dream", "Regenerate maps, auto-fix safe issues, and validate remaining links"),
