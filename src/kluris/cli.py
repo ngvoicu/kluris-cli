@@ -797,7 +797,8 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
                 console.print(f"  {line.strip()}")
             message = click.prompt("\n  Commit message")
         else:
-            message = "brain: update"
+            prefix = brain_config.git.commit_prefix or "brain:"
+            message = f"{prefix} update"
 
         git_commit(brain_path, message)
 
@@ -837,19 +838,16 @@ def use_brain(brain_name: str, as_json: bool):
             f"Run 'kluris list' to see available brains."
         )
 
-    # Install skills first -- only persist the new default if install succeeds
-    old_default = config.default_brain
     _set_default_brain(brain_name)
-    try:
-        _do_install(as_json=as_json)
-    except Exception as e:
-        _set_default_brain(old_default)
-        raise click.ClickException(f"Skill installation failed, default brain not changed: {e}")
+    result = _do_install(as_json=as_json)
 
     if as_json:
         click.echo(json_lib.dumps({"ok": True, "default_brain": brain_name}))
     else:
         console.print(f"Default brain: [bold]{brain_name}[/bold]")
+        if result["failed_agents"]:
+            names = ", ".join(a for a, _ in result["failed_agents"])
+            console.print(f"  [yellow]Warning: skill install failed for: {names}. Run 'kluris install-skills' to retry.[/yellow]")
 
 
 @cli.command()
@@ -988,11 +986,12 @@ def _do_install(as_json: bool = False):
     except OSError:
         pass
 
-    if failed_agents:
-        names = ", ".join(a for a, _ in failed_agents)
-        raise OSError(f"Skill installation failed for: {names}")
-
-    return {"agents": agent_count, "commands_per_agent": len(COMMANDS), "total_files": total_files}
+    return {
+        "agents": agent_count,
+        "commands_per_agent": len(COMMANDS),
+        "total_files": total_files,
+        "failed_agents": failed_agents,
+    }
 
 
 @cli.command("install-skills")
@@ -1005,6 +1004,9 @@ def install_commands(as_json: bool):
         click.echo(json_lib.dumps({"ok": True, **result}))
     else:
         console.print(f"Installed {result['total_files']} files for {result['agents']} agents")
+        if result["failed_agents"]:
+            names = ", ".join(a for a, _ in result["failed_agents"])
+            console.print(f"  [yellow]Warning: failed for: {names}[/yellow]")
 
 
 @cli.command("uninstall-skills")

@@ -71,25 +71,23 @@ def test_use_reinstalls_skills(tmp_path, monkeypatch):
     assert "(default)" in content
 
 
-def test_use_rolls_back_when_install_fails_without_existing_default(tmp_path, monkeypatch):
-    """A failed install must restore the absence of a default brain."""
+def test_use_warns_on_partial_install_failure(tmp_path, monkeypatch):
+    """use always switches default, warns if some agent installs fail."""
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "brain-a", tmp_path)
     create_test_brain(runner, "brain-b", tmp_path)
 
-    config = read_global_config()
-    config.default_brain = None
-    write_global_config(config)
+    def partial_fail(*args, **kwargs):
+        return {"agents": 6, "commands_per_agent": 1, "total_files": 6,
+                "failed_agents": [("windsurf", "permission denied")]}
 
-    def fail_install(*args, **kwargs):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(cli_module, "_do_install", fail_install)
+    monkeypatch.setattr(cli_module, "_do_install", partial_fail)
 
     result = runner.invoke(cli, ["use", "brain-b"])
 
-    assert result.exit_code != 0
-    assert "default brain not changed" in result.output
-    assert read_global_config().default_brain is None
+    assert result.exit_code == 0
+    assert read_global_config().default_brain == "brain-b"
+    assert "Warning" in result.output
+    assert "windsurf" in result.output
