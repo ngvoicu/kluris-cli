@@ -381,8 +381,6 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         if branch_name != "main":
             from kluris.core.git import _run
             _run(["git", "checkout", "-b", branch_name], cwd=brain_path)
-        git_add(brain_path)
-        git_commit(brain_path, f"brain: initialize {name}")
         if remote:
             from kluris.core.git import _run
             _run(["git", "remote", "add", "origin", remote], cwd=brain_path)
@@ -394,8 +392,11 @@ def create(name: str | None, desc: str | None, base_path: str | None,
     if config.default_brain is None or len(config.brains) == 0:
         _set_default_brain(name)
 
-    # Dream to generate proper maps and navigation
+    # Dream to generate proper maps and navigation, then commit
     _run_dream_on_brain(brain_path)
+    if not no_git:
+        git_add(brain_path)
+        git_commit(brain_path, f"brain: initialize {name}")
 
     # Install agent skills/workflows
     _do_install()
