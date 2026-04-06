@@ -1360,6 +1360,15 @@ function draw() {{
       ctx.stroke();
       ctx.setLineDash([]);
     }}
+    // Sub-lobe label: use the last part of the sublobe path (e.g. "dsu-dl" from "projects/dsu-dl")
+    const slName = sl.split('/').pop() || sl;
+    const scx = members.reduce((s, n) => s + n.x, 0) / members.length;
+    const sMinY = Math.min(...members.map(n => n.y));
+    ctx.fillStyle = rgbaFromHex(color, 0.16);
+    ctx.font = 'bold 12px "Avenir Next", "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(slName, scx, sMinY - 34);
+    ctx.textAlign = 'start';
   }}
 
   // --- Pass 2: Edges ---
