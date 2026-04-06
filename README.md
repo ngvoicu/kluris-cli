@@ -115,7 +115,7 @@ contradicts a documented decision, it flags the conflict.
 kluris dream         # regenerate maps, fix links, validate structure
 kluris push          # commit and push to git (if brain uses git)
 kluris status        # brain tree, neuron counts, recent changes
-kluris mri           # interactive visualization
+kluris mri --open    # generate and open in browser
 ```
 
 ## What a brain looks like
@@ -245,7 +245,7 @@ Empty -- build your own structure from scratch.
 | `kluris lobe <name>` | Create a new lobe (optionally with `--parent` for nesting) |
 | `kluris dream` | Regenerate maps, fix links, validate structure |
 | `kluris push` | Commit and push brain changes to git |
-| `kluris mri` | Generate interactive HTML brain visualization |
+| `kluris mri` | Generate interactive HTML brain visualization (`--open` to open in browser) |
 | `kluris templates` | List available neuron templates |
 | `kluris install-skills` | Install the `/kluris` skill for your AI agents |
 | `kluris uninstall-skills` | Remove the `/kluris` skill from AI agent directories |

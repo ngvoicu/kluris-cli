@@ -667,6 +667,26 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     line-height: 1;
   }}
   .modal-close:hover {{ color: var(--text); }}
+  .modal-nav {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 22px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }}
+  .modal-nav:empty {{ display: none; }}
+  .modal-nav-btn {{
+    appearance: none;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    cursor: pointer;
+  }}
+  .modal-nav-btn:hover {{ background: rgba(123,247,255,0.12); border-color: rgba(123,247,255,0.4); }}
   .modal-content {{
     flex: 1;
     overflow: auto;
@@ -714,10 +734,6 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
           <div class="stat-label">Visible</div>
           <div class="stat-value" id="stat-visible">{len(graph["nodes"])}</div>
         </div>
-        <div class="stat">
-          <div class="stat-label">Selected</div>
-          <div class="stat-value" id="stat-selected">--</div>
-        </div>
       </div>
       <div class="search-wrap">
         <label for="search-input">Search the brain</label>
@@ -758,6 +774,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
       <div class="modal-title" id="modal-title"></div>
       <button type="button" class="modal-close" id="modal-close">&times;</button>
     </div>
+    <div class="modal-nav" id="modal-nav"></div>
     <pre class="modal-content" id="modal-content"></pre>
   </div>
 </div>
@@ -778,7 +795,7 @@ const detailsEmpty = document.getElementById('details-empty');
 const stageFocus = document.getElementById('stage-focus');
 const typeFiltersEl = document.getElementById('type-filters');
 const statVisible = document.getElementById('stat-visible');
-const statSelected = document.getElementById('stat-selected');
+// statSelected removed from left panel
 const neighbors = new Map();
 for (const node of graph.nodes) neighbors.set(node.id, new Set());
 for (const edge of graph.edges) {{
@@ -1046,13 +1063,11 @@ function updateDetails() {{
   if (!node) {{
     detailsPanel.innerHTML = '';
     detailsEmpty.style.display = 'block';
-    statSelected.textContent = '--';
     stageFocus.textContent = '';
     return;
   }}
 
   detailsEmpty.style.display = 'none';
-  statSelected.textContent = node.title;
   stageFocus.textContent = `${{node.title}} • ${{node.path}}`;
   const connected = [...(neighbors.get(node.id) || [])]
     .map(id => nodes.find(item => item.id === id))
@@ -1105,13 +1120,33 @@ function updateDetails() {{
   }}
   const expandBtn = document.getElementById('expand-preview');
   if (expandBtn) {{
-    expandBtn.addEventListener('click', () => {{
-      const modal = document.getElementById('content-modal');
-      document.getElementById('modal-title').textContent = node.title;
-      document.getElementById('modal-content').textContent = node.content_preview || 'No content.';
-      modal.style.display = 'flex';
+    expandBtn.addEventListener('click', () => openModal(node));
+  }}
+}}
+
+function openModal(node) {{
+  const modal = document.getElementById('content-modal');
+  document.getElementById('modal-title').textContent = node.title;
+  document.getElementById('modal-content').textContent = node.content_preview || 'No content.';
+  // Build nav buttons for connected nodes
+  const navEl = document.getElementById('modal-nav');
+  const connected = [...(neighbors.get(node.id) || [])]
+    .map(id => nodes.find(n => n.id === id))
+    .filter(n => n && n.type === 'neuron')
+    .sort((a, b) => a.title.localeCompare(b.title));
+  navEl.innerHTML = connected.map(n =>
+    `<button type="button" class="modal-nav-btn" data-modal-nav="${{n.id}}">${{escapeHtml(n.title)}}</button>`
+  ).join('');
+  for (const btn of navEl.querySelectorAll('[data-modal-nav]')) {{
+    btn.addEventListener('click', () => {{
+      const target = nodes.find(n => n.id === Number(btn.dataset.modalNav));
+      if (target) {{
+        selectNode(target.id, true);
+        openModal(target);
+      }}
     }});
   }}
+  modal.style.display = 'flex';
 }}
 
 function selectNode(id, recenter = false) {{

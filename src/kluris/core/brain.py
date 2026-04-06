@@ -374,7 +374,7 @@ kluris use <name>      # Switch the default brain
 kluris templates       # List available neuron templates
 kluris dream           # Regenerate maps, auto-fix safe issues, validate remaining links
 kluris push            # Commit and push to git
-kluris mri             # Run preflight fixes, then generate interactive visualization
+kluris mri --open      # Generate visualization and open in browser
 kluris help            # All commands
 ```
 

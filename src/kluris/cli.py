@@ -853,9 +853,11 @@ def use_brain(brain_name: str, as_json: bool):
 @cli.command()
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--output", "output_path", help="Output HTML file path")
+@click.option("--open", "open_browser", is_flag=True, help="Open in browser after generating")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def mri(brain_name: str | None, output_path: str | None, as_json: bool):
+def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_json: bool):
     """Generate interactive brain visualization."""
+    import webbrowser
     brains = _resolve_brains(brain_name)
 
     for name, entry in brains:
@@ -872,6 +874,8 @@ def mri(brain_name: str | None, output_path: str | None, as_json: bool):
             console.print(f"  {stats['nodes']} nodes, {stats['edges']} edges")
             if sync_result["fixes"]["total"]:
                 console.print(f"  MRI preflight applied {sync_result['fixes']['total']} automatic fixes")
+            if open_browser:
+                webbrowser.open(f"file://{out.resolve()}")
 
 
 def _do_install(as_json: bool = False):
