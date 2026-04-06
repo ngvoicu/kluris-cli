@@ -422,7 +422,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
 @click.option("--branch", "branch_name", help="Branch to checkout")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_json: bool):
-    """Clone an existing brain from a git remote.
+    """Clone an existing SME brain from a git remote.
 
     Run with no arguments for an interactive wizard:
 
@@ -432,7 +432,7 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
       kluris clone git@github.com:team/brain.git ~/my-copy --branch develop
     """
     if not url:
-        console.print("\n[bold]Clone a brain[/bold]\n")
+        console.print("\n[bold]Clone an SME brain[/bold]\n")
         url = click.prompt("  Git remote URL", type=str)
         if not path:
             default_path = str(Path.home() / url.rstrip("/").split("/")[-1].replace(".git", ""))
@@ -753,7 +753,7 @@ def dream(brain_name: str | None, as_json: bool):
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def push(msg: str | None, brain_name: str | None, as_json: bool):
-    """Commit and push brain changes."""
+    """Commit and push SME brain changes."""
     brains = _resolve_brains(brain_name)
     results = []
 
@@ -830,7 +830,7 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
 @click.argument("brain_name")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def use_brain(brain_name: str, as_json: bool):
-    """Set the default brain."""
+    """Switch the active SME brain."""
     config = read_global_config()
     if brain_name not in config.brains:
         raise click.ClickException(
@@ -1065,7 +1065,7 @@ def uninstall_skills(as_json: bool):
 @click.argument("brain_name")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def remove(brain_name: str, as_json: bool):
-    """Unregister a brain (does not delete files)."""
+    """Unregister an SME brain (does not delete files)."""
     config = read_global_config()
     if brain_name not in config.brains:
         raise click.ClickException(
@@ -1159,18 +1159,18 @@ def help_cmd(command: str | None, as_json: bool):
     """Show help for kluris commands."""
     commands_info = [
         ("create", "Create a new SME brain (--type, --remote, --no-git)"),
-        ("clone", "Clone a brain from a git remote"),
-        ("list", "List registered brains"),
+        ("clone", "Clone an SME brain from a git remote"),
+        ("list", "List registered SME brains"),
         ("status", "Show brain tree, recent changes, and neuron counts"),
         ("neuron", "Create a new neuron (--template for structured formats)"),
         ("lobe", "Create a new lobe (knowledge region)"),
-        ("dream", "Regenerate maps, auto-fix safe issues, and validate remaining links"),
+        ("dream", "Regenerate maps, auto-fix safe issues, and validate links"),
         ("push", "Commit and push brain changes to git"),
-        ("mri", "Run preflight fixes and generate an interactive HTML brain visualization"),
-        ("use", "Set the default brain"),
-        ("install-skills", "Install kluris skill into AI agent directories"),
-        ("uninstall-skills", "Remove kluris skill from all AI agent directories"),
-        ("remove", "Unregister a brain (keeps files on disk)"),
+        ("mri", "Generate interactive brain visualization and open in browser"),
+        ("use", "Switch the active SME brain"),
+        ("install-skills", "Install the /kluris skill for your AI agents"),
+        ("uninstall-skills", "Remove the /kluris skill from AI agent directories"),
+        ("remove", "Unregister an SME brain (keeps files on disk)"),
         ("templates", "List available neuron templates for the current brain"),
         ("doctor", "Check prerequisites (git, Python, config dir)"),
         ("help", "Show this help"),
