@@ -217,6 +217,7 @@ def build_graph(brain_path: Path) -> dict:
 def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     """Generate a standalone HTML visualization of the brain graph."""
     graph = build_graph(brain_path)
+    brain_name = brain_path.name
     graph_json = json.dumps(graph, indent=2)
 
     html = f"""\
@@ -225,7 +226,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kluris Brain MRI</title>
+<title>{brain_name} Brain MRI</title>
 <style>
   :root {{
     --bg: #0a0f1a;
@@ -629,7 +630,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   <aside class="panel panel-left">
     <div class="panel-inner">
       <p class="eyebrow">Constellation Navigation</p>
-      <h1>Brain MRI</h1>
+      <h1>{brain_name}</h1>
       <p class="subhead">
         Search by node title, path, lobe, or tags. Click any node to inspect metadata,
         connected knowledge, and the local neighborhood instantly.
@@ -1302,6 +1303,7 @@ function draw() {{
 
   // --- Pass 3: Nodes ---
   for (const node of filteredNodes) {{
+    if (node.type === 'brain') continue; // brain name is in the page title
     const isSelected = node.id === selectedId;
     const isHovered = node.id === hoveredId;
     const dimmed = query && !node.searchText.includes(query);
@@ -1326,7 +1328,10 @@ function draw() {{
       ctx.stroke();
       ctx.shadowBlur = 0;
       // Label inside the rect
-      const lobeName = node.lobe === 'root' ? node.title : node.lobe;
+      // Use directory name from path (e.g. "specmint" from "projects/specmint/map.md")
+      const pathParts = node.path.split('/');
+      const dirName = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : node.lobe;
+      const lobeName = dirName;
       const label = lobeName.length > 18 ? lobeName.slice(0, 18) + '...' : lobeName;
       ctx.fillStyle = 'rgba(233, 241, 255, 0.95)';
       ctx.font = `bold ${{depth <= 1 ? 13 : 11}}px "Avenir Next", "Segoe UI", sans-serif`;
