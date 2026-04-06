@@ -228,8 +228,8 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 <title>Kluris Brain MRI</title>
 <style>
   :root {{
-    --bg: #06111f;
-    --panel: rgba(8, 15, 32, 0.86);
+    --bg: #0a0f1a;
+    --panel: rgba(10, 16, 30, 0.92);
     --panel-strong: rgba(12, 21, 44, 0.96);
     --line: rgba(123, 167, 255, 0.18);
     --text: #e9f1ff;
@@ -664,9 +664,10 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
       <div id="result-count" class="subhead">Showing every node in the graph.</div>
       <div class="results" id="search-results"></div>
       <div class="legend">
-        <div class="legend-item"><span class="legend-swatch" style="background:#ffb86b"></span>Brain / glossary anchors</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:#7bf7ff"></span>Map nodes for navigation hubs</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:#7df7b4"></span>Neuron nodes for authored knowledge</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:#fff;border:2px solid #fff;border-radius:50%"></span>Brain root</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:rgba(123,247,255,0.25);border:2px solid #7bf7ff;border-radius:6px"></span>Lobe (rounded rectangle)</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:rgba(125,247,180,0.6);border-radius:50%"></span>Neuron (circle)</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:#ffc6f4;transform:rotate(45deg);border-radius:2px"></span>Glossary / Index (diamond)</div>
         <div class="legend-item"><span class="legend-line parent"></span>Parent relationships</div>
         <div class="legend-item"><span class="legend-line related"></span>Related synapses</div>
         <div class="legend-item"><span class="legend-line inline"></span>Inline markdown links</div>
@@ -697,13 +698,6 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 </div>
 <script>
 const graph = {graph_json};
-const TYPE_COLORS = {{
-  brain: '#ffb86b',
-  index: '#ffd28e',
-  glossary: '#ffc6f4',
-  map: '#7bf7ff',
-  neuron: '#7df7b4',
-}};
 const EDGE_COLORS = {{
   parent: 'rgba(248, 199, 109, 0.42)',
   related: 'rgba(123, 247, 255, 0.44)',
@@ -740,21 +734,90 @@ let dragOffset = {{ x: 0, y: 0 }};
 let lastPointer = {{ x: 0, y: 0 }};
 let activeTypes = new Set(['brain', 'index', 'glossary', 'map', 'neuron']);
 
-const lobePalette = ['#7bf7ff', '#ff8bd8', '#f8c76d', '#7df7b4', '#9ea9ff', '#ffa06f', '#b8f0c1', '#f2a8ff'];
-const uniqueLobes = [...new Set(graph.nodes.map(node => node.lobe))];
+// --- Color system: two-tier palette ---
+const lobePalette = ['#7bf7ff','#ff8bd8','#f8c76d','#7df7b4','#9ea9ff','#ffa06f','#b8f0c1','#f2a8ff'];
+const uniqueLobes = [...new Set(graph.nodes.map(n => n.lobe))];
 const lobeAnchors = new Map();
 
+function hexToRgb(hex) {{
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return [r, g, b];
+}}
+
+function lobeColor(lobe) {{
+  const idx = uniqueLobes.indexOf(lobe);
+  return lobePalette[(idx >= 0 ? idx : 0) % lobePalette.length];
+}}
+
+function desaturate(hex, amount) {{
+  const [r, g, b] = hexToRgb(hex);
+  const gray = (r + g + b) / 3;
+  const nr = Math.round(r + (gray - r) * amount);
+  const ng = Math.round(g + (gray - g) * amount);
+  const nb = Math.round(b + (gray - b) * amount);
+  return `rgb(${{nr}},${{ng}},${{nb}})`;
+}}
+
+function rgbaFromHex(hex, alpha) {{
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${{r}},${{g}},${{b}},${{alpha}})`;
+}}
+
+// --- Tree reconstruction ---
+function buildTree() {{
+  const parentEdges = graph.edges.filter(e => e.type === 'parent');
+  const depthMap = new Map();
+  const treeParent = new Map();
+  // brain.md is depth 0
+  for (const n of graph.nodes) {{
+    if (n.type === 'brain') depthMap.set(n.id, 0);
+  }}
+  // BFS from brain to assign depths
+  let frontier = [...depthMap.keys()];
+  while (frontier.length) {{
+    const next = [];
+    for (const pid of frontier) {{
+      for (const e of parentEdges) {{
+        if (e.target === pid && !depthMap.has(e.source)) {{
+          depthMap.set(e.source, depthMap.get(pid) + 1);
+          treeParent.set(e.source, pid);
+          next.push(e.source);
+        }}
+      }}
+    }}
+    frontier = next;
+  }}
+  // Assign remaining (unlinked) nodes
+  for (const n of graph.nodes) {{
+    if (!depthMap.has(n.id)) {{
+      depthMap.set(n.id, n.type === 'map' ? 1 : 2);
+    }}
+  }}
+  return {{ depthMap, treeParent }};
+}}
+
+const {{ depthMap, treeParent }} = buildTree();
+
 function colorForNode(node) {{
-  if (node.type !== 'neuron' && node.type !== 'map') return TYPE_COLORS[node.type] || '#d0d8f3';
-  const index = uniqueLobes.indexOf(node.lobe);
-  return lobePalette[(index >= 0 ? index : 0) % lobePalette.length];
+  if (node.type === 'brain') return '#ffffff';
+  if (node.type === 'glossary') return '#ffc6f4';
+  if (node.type === 'index') return '#ffd28e';
+  if (node.type === 'map') return lobeColor(node.lobe);
+  // neuron: desaturated lobe color
+  return desaturate(lobeColor(node.lobe), 0.3);
 }}
 
 function nodeRadius(node) {{
-  if (node.type === 'brain') return 16;
-  if (node.type === 'glossary' || node.type === 'index') return 11;
-  if (node.type === 'map') return 10;
-  return Math.max(7, 6 + Math.min(node.degree || 0, 6) * 0.55);
+  if (node.type === 'brain') return 22;
+  if (node.type === 'glossary') return 13;
+  if (node.type === 'index') return 11;
+  if (node.type === 'map') {{
+    const depth = depthMap.get(node.id) || 1;
+    return depth <= 1 ? 30 : 22; // visual radius for hit-testing
+  }}
+  return Math.max(6, 5 + Math.min(node.degree || 0, 6) * 0.6);
 }}
 
 function resize() {{
@@ -770,61 +833,63 @@ function resize() {{
 function buildAnchors(width, height) {{
   const cx = width / 2;
   const cy = height / 2;
-  const radius = Math.min(width, height) * 0.28;
-  uniqueLobes.forEach((lobe, index) => {{
-    if (lobe === 'root') {{
-      lobeAnchors.set(lobe, {{ x: cx, y: cy - radius * 0.1 }});
-      return;
-    }}
-    const angle = (-Math.PI / 2) + (index / Math.max(1, uniqueLobes.length)) * Math.PI * 2;
-    lobeAnchors.set(lobe, {{
-      x: cx + Math.cos(angle) * radius,
-      y: cy + Math.sin(angle) * radius,
-    }});
+  const radius = Math.min(width, height) * 0.36;
+  const nonRootLobes = uniqueLobes.filter(l => l !== 'root');
+  lobeAnchors.set('root', {{ x: cx, y: cy * 0.86 }});
+  nonRootLobes.forEach((lobe, i) => {{
+    const angle = -Math.PI / 2 + (i / Math.max(1, nonRootLobes.length)) * Math.PI * 2;
+    lobeAnchors.set(lobe, {{ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius }});
   }});
 }}
 
 function initializeNodes() {{
-  const dimensions = canvas.parentElement.getBoundingClientRect();
+  const dim = canvas.parentElement.getBoundingClientRect();
   const lobeCounters = new Map();
   return graph.nodes.map((node, index) => {{
-    const anchor = lobeAnchors.get(node.lobe) || {{ x: dimensions.width / 2, y: dimensions.height / 2 }};
-    const count = lobeCounters.get(node.lobe) || 0;
-    lobeCounters.set(node.lobe, count + 1);
-    const orbit = 42 + count * 14;
-    const angle = count * 0.9 + index * 0.17;
-    let targetX = anchor.x + Math.cos(angle) * orbit;
-    let targetY = anchor.y + Math.sin(angle) * orbit;
+    const anchor = lobeAnchors.get(node.lobe) || lobeAnchors.get('root') || {{ x: dim.width / 2, y: dim.height / 2 }};
+    let targetX, targetY;
+    const depth = depthMap.get(node.id) || 0;
     if (node.type === 'brain') {{
-      targetX = dimensions.width / 2;
-      targetY = dimensions.height / 2;
+      targetX = dim.width / 2;
+      targetY = dim.height / 2;
     }} else if (node.type === 'glossary') {{
-      targetX = dimensions.width / 2;
-      targetY = dimensions.height * 0.16;
+      targetX = dim.width / 2;
+      targetY = dim.height * 0.12;
     }} else if (node.type === 'index') {{
-      targetX = dimensions.width * 0.18;
-      targetY = dimensions.height * 0.18;
+      targetX = dim.width * 0.14;
+      targetY = dim.height * 0.14;
     }} else if (node.type === 'map') {{
-      targetX = anchor.x;
-      targetY = anchor.y;
+      if (depth <= 1) {{
+        targetX = anchor.x;
+        targetY = anchor.y;
+      }} else {{
+        // Sub-lobe: offset from lobe anchor
+        const count = lobeCounters.get('sublobe_' + node.lobe) || 0;
+        lobeCounters.set('sublobe_' + node.lobe, count + 1);
+        const subAngle = -Math.PI / 2 + (count / 3) * Math.PI * 2;
+        targetX = anchor.x + Math.cos(subAngle) * 65;
+        targetY = anchor.y + Math.sin(subAngle) * 65;
+      }}
+    }} else {{
+      const count = lobeCounters.get(node.lobe) || 0;
+      lobeCounters.set(node.lobe, count + 1);
+      const orbitRadius = 55 + count * 16;
+      const angle = count * 0.85 + index * 0.13;
+      targetX = anchor.x + Math.cos(angle) * orbitRadius;
+      targetY = anchor.y + Math.sin(angle) * orbitRadius;
     }}
     const searchText = [
-      node.title,
-      node.path,
-      node.file_name,
-      node.lobe,
-      node.type,
-      ...(node.tags || []),
-      node.excerpt || '',
-      node.content_preview || '',
+      node.title, node.path, node.file_name, node.lobe,
+      node.type, ...(node.tags || []), node.excerpt || '', node.content_preview || '',
     ].join(' ').toLowerCase();
     return {{
       ...node,
       searchText,
       color: colorForNode(node),
       radius: nodeRadius(node),
-      x: targetX + (Math.random() - 0.5) * 20,
-      y: targetY + (Math.random() - 0.5) * 20,
+      depth,
+      x: targetX + (Math.random() - 0.5) * 6,
+      y: targetY + (Math.random() - 0.5) * 6,
       vx: 0,
       vy: 0,
       targetX,
@@ -976,12 +1041,47 @@ function selectNode(id, recenter = false) {{
   if (recenter) focusOnNode(id);
 }}
 
+let cameraAnim = null;
+function animateCamera(tx, ty, ts, duration) {{
+  const sx = camera.x, sy = camera.y, ss = camera.scale;
+  const start = performance.now();
+  if (cameraAnim) cancelAnimationFrame(cameraAnim);
+  function step(now) {{
+    const t = Math.min(1, (now - start) / duration);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    camera.x = sx + (tx - sx) * ease;
+    camera.y = sy + (ty - sy) * ease;
+    camera.scale = ss + (ts - ss) * ease;
+    if (t < 1) cameraAnim = requestAnimationFrame(step);
+    else cameraAnim = null;
+  }}
+  cameraAnim = requestAnimationFrame(step);
+}}
+
 function focusOnNode(id) {{
   const node = nodes.find(item => item.id === id);
   if (!node) return;
   const rect = canvas.parentElement.getBoundingClientRect();
-  camera.x = rect.width / 2 - node.x * camera.scale;
-  camera.y = rect.height / 2 - node.y * camera.scale;
+  if (node.type === 'map') {{
+    // Zoom to frame the lobe
+    const members = filteredNodes.filter(n => n.lobe === node.lobe);
+    if (members.length > 1) {{
+      const minX = Math.min(...members.map(n => n.x)) - 60;
+      const maxX = Math.max(...members.map(n => n.x)) + 60;
+      const minY = Math.min(...members.map(n => n.y)) - 60;
+      const maxY = Math.max(...members.map(n => n.y)) + 60;
+      const lobeW = maxX - minX;
+      const lobeH = maxY - minY;
+      const scale = Math.min(rect.width / lobeW, rect.height / lobeH) * 0.85;
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      animateCamera(rect.width / 2 - cx * scale, rect.height / 2 - cy * scale, Math.min(2.4, Math.max(0.5, scale)), 300);
+      return;
+    }}
+  }}
+  const tx = rect.width / 2 - node.x * camera.scale;
+  const ty = rect.height / 2 - node.y * camera.scale;
+  animateCamera(tx, ty, camera.scale, 300);
 }}
 
 function toWorld(clientX, clientY) {{
@@ -1006,7 +1106,8 @@ function hitTest(worldX, worldY) {{
 }}
 
 function tick() {{
-  const visibleIds = new Set(filteredNodes.map(node => node.id));
+  const visibleIds = new Set(filteredNodes.map(n => n.id));
+  // Repulsion with cross-lobe boost
   for (let i = 0; i < filteredNodes.length; i++) {{
     for (let j = i + 1; j < filteredNodes.length; j++) {{
       const a = filteredNodes[i];
@@ -1014,7 +1115,8 @@ function tick() {{
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const distance = Math.max(24, Math.hypot(dx, dy));
-      const force = 1100 / (distance * distance);
+      const crossLobe = a.lobe !== b.lobe ? 1.6 : 1.0;
+      const force = (1200 * crossLobe) / (distance * distance);
       const ux = dx / distance;
       const uy = dy / distance;
       a.vx -= ux * force;
@@ -1023,7 +1125,22 @@ function tick() {{
       b.vy += uy * force;
     }}
   }}
-
+  // Same-lobe cohesion
+  const lobeCentroids = new Map();
+  for (const lobe of uniqueLobes) {{
+    const members = filteredNodes.filter(n => n.lobe === lobe);
+    if (!members.length) continue;
+    const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
+    const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
+    lobeCentroids.set(lobe, {{ x: cx, y: cy }});
+    for (const n of members) {{
+      if (n.type !== 'brain') {{
+        n.vx += (cx - n.x) * 0.002;
+        n.vy += (cy - n.y) * 0.002;
+      }}
+    }}
+  }}
+  // Edge springs
   for (const edge of graph.edges) {{
     if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
     const source = nodes[edge.source];
@@ -1031,7 +1148,7 @@ function tick() {{
     const dx = target.x - source.x;
     const dy = target.y - source.y;
     const distance = Math.max(30, Math.hypot(dx, dy));
-    const ideal = edge.type === 'parent' ? 110 : edge.type === 'related' ? 160 : 145;
+    const ideal = edge.type === 'parent' ? 80 : edge.type === 'related' ? 160 : 145;
     const force = (distance - ideal) * 0.0026;
     const ux = dx / distance;
     const uy = dy / distance;
@@ -1040,21 +1157,66 @@ function tick() {{
     target.vx -= ux * force;
     target.vy -= uy * force;
   }}
-
+  // Anchor pull + damping
   for (const node of filteredNodes) {{
-    const anchorPull = node.type === 'brain' ? 0.013 : node.type === 'map' ? 0.012 : 0.006;
+    const anchorPull = node.type === 'brain' ? 0.015 : node.type === 'map' ? 0.014 : 0.006;
     node.vx += (node.targetX - node.x) * anchorPull;
     node.vy += (node.targetY - node.y) * anchorPull;
-    if (draggingNodeId === node.id) {{
-      node.vx = 0;
-      node.vy = 0;
-      continue;
-    }}
-    node.vx *= 0.9;
-    node.vy *= 0.9;
+    if (draggingNodeId === node.id) {{ node.vx = 0; node.vy = 0; continue; }}
+    node.vx *= 0.88;
+    node.vy *= 0.88;
     node.x += node.vx;
     node.y += node.vy;
   }}
+}}
+
+// --- Convex hull for lobe backgrounds ---
+function convexHull(points) {{
+  if (points.length < 3) return points.slice();
+  points = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+  const lower = [];
+  for (const p of points) {{ while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }}
+  const upper = [];
+  for (let i = points.length - 1; i >= 0; i--) {{ const p = points[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }}
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}}
+
+function expandHull(hull, pad) {{
+  if (hull.length < 2) return hull;
+  const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
+  const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
+  return hull.map(p => {{
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    return {{ x: p.x + (dx / dist) * pad, y: p.y + (dy / dist) * pad }};
+  }});
+}}
+
+function drawLabel(text, x, y, fontSize, bold) {{
+  const maxLen = 22;
+  const label = text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
+  ctx.font = `${{bold ? 'bold ' : ''}}${{fontSize}}px "Avenir Next", "Segoe UI", sans-serif`;
+  const metrics = ctx.measureText(label);
+  const pw = 6;
+  const ph = 3;
+  const lw = metrics.width;
+  const lh = fontSize;
+  // Background pill
+  ctx.fillStyle = 'rgba(10, 15, 26, 0.75)';
+  const rx = x - pw;
+  const ry = y - lh - ph;
+  const rw = lw + pw * 2;
+  const rh = lh + ph * 2;
+  ctx.beginPath();
+  ctx.roundRect(rx, ry, rw, rh, 4);
+  ctx.fill();
+  // Text
+  ctx.fillStyle = 'rgba(233, 241, 255, 0.94)';
+  ctx.fillText(label, x, y);
 }}
 
 function draw() {{
@@ -1064,7 +1226,60 @@ function draw() {{
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.scale, camera.scale);
 
-  const visibleIds = new Set(filteredNodes.map(node => node.id));
+  const visibleIds = new Set(filteredNodes.map(n => n.id));
+  const query = searchInput.value.trim().toLowerCase();
+
+  // --- Pass 1: Lobe hull backgrounds ---
+  for (const lobe of uniqueLobes) {{
+    if (lobe === 'root') continue;
+    const members = filteredNodes.filter(n => n.lobe === lobe);
+    if (members.length < 1) continue;
+    const color = lobeColor(lobe);
+    const points = members.map(n => ({{ x: n.x, y: n.y }}));
+    if (points.length === 1) {{
+      // Single node: draw circle
+      ctx.beginPath();
+      ctx.arc(points[0].x, points[0].y, 50, 0, Math.PI * 2);
+      ctx.fillStyle = rgbaFromHex(color, 0.06);
+      ctx.fill();
+      ctx.strokeStyle = rgbaFromHex(color, 0.12);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }} else if (points.length === 2) {{
+      // Two nodes: draw ellipse between them
+      const mx = (points[0].x + points[1].x) / 2;
+      const my = (points[0].y + points[1].y) / 2;
+      ctx.beginPath();
+      ctx.ellipse(mx, my, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) / 2 + 40, 40, Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x), 0, Math.PI * 2);
+      ctx.fillStyle = rgbaFromHex(color, 0.06);
+      ctx.fill();
+      ctx.strokeStyle = rgbaFromHex(color, 0.12);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }} else {{
+      const hull = expandHull(convexHull(points), 40);
+      ctx.beginPath();
+      ctx.moveTo(hull[0].x, hull[0].y);
+      for (let i = 1; i < hull.length; i++) ctx.lineTo(hull[i].x, hull[i].y);
+      ctx.closePath();
+      ctx.fillStyle = rgbaFromHex(color, 0.06);
+      ctx.fill();
+      ctx.strokeStyle = rgbaFromHex(color, 0.12);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }}
+    // Hull label
+    const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
+    const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
+    const minY = Math.min(...members.map(n => n.y));
+    ctx.fillStyle = rgbaFromHex(color, 0.2);
+    ctx.font = 'bold 16px "Avenir Next", "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(lobe.toUpperCase(), cx, minY - 50);
+    ctx.textAlign = 'start';
+  }}
+
+  // --- Pass 2: Edges ---
   for (const edge of graph.edges) {{
     if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
     const source = nodes[edge.source];
@@ -1085,26 +1300,90 @@ function draw() {{
   }}
   ctx.setLineDash([]);
 
+  // --- Pass 3: Nodes ---
   for (const node of filteredNodes) {{
     const isSelected = node.id === selectedId;
     const isHovered = node.id === hoveredId;
-    const alpha = searchInput.value.trim() && !node.searchText.includes(searchInput.value.trim().toLowerCase()) ? 0.28 : 1;
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.fillStyle = node.color;
+    const dimmed = query && !node.searchText.includes(query);
+    ctx.globalAlpha = dimmed ? 0.22 : 1;
     ctx.shadowColor = node.color;
-    ctx.shadowBlur = isSelected ? 34 : isHovered ? 24 : 16;
-    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    if (isSelected || isHovered || node.type === 'brain' || node.type === 'map') {{
-      ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255,255,255,0.36)';
-      ctx.lineWidth = isSelected ? 2.2 : 1.1;
+    ctx.shadowBlur = isSelected ? 28 : isHovered ? 18 : 10;
+
+    if (node.type === 'map') {{
+      // Rounded rectangle for lobes
+      const depth = node.depth || 1;
+      const w = depth <= 1 ? 120 : 96;
+      const h = depth <= 1 ? 36 : 28;
+      const rx = node.x - w / 2;
+      const ry = node.y - h / 2;
+      const lobeCol = lobeColor(node.lobe);
+      ctx.beginPath();
+      ctx.roundRect(rx, ry, w, h, 10);
+      ctx.fillStyle = rgbaFromHex(lobeCol, depth <= 1 ? 0.22 : 0.14);
+      ctx.fill();
+      ctx.strokeStyle = isSelected ? '#ffffff' : rgbaFromHex(lobeCol, 0.6);
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
       ctx.stroke();
-      const label = node.title.length > 24 ? node.title.slice(0, 24) + '…' : node.title;
-      ctx.fillStyle = 'rgba(233, 241, 255, 0.92)';
-      ctx.font = `${{node.type === 'brain' ? 13 : 11}}px "Avenir Next", sans-serif`;
-      ctx.fillText(label, node.x + node.radius + 8, node.y - node.radius - 2);
+      ctx.shadowBlur = 0;
+      // Label inside the rect
+      const lobeName = node.lobe === 'root' ? node.title : node.lobe;
+      const label = lobeName.length > 18 ? lobeName.slice(0, 18) + '...' : lobeName;
+      ctx.fillStyle = 'rgba(233, 241, 255, 0.95)';
+      ctx.font = `bold ${{depth <= 1 ? 13 : 11}}px "Avenir Next", "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(depth <= 1 ? label.toUpperCase() : label, node.x, node.y + (depth <= 1 ? 5 : 4));
+      ctx.textAlign = 'start';
+
+    }} else if (node.type === 'glossary' || node.type === 'index') {{
+      // Diamond shape
+      const r = node.radius;
+      ctx.beginPath();
+      ctx.moveTo(node.x, node.y - r);
+      ctx.lineTo(node.x + r, node.y);
+      ctx.lineTo(node.x, node.y + r);
+      ctx.lineTo(node.x - r, node.y);
+      ctx.closePath();
+      ctx.fillStyle = node.color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      if (isSelected) {{ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }}
+      // Always show label
+      drawLabel(node.title, node.x + r + 6, node.y + 4, 11, false);
+
+    }} else if (node.type === 'brain') {{
+      // Large white circle with double ring
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      drawLabel(node.title, node.x + node.radius + 10, node.y + 5, 15, true);
+
+    }} else {{
+      // Neuron: circle
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      ctx.fillStyle = node.color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      if (isSelected) {{ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }}
+      else if (isHovered) {{ ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.stroke(); }}
+
+      // Zoom-adaptive labels for neurons
+      const showLabel = isSelected || isHovered
+        || (camera.scale >= 1.2)
+        || (camera.scale >= 0.8 && (node.degree || 0) >= 3);
+      if (showLabel) {{
+        drawLabel(node.title, node.x + node.radius + 5, node.y + 3, 10, false);
+      }}
     }}
   }}
   ctx.globalAlpha = 1;
