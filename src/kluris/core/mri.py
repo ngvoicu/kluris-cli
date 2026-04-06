@@ -655,7 +655,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     justify-content: center;
   }}
   .modal-box {{
-    width: min(90vw, 800px);
+    width: 80vw;
     max-height: 85vh;
     background: var(--panel-strong);
     border: 1px solid rgba(255,255,255,0.1);
@@ -1176,16 +1176,17 @@ function openModal(node) {{
   // Run regex on raw content BEFORE escaping, then escape text parts individually
   const raw = node.content_preview || 'No content.';
   const nodePath = node.path.replace(/[^/]+$/, '');
-  const linkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+  // Match both [text](path) and plain text (./path.md) / (../path.md) references
+  const linkRe = /\[([^\]]*)\]\(([^)]+\.md)\)|(\S[^(]*?)\s*\((\.\.[^)]+\.md|\.\/[^)]+\.md)\)/g;
   let linkedContent = '';
   let lastIdx = 0;
   let m;
   while ((m = linkRe.exec(raw)) !== null) {{
     // Escape text before this match
     linkedContent += escapeHtml(raw.slice(lastIdx, m.index));
-    const text = m[1];
-    const href = m[2];
-    if (href.startsWith('http')) {{
+    const text = m[1] || m[3] || '';
+    const href = m[2] || m[4] || '';
+    if (!href || href.startsWith('http')) {{
       linkedContent += escapeHtml(m[0]);
     }} else {{
       const parts = (nodePath + href).split('/');
