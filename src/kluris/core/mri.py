@@ -833,7 +833,7 @@ function resize() {{
 function buildAnchors(width, height) {{
   const cx = width / 2;
   const cy = height / 2;
-  const radius = Math.min(width, height) * 0.36;
+  const radius = Math.min(width, height) * 0.40;
   const nonRootLobes = uniqueLobes.filter(l => l !== 'root');
   lobeAnchors.set('root', {{ x: cx, y: cy * 0.86 }});
   nonRootLobes.forEach((lobe, i) => {{
@@ -873,7 +873,7 @@ function initializeNodes() {{
     }} else {{
       const count = lobeCounters.get(node.lobe) || 0;
       lobeCounters.set(node.lobe, count + 1);
-      const orbitRadius = 55 + count * 16;
+      const orbitRadius = 70 + count * 22;
       const angle = count * 0.85 + index * 0.13;
       targetX = anchor.x + Math.cos(angle) * orbitRadius;
       targetY = anchor.y + Math.sin(angle) * orbitRadius;
@@ -1145,19 +1145,44 @@ function tick() {{
       }}
     }}
   }}
-  // Sub-lobe cohesion: nodes in the same sub-project cluster tighter
+  // Sub-lobe cohesion + cross-sub-lobe repulsion
   const sublobeGroups = new Map();
   for (const n of filteredNodes) {{
     if (!sublobeGroups.has(n.sublobe)) sublobeGroups.set(n.sublobe, []);
     sublobeGroups.get(n.sublobe).push(n);
   }}
+  const sublobeCentroids = new Map();
   for (const [sl, members] of sublobeGroups) {{
     if (members.length < 2 || sl === members[0].lobe) continue;
     const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
     const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
+    sublobeCentroids.set(sl, {{ x: cx, y: cy, lobe: members[0].lobe }});
+    // Pull members toward their sub-lobe centroid
     for (const n of members) {{
-      n.vx += (cx - n.x) * 0.003;
-      n.vy += (cy - n.y) * 0.003;
+      n.vx += (cx - n.x) * 0.004;
+      n.vy += (cy - n.y) * 0.004;
+    }}
+  }}
+  // Push different sub-lobes within the same lobe apart
+  const slKeys = [...sublobeCentroids.keys()];
+  for (let i = 0; i < slKeys.length; i++) {{
+    for (let j = i + 1; j < slKeys.length; j++) {{
+      const a = sublobeCentroids.get(slKeys[i]);
+      const b = sublobeCentroids.get(slKeys[j]);
+      if (a.lobe !== b.lobe) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.max(40, Math.hypot(dx, dy));
+      const minDist = 180;
+      if (dist < minDist) {{
+        const push = (minDist - dist) * 0.008;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const membersA = sublobeGroups.get(slKeys[i]);
+        const membersB = sublobeGroups.get(slKeys[j]);
+        for (const n of membersA) {{ n.vx -= ux * push; n.vy -= uy * push; }}
+        for (const n of membersB) {{ n.vx += ux * push; n.vy += uy * push; }}
+      }}
     }}
   }}
   // Edge springs
