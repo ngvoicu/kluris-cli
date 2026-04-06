@@ -631,11 +631,10 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 <div class="shell">
   <aside class="panel panel-left">
     <div class="panel-inner">
-      <p class="eyebrow">Constellation Navigation</p>
+      <p class="eyebrow">Brain MRI</p>
       <h1>{brain_name}</h1>
       <p class="subhead">
-        Search by node title, path, lobe, or tags. Click any node to inspect metadata,
-        connected knowledge, and the local neighborhood instantly.
+        Search by name, path, lobe, or tags. Click any neuron to see its content.
       </p>
       <div class="stats">
         <div class="stat">
@@ -658,22 +657,21 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
       <div class="search-wrap">
         <label for="search-input">Search the brain</label>
         <div class="search-row">
-          <input id="search-input" type="search" placeholder="Search nodes, paths, lobes, tags, or excerpts" autocomplete="off">
+          <input id="search-input" type="search" placeholder="Search by name, path, lobe, or tags" autocomplete="off">
           <button class="button" id="reset-view" type="button">Reset</button>
         </div>
         <div class="filters" id="type-filters"></div>
       </div>
       <div class="section-title">Results</div>
-      <div id="result-count" class="subhead">Showing every node in the graph.</div>
+      <div id="result-count" class="subhead">Showing all neurons.</div>
       <div class="results" id="search-results"></div>
       <div class="legend">
-        <div class="legend-item"><span class="legend-swatch" style="background:#fff;border:2px solid #fff;border-radius:50%"></span>Brain root</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:rgba(123,247,255,0.25);border:2px solid #7bf7ff;border-radius:6px"></span>Lobe (rounded rectangle)</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:rgba(123,247,255,0.25);border:2px solid #7bf7ff;border-radius:6px"></span>Project (pill)</div>
         <div class="legend-item"><span class="legend-swatch" style="background:rgba(125,247,180,0.6);border-radius:50%"></span>Neuron (circle)</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:#ffc6f4;transform:rotate(45deg);border-radius:2px"></span>Glossary / Index (diamond)</div>
-        <div class="legend-item"><span class="legend-line parent"></span>Parent relationships</div>
-        <div class="legend-item"><span class="legend-line related"></span>Related synapses</div>
-        <div class="legend-item"><span class="legend-line inline"></span>Inline markdown links</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:#ffc6f4;transform:rotate(45deg);border-radius:2px"></span>Glossary (diamond)</div>
+        <div class="legend-item"><span class="legend-line parent"></span>Parent link</div>
+        <div class="legend-item"><span class="legend-line related"></span>Related link</div>
+        <div class="legend-item"><span class="legend-line inline"></span>Inline link</div>
       </div>
     </div>
   </aside>
@@ -688,12 +686,11 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 
   <aside class="panel panel-right">
     <div class="panel-inner">
-      <p class="eyebrow">Signal Readout</p>
-      <h2>Node Inspector</h2>
-      <p class="subhead">Click a node or a search result to open the full metadata panel.</p>
+      <p class="eyebrow">Inspector</p>
+      <h2>Details</h2>
+      <p class="subhead">Click a neuron or search result to see its content.</p>
       <div class="details-empty" id="details-empty">
-        Nothing selected yet. Pick a node to inspect its path, tags, timestamps,
-        excerpt, and connected neighbors.
+        Nothing selected. Click a neuron to see its content, tags, and connections.
       </div>
       <div id="details-panel"></div>
     </div>
@@ -918,23 +915,25 @@ function refreshVisibility() {{
   filteredNodes = nodes.filter(visibleNode);
   statVisible.textContent = String(filteredNodes.length);
   resultCountEl.textContent = searchInput.value.trim()
-    ? `Found ${{filteredNodes.length}} matching nodes.`
-    : `Showing all ${{filteredNodes.length}} nodes in the graph.`;
+    ? `Found ${{filteredNodes.length}} results.`
+    : `Showing all ${{filteredNodes.length}} neurons.`;
   renderResults();
 }}
 
+const TYPE_LABELS = {{ glossary: 'glossary', map: 'lobes', neuron: 'neurons' }};
 function renderFilters() {{
   const counts = graph.nodes.reduce((acc, node) => {{
     acc[node.type] = (acc[node.type] || 0) + 1;
     return acc;
   }}, {{}});
   typeFiltersEl.innerHTML = '';
-  for (const type of ['brain', 'glossary', 'index', 'map', 'neuron']) {{
+  for (const type of ['glossary', 'map', 'neuron']) {{
     if (!counts[type]) continue;
+    const label = TYPE_LABELS[type] || type;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `chip${{activeTypes.has(type) ? ' active' : ''}}`;
-    button.textContent = `${{type}} (${{counts[type]}})`;
+    button.textContent = `${{label}} (${{counts[type]}})`;
     button.addEventListener('click', () => {{
       if (activeTypes.has(type) && activeTypes.size > 1) activeTypes.delete(type);
       else activeTypes.add(type);
@@ -961,7 +960,7 @@ function renderResults() {{
     button.className = 'result-card';
     button.innerHTML = `
       <div class="result-title">${{escapeHtml(node.title)}}</div>
-      <div class="result-meta">${{escapeHtml(node.type)}} • ${{escapeHtml(node.lobe)}} • degree ${{node.degree}}</div>
+      <div class="result-meta">${{node.type === 'map' ? 'lobe' : escapeHtml(node.type)}} • ${{escapeHtml(node.sublobe || node.lobe)}}</div>
       <div class="result-path">${{escapeHtml(node.path)}}</div>
     `;
     button.addEventListener('click', () => selectNode(node.id, true));
@@ -1003,7 +1002,7 @@ function updateDetails() {{
     ? connected.map(target => `
         <button type="button" class="connection-card" data-node-id="${{target.id}}">
           <div class="result-title">${{escapeHtml(target.title)}}</div>
-          <div class="result-meta">${{escapeHtml(target.type)}} • ${{escapeHtml(target.lobe)}}</div>
+          <div class="result-meta">${{target.type === 'map' ? 'lobe' : escapeHtml(target.type)}} • ${{escapeHtml(target.sublobe || target.lobe)}}</div>
           <div class="result-path">${{escapeHtml(target.path)}}</div>
         </button>
       `).join('')
@@ -1014,8 +1013,8 @@ function updateDetails() {{
       <div class="details-title">${{escapeHtml(node.title)}}</div>
       <div class="details-path">${{escapeHtml(node.path)}}</div>
       <div class="meta-grid">
-        <div class="meta-card"><span class="label">Type</span><span class="value">${{escapeHtml(node.type)}}</span></div>
-        <div class="meta-card"><span class="label">Lobe</span><span class="value">${{escapeHtml(node.lobe)}}</span></div>
+        <div class="meta-card"><span class="label">Type</span><span class="value">${{node.type === 'map' ? 'lobe' : node.type === 'neuron' ? 'neuron' : escapeHtml(node.type)}}</span></div>
+        <div class="meta-card"><span class="label">Section</span><span class="value">${{escapeHtml(node.sublobe || node.lobe)}}</span></div>
         <div class="meta-card"><span class="label">Updated</span><span class="value">${{escapeHtml(node.updated || '—')}}</span></div>
         <div class="meta-card"><span class="label">Created</span><span class="value">${{escapeHtml(node.created || '—')}}</span></div>
         <div class="meta-card"><span class="label">Template</span><span class="value">${{escapeHtml(node.template || '—')}}</span></div>
