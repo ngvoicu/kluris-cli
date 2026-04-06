@@ -1173,13 +1173,21 @@ function openModal(node) {{
   const breadcrumb = node.path.split('/').map(p => p.replace('.md', '')).join(' / ');
   document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
   // Render content with clickable markdown links
-  const rawContent = escapeHtml(node.content_preview || 'No content.');
-  const nodePath = node.path.replace(/[^/]+$/, ''); // directory of current node
-  const linkedContent = rawContent.replace(
-    /\[([^\]]*)\]\(([^)]+)\)/g,
-    (match, text, href) => {{
-      if (href.startsWith('http')) return match;
-      // Resolve relative path from node's directory
+  // Run regex on raw content BEFORE escaping, then escape text parts individually
+  const raw = node.content_preview || 'No content.';
+  const nodePath = node.path.replace(/[^/]+$/, '');
+  const linkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+  let linkedContent = '';
+  let lastIdx = 0;
+  let m;
+  while ((m = linkRe.exec(raw)) !== null) {{
+    // Escape text before this match
+    linkedContent += escapeHtml(raw.slice(lastIdx, m.index));
+    const text = m[1];
+    const href = m[2];
+    if (href.startsWith('http')) {{
+      linkedContent += escapeHtml(m[0]);
+    }} else {{
       const parts = (nodePath + href).split('/');
       const resolved = [];
       for (const p of parts) {{
@@ -1189,11 +1197,14 @@ function openModal(node) {{
       const resolvedPath = resolved.join('/');
       const target = nodes.find(n => n.path === resolvedPath);
       if (target) {{
-        return `<button type="button" class="modal-nav-btn" data-modal-nav="${{target.id}}" style="display:inline;padding:2px 6px;font-size:inherit">${{text}}</button>`;
+        linkedContent += `<button type="button" class="modal-nav-btn" data-modal-nav="${{target.id}}" style="display:inline;padding:2px 6px;font-size:inherit">${{escapeHtml(text)}}</button>`;
+      }} else {{
+        linkedContent += `${{escapeHtml(text)}} (${{escapeHtml(href)}})`;
       }}
-      return `${{text}} (${{href}})`;
     }}
-  );
+    lastIdx = m.index + m[0].length;
+  }}
+  linkedContent += escapeHtml(raw.slice(lastIdx));
   document.getElementById('modal-content').innerHTML = linkedContent;
   for (const btn of document.getElementById('modal-content').querySelectorAll('[data-modal-nav]')) {{
     btn.addEventListener('click', () => {{
