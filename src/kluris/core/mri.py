@@ -1211,7 +1211,7 @@ function openModal(node) {{
       const resolvedPath = resolved.join('/');
       const target = nodes.find(n => n.path === resolvedPath);
       if (target) {{
-        linkedContent += `<button type="button" class="content-link" data-modal-nav="${{target.id}}">${{escapeHtml(text)}}</button>`;
+        linkedContent += `<button type="button" class="content-link" data-modal-nav="${{target.id}}" title="${{escapeHtml(target.path)}}">${{escapeHtml(text)}}</button>`;
       }} else {{
         linkedContent += `${{escapeHtml(text)}} (${{escapeHtml(href)}})`;
       }}
