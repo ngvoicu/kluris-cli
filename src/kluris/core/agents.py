@@ -122,6 +122,11 @@ multiple projects, or a decision that affects ALL projects, not just this one.
 If unsure, ask: "This could go in [other lobe] since it's cross-cutting,
 or stay in projects/<name>/ since it's specific to this project. Which do
 you prefer?"
+When you find cross-cutting content (environments, CI/CD, hosting), propose
+creating a dedicated neuron in the right lobe and replacing the inline content
+with a link. Example: move production environment details to
+`infrastructure/production-environment.md` and replace the section in the
+project overview with `[Production](../../infrastructure/production-environment.md)`.
 Read existing neurons in target lobes first -- update or extend, don't create duplicates.
 Domain terms and acronyms discovered → include as a wizard step: show the
 proposed glossary additions, ask for approval before appending to `glossary.md`.
