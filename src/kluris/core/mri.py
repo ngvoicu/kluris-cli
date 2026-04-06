@@ -1664,7 +1664,7 @@ function draw() {{
       // Top-level: path is "lobe/map.md" (2 parts). Sub-lobe: "lobe/sub/map.md" (3+ parts)
       const pathDepth = node.path.split('/').length;
       if (pathDepth <= 2) {{ ctx.shadowBlur = 0; continue; }}
-      const w = 140;
+      const w = 110;
       const h = 28;
       const rx = node.x - w / 2;
       const ry = node.y - h / 2;
@@ -1680,9 +1680,7 @@ function draw() {{
       // Label: show parent/name for context (e.g. "projects / specmint")
       const pathParts = node.path.split('/');
       const dirName = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : node.lobe;
-      const parentName = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : '';
-      const fullLabel = parentName ? `${{parentName}} / ${{dirName}}` : dirName;
-      const label = fullLabel.length > 24 ? fullLabel.slice(0, 24) + '...' : fullLabel;
+      const label = dirName.length > 20 ? dirName.slice(0, 20) + '...' : dirName;
       ctx.fillStyle = 'rgba(233, 241, 255, 0.95)';
       ctx.font = 'bold 11px "Avenir Next", "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
