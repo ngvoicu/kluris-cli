@@ -708,6 +708,19 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     cursor: pointer;
   }}
   .modal-nav-btn:hover {{ background: rgba(123,247,255,0.12); border-color: rgba(123,247,255,0.4); }}
+  .content-link {{
+    appearance: none;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-decoration-color: rgba(123,247,255,0.3);
+    text-underline-offset: 2px;
+  }}
+  .content-link:hover {{ text-decoration-color: var(--accent); }}
   .modal-content {{
     flex: 1;
     overflow: auto;
@@ -1176,16 +1189,16 @@ function openModal(node) {{
   // Run regex on raw content BEFORE escaping, then escape text parts individually
   const raw = node.content_preview || 'No content.';
   const nodePath = node.path.replace(/[^/]+$/, '');
-  // Match both [text](path) and plain text (./path.md) / (../path.md) references
-  const linkRe = /\[([^\]]*)\]\(([^)]+\.md)\)|(\S[^(]*?)\s*\((\.\.[^)]+\.md|\.\/[^)]+\.md)\)/g;
+  // Match [text](path.md) markdown links only -- plain text refs are too ambiguous
+  const linkRe = /\[([^\]]+)\]\(([^)]+\.md)\)/g;
   let linkedContent = '';
   let lastIdx = 0;
   let m;
   while ((m = linkRe.exec(raw)) !== null) {{
     // Escape text before this match
     linkedContent += escapeHtml(raw.slice(lastIdx, m.index));
-    const text = m[1] || m[3] || '';
-    const href = m[2] || m[4] || '';
+    const text = m[1] || '';
+    const href = m[2] || '';
     if (!href || href.startsWith('http')) {{
       linkedContent += escapeHtml(m[0]);
     }} else {{
@@ -1198,7 +1211,7 @@ function openModal(node) {{
       const resolvedPath = resolved.join('/');
       const target = nodes.find(n => n.path === resolvedPath);
       if (target) {{
-        linkedContent += `<button type="button" class="modal-nav-btn" data-modal-nav="${{target.id}}" style="display:inline;padding:2px 6px;font-size:inherit">${{escapeHtml(text)}}</button>`;
+        linkedContent += `<button type="button" class="content-link" data-modal-nav="${{target.id}}">${{escapeHtml(text)}}</button>`;
       }} else {{
         linkedContent += `${{escapeHtml(text)}} (${{escapeHtml(href)}})`;
       }}
