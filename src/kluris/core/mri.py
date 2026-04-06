@@ -1360,7 +1360,7 @@ function draw() {{
       ctx.stroke();
       ctx.setLineDash([]);
     }}
-    // Sub-lobe label: use the last part of the sublobe path (e.g. "dsu-dl" from "projects/dsu-dl")
+    // Sub-lobe label
     const slName = sl.split('/').pop() || sl;
     const scx = members.reduce((s, n) => s + n.x, 0) / members.length;
     const sMinY = Math.min(...members.map(n => n.y));
