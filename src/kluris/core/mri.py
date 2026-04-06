@@ -903,7 +903,9 @@ let nodes = [];
 let filteredNodes = [];
 
 function visibleNode(node) {{
-  if (node.type === 'brain') return false; // brain name is in the page title
+  if (node.type === 'brain') return false;
+  // Hide top-level lobe maps -- hull label shows the lobe name
+  if (node.type === 'map' && node.path.split('/').length <= 2) return false;
   if (!activeTypes.has(node.type)) return false;
   const query = searchInput.value.trim().toLowerCase();
   if (!query) return true;
@@ -1314,8 +1316,9 @@ function draw() {{
 
     if (node.type === 'map') {{
       // Skip top-level lobe maps -- the hull label already shows the lobe name
-      const depth = node.depth || 1;
-      if (depth <= 1) {{ ctx.shadowBlur = 0; continue; }}
+      // Top-level: path is "lobe/map.md" (2 parts). Sub-lobe: "lobe/sub/map.md" (3+ parts)
+      const pathDepth = node.path.split('/').length;
+      if (pathDepth <= 2) {{ ctx.shadowBlur = 0; continue; }}
       const w = 96;
       const h = 28;
       const rx = node.x - w / 2;
