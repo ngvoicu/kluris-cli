@@ -102,6 +102,48 @@ def test_graph_nodes_include_metadata(tmp_path):
     assert "degree" in auth
     assert "Authentication flow details." in auth["content_preview"]
     assert auth["content_preview_truncated"] is False
+    # Short documents: full content matches preview (sans the "..." marker).
+    assert "Authentication flow details." in auth["content_full"]
+    assert "Uses Keycloak." in auth["content_full"]
+
+
+def test_graph_nodes_include_full_content_when_truncated(tmp_path):
+    """Long documents must keep the full body in content_full so the modal can show it."""
+    brain = _make_brain_with_neurons(tmp_path)
+    auth = brain / "arch" / "auth.md"
+    long_body = "\n\n".join(
+        f"Paragraph {i} explaining a deep authentication detail." for i in range(80)
+    )
+    auth.write_text(
+        (
+            "---\nparent: ./map.md\nrelated: []\n"
+            "tags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n"
+            f"# Auth\n\n{long_body}\n"
+        ),
+        encoding="utf-8",
+    )
+    graph = build_graph(brain)
+    auth = next(node for node in graph["nodes"] if node["path"] == "arch/auth.md")
+
+    # Preview is bounded and marked truncated.
+    assert auth["content_preview_truncated"] is True
+    assert auth["content_preview"].rstrip().endswith("...")
+
+    # Full content keeps every paragraph and never has the truncation marker appended.
+    assert "Paragraph 0 explaining" in auth["content_full"]
+    assert "Paragraph 79 explaining" in auth["content_full"]
+    assert not auth["content_full"].rstrip().endswith("...")
+    # Title line is stripped from the body, just like the preview.
+    assert not auth["content_full"].lstrip().startswith("# Auth")
+
+
+def test_modal_uses_full_content(tmp_path):
+    """The generated HTML's modal must read content_full so 'expand' shows the whole document."""
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+    assert "node.content_full" in html
 
 
 def test_html_valid(tmp_path):

@@ -43,32 +43,35 @@ def _extract_title_and_excerpt(path: Path, content: str) -> tuple[str, str]:
     return title, excerpt[:220]
 
 
-def _build_content_preview(content: str) -> tuple[str, bool]:
-    """Build a bounded markdown body preview for the inspector panel."""
-    if not content.strip():
-        return "", False
+def _build_content_preview(content: str) -> tuple[str, str, bool]:
+    """Return (full_body, preview, truncated) for a markdown document.
 
-    lines = content.splitlines()
-    preview_lines: list[str] = []
+    The preview is bounded for the inspector panel; the full body has the same
+    title-stripping but no length cap so the modal can show the whole document.
+    """
+    if not content.strip():
+        return "", "", False
+
+    body_lines: list[str] = []
     skipped_title = False
 
-    for raw_line in lines:
+    for raw_line in content.splitlines():
         line = raw_line.rstrip()
         if not skipped_title and line.strip().startswith("# "):
             skipped_title = True
             continue
-        if not preview_lines and not line.strip():
+        if not body_lines and not line.strip():
             continue
-        preview_lines.append(line)
+        body_lines.append(line)
 
-    preview = "\n".join(preview_lines).strip()
-    if not preview:
-        return "", False
+    full_body = "\n".join(body_lines).strip()
+    if not full_body:
+        return "", "", False
 
     max_lines = 48
     max_chars = 2800
-    truncated = len(preview_lines) > max_lines or len(preview) > max_chars
-    preview = "\n".join(preview_lines[:max_lines]).strip()
+    truncated = len(body_lines) > max_lines or len(full_body) > max_chars
+    preview = "\n".join(body_lines[:max_lines]).strip()
 
     if len(preview) > max_chars:
         preview = preview[:max_chars].rstrip()
@@ -78,7 +81,7 @@ def _build_content_preview(content: str) -> tuple[str, bool]:
     if truncated:
         preview = preview.rstrip() + "\n\n..."
 
-    return preview, truncated
+    return full_body, preview, truncated
 
 
 def build_graph(brain_path: Path) -> dict:
@@ -119,7 +122,7 @@ def build_graph(brain_path: Path) -> dict:
             pass
 
         title, excerpt = _extract_title_and_excerpt(f, content)
-        content_preview, preview_truncated = _build_content_preview(content)
+        content_full, content_preview, preview_truncated = _build_content_preview(content)
         tags = meta.get("tags", [])
         related = meta.get("related", [])
 
@@ -135,6 +138,7 @@ def build_graph(brain_path: Path) -> dict:
             "excerpt": excerpt,
             "content_preview": content_preview,
             "content_preview_truncated": preview_truncated,
+            "content_full": content_full,
             "tags": tags if isinstance(tags, list) else [],
             "created": str(meta.get("created", "")),
             "updated": str(meta.get("updated", "")),
@@ -1120,7 +1124,7 @@ function updateDetails() {{
   const tags = [...new Set(node.tags || [])].map(tag => `<span class="tag">${{escapeHtml(tag)}}</span>`).join('');
   const contentPreview = escapeHtml(node.content_preview || 'No content preview available for this node.');
   const previewNote = node.content_preview_truncated
-    ? '<div class="content-preview-note">Preview truncated for readability. Open the source file for the full document.</div>'
+    ? '<div class="content-preview-note">Preview truncated for readability. Click expand to read the full document.</div>'
     : '';
   const connections = connected.length
     ? connected.map(target => `
@@ -1187,7 +1191,8 @@ function openModal(node) {{
   document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
   // Render content with clickable markdown links
   // Run regex on raw content BEFORE escaping, then escape text parts individually
-  const raw = node.content_preview || 'No content.';
+  // Prefer the untruncated body so the modal shows the full document; fall back to the preview.
+  const raw = node.content_full || node.content_preview || 'No content.';
   const nodePath = node.path.replace(/[^/]+$/, '');
   // Match [text](path.md) markdown links only -- plain text refs are too ambiguous
   const linkRe = /\[([^\]]+)\]\(([^)]+\.md)\)/g;
