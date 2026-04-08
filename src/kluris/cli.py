@@ -50,7 +50,7 @@ from kluris.core.linker import (
     validate_bidirectional,
     validate_synapses,
 )
-from kluris.core.maps import generate_brain_md, generate_index_md, generate_map_md
+from kluris.core.maps import generate_brain_md, generate_map_md
 from kluris.core.mri import generate_mri_html
 from kluris.core.frontmatter import read_frontmatter, update_frontmatter
 from kluris.core.agents import AGENT_REGISTRY, OLD_COMMAND_DIRS, render_commands, install_workflow
@@ -116,7 +116,6 @@ def _run_dream_on_brain(brain_path: Path) -> None:
         for lobe in directories:
             generate_map_md(brain_path, lobe)
         generate_brain_md(brain_path, brain_config.name, brain_config.description)
-        generate_index_md(brain_path)
     except Exception as e:
         import sys
         print(f"Warning: dream failed: {e}", file=sys.stderr)
@@ -190,7 +189,6 @@ def _sync_brain_state(brain_path: Path, brain_config) -> dict:
         generate_map_md(brain_path, lobe)
 
     generate_brain_md(brain_path, brain_config.name, brain_config.description)
-    generate_index_md(brain_path)
 
     # Discover lobes from the freshly generated brain.md
     from kluris.core.maps import _get_lobes
@@ -1328,12 +1326,7 @@ def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_
                 webbrowser.open(out.resolve().as_uri())
 
     if as_json:
-        if len(results) == 1:
-            # Backward-compat: single brain returns the legacy flat schema.
-            single = results[0]
-            click.echo(json_lib.dumps({"ok": True, **{k: v for k, v in single.items() if k != "name"}}))
-        else:
-            click.echo(json_lib.dumps({"ok": True, "brains": results}))
+        click.echo(json_lib.dumps({"ok": True, "brains": results}))
 
 
 def _sweep_kluris(base: Path, old_dirs_rel: list[str], home: Path) -> None:

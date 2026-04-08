@@ -659,22 +659,92 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     justify-content: center;
   }}
   .modal-box {{
-    width: 80vw;
-    max-height: 85vh;
+    width: 90vw;
+    max-height: 90vh;
     background: var(--panel-strong);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: var(--radius);
     box-shadow: 0 40px 100px rgba(0,0,0,0.6);
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
     overflow: hidden;
   }}
   .modal-header {{
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 18px 22px;
     border-bottom: 1px solid rgba(255,255,255,0.08);
+  }}
+  .modal-tree {{
+    grid-row: 2;
+    grid-column: 1;
+    overflow: auto;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 12px;
+    background: rgba(0,0,0,0.18);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+  }}
+  .modal-tree-folder {{
+    margin: 2px 0;
+  }}
+  .modal-tree-folder-label {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+  }}
+  .modal-tree-folder-label:hover {{
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+  }}
+  .modal-tree-folder-label .caret {{
+    display: inline-block;
+    width: 10px;
+    text-align: center;
+    color: var(--muted);
+    transition: transform 0.1s;
+  }}
+  .modal-tree-folder.collapsed > .modal-tree-children {{ display: none; }}
+  .modal-tree-folder.collapsed > .modal-tree-folder-label .caret {{
+    transform: rotate(-90deg);
+  }}
+  .modal-tree-children {{
+    margin-left: 14px;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    padding-left: 6px;
+  }}
+  .modal-tree-file {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .modal-tree-file:hover {{
+    background: rgba(123,247,255,0.08);
+    color: var(--accent);
+  }}
+  .modal-tree-file.active {{
+    background: rgba(123,247,255,0.18);
+    color: var(--accent);
+  }}
+  .modal-tree-file .icon,
+  .modal-tree-folder-label .icon {{
+    opacity: 0.6;
+    flex-shrink: 0;
   }}
   .modal-title {{
     font-size: 1.1rem;
@@ -692,6 +762,14 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     line-height: 1;
   }}
   .modal-close:hover {{ color: var(--text); }}
+  .modal-main {{
+    grid-row: 2;
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }}
   .modal-nav {{
     display: flex;
     flex-wrap: wrap;
@@ -768,10 +846,6 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
           <div class="stat-label">Links</div>
           <div class="stat-value" id="stat-edges">{len(graph["edges"])}</div>
         </div>
-        <div class="stat">
-          <div class="stat-label">Visible</div>
-          <div class="stat-value" id="stat-visible">{len(graph["nodes"])}</div>
-        </div>
       </div>
       <div class="search-wrap">
         <label for="search-input">Search the brain</label>
@@ -822,8 +896,11 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
       </div>
       <button type="button" class="modal-close" id="modal-close">&times;</button>
     </div>
-    <div class="modal-nav" id="modal-nav"></div>
-    <pre class="modal-content" id="modal-content"></pre>
+    <nav class="modal-tree" id="modal-tree" aria-label="Brain files"></nav>
+    <div class="modal-main">
+      <div class="modal-nav" id="modal-nav"></div>
+      <pre class="modal-content" id="modal-content"></pre>
+    </div>
   </div>
 </div>
 <script>
@@ -842,8 +919,6 @@ const detailsPanel = document.getElementById('details-panel');
 const detailsEmpty = document.getElementById('details-empty');
 const stageFocus = document.getElementById('stage-focus');
 const typeFiltersEl = document.getElementById('type-filters');
-const statVisible = document.getElementById('stat-visible');
-// statSelected removed from left panel
 const neighbors = new Map();
 for (const node of graph.nodes) neighbors.set(node.id, new Set());
 for (const edge of graph.edges) {{
@@ -1043,7 +1118,6 @@ function visibleNode(node) {{
 
 function refreshVisibility() {{
   filteredNodes = nodes.filter(visibleNode);
-  statVisible.textContent = String(filteredNodes.length);
   resultCountEl.textContent = searchInput.value.trim()
     ? `Found ${{filteredNodes.length}} results.`
     : `Showing all ${{filteredNodes.length}} neurons.`;
@@ -1185,10 +1259,106 @@ function updateDetails() {{
   }}
 }}
 
+// --- File browser tree (left sidebar of the expand modal) ---
+//
+// Built once from the set of neuron nodes, then reused on every openModal
+// call. Folders toggle via the caret. Clicking a file opens that node.
+const treeRoot = {{ folders: new Map(), files: [] }};
+let treeBuilt = false;
+let collapsedTreePaths = new Set();
+
+function buildFileTree() {{
+  treeRoot.folders = new Map();
+  treeRoot.files = [];
+  const entries = nodes
+    .filter(n => n.type === 'neuron' && n.path)
+    .sort((a, b) => a.path.localeCompare(b.path));
+  for (const node of entries) {{
+    const parts = node.path.split('/');
+    let cursor = treeRoot;
+    for (let i = 0; i < parts.length - 1; i++) {{
+      const part = parts[i];
+      if (!cursor.folders.has(part)) {{
+        cursor.folders.set(part, {{ folders: new Map(), files: [] }});
+      }}
+      cursor = cursor.folders.get(part);
+    }}
+    cursor.files.push(node);
+  }}
+  treeBuilt = true;
+}}
+
+function renderTreeFolder(name, folder, pathSoFar) {{
+  const full = pathSoFar ? `${{pathSoFar}}/${{name}}` : name;
+  const collapsed = collapsedTreePaths.has(full);
+  const caret = collapsed ? '▸' : '▾';
+  const subFolderHtml = [...folder.folders.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([n, f]) => renderTreeFolder(n, f, full))
+    .join('');
+  const fileHtml = folder.files
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map(node => `<div class="modal-tree-file" data-tree-node="${{node.id}}" title="${{escapeHtml(node.path)}}"><span class="icon">📄</span>${{escapeHtml(node.title)}}</div>`)
+    .join('');
+  return (
+    `<div class="modal-tree-folder${{collapsed ? ' collapsed' : ''}}" data-tree-folder="${{escapeHtml(full)}}">` +
+      `<div class="modal-tree-folder-label"><span class="caret">${{caret}}</span><span class="icon">📁</span>${{escapeHtml(name)}}</div>` +
+      `<div class="modal-tree-children">${{subFolderHtml}}${{fileHtml}}</div>` +
+    `</div>`
+  );
+}}
+
+function renderFileTree(activeNodeId) {{
+  if (!treeBuilt) buildFileTree();
+  const treeEl = document.getElementById('modal-tree');
+  if (!treeEl) return;
+  const topFolders = [...treeRoot.folders.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([n, f]) => renderTreeFolder(n, f, ''))
+    .join('');
+  const topFiles = treeRoot.files
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map(node => `<div class="modal-tree-file" data-tree-node="${{node.id}}" title="${{escapeHtml(node.path)}}"><span class="icon">📄</span>${{escapeHtml(node.title)}}</div>`)
+    .join('');
+  treeEl.innerHTML = topFolders + topFiles;
+
+  // Highlight the active file and auto-expand its ancestor folders
+  if (activeNodeId != null) {{
+    for (const el of treeEl.querySelectorAll('.modal-tree-file')) {{
+      if (Number(el.dataset.treeNode) === activeNodeId) el.classList.add('active');
+    }}
+  }}
+
+  // Wire folder caret clicks
+  for (const el of treeEl.querySelectorAll('.modal-tree-folder-label')) {{
+    el.addEventListener('click', () => {{
+      const folder = el.closest('.modal-tree-folder');
+      const path = folder?.dataset.treeFolder;
+      if (!path) return;
+      if (collapsedTreePaths.has(path)) {{
+        collapsedTreePaths.delete(path);
+        folder.classList.remove('collapsed');
+      }} else {{
+        collapsedTreePaths.add(path);
+        folder.classList.add('collapsed');
+      }}
+    }});
+  }}
+
+  // Wire file clicks to open that node in the modal
+  for (const el of treeEl.querySelectorAll('.modal-tree-file')) {{
+    el.addEventListener('click', () => {{
+      const target = nodes.find(n => n.id === Number(el.dataset.treeNode));
+      if (target) {{ selectNode(target.id, true); openModal(target); }}
+    }});
+  }}
+}}
+
 function openModal(node) {{
   const modal = document.getElementById('content-modal');
   const breadcrumb = node.path.split('/').map(p => p.replace('.md', '')).join(' / ');
   document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
+  renderFileTree(node.id);
   // Render content with clickable markdown links
   // Run regex on raw content BEFORE escaping, then escape text parts individually
   // Prefer the untruncated body so the modal shows the full document; fall back to the preview.

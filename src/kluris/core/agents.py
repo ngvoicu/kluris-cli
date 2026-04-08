@@ -142,12 +142,24 @@ auto-generated per-lobe and only loaded when you're drilling into that lobe.
 Understand the user's intent from their message:
 
 **Search** -- "`/{skill_name} search X`", "what do we know about X", "find info about Y"
-Follow the reading protocol: start at brain.md, pick relevant lobes from their
-descriptions, read their map.md, then drill into specific neurons. Summarize
-findings. Read-only -- never write during a search.
-If no relevant neurons are found after checking brain.md and lobe maps, say so
-explicitly: "Nothing documented about X yet." Never fabricate or assume brain
-content that doesn't exist.
+FIRST PREFERENCE: run `kluris search "<query>"{brain_flag_hint_inline} --json`
+via your Bash tool. That command walks every neuron + glossary entry +
+brain.md in one pass and returns the top 10 ranked results as JSON with
+fields `file`, `title`, `matched_fields`, `snippet`, `score`, `deprecated`.
+For a two-word query use the full phrase or just the most distinctive word.
+Read the `snippet` first; only open the neuron file if the snippet is
+insufficient or you need surrounding context.
+Use `--lobe <name>` to scope the search to a single lobe (e.g.
+`kluris search "oauth" --lobe projects{brain_flag_hint_inline}`). Use
+`--tag <tag>` to scope by frontmatter tag. Use `--limit 20` when 10 is too
+few. Results with `deprecated: true` point at superseded neurons — prefer
+their `replaced_by` target and tell the user the old knowledge is stale.
+FALLBACK: if `kluris search` returns no results (the query is too broad or
+the brain uses different terminology), navigate the wake-up snapshot's
+`brain_md` + `lobes[]` to pick a relevant lobe, read its `map.md`, and
+drill into specific neurons.
+Read-only -- never write during a search.
+If nothing is documented: "Nothing documented about X yet." Never fabricate.
 
 **Think** -- "implement X", "work on Y using brain knowledge"
 Before touching code, follow the reading protocol to load relevant context.
@@ -271,6 +283,8 @@ Body content here.
 ## CLI commands (for mechanical operations)
 
 These are terminal commands, not skill actions:
+- `kluris search "<query>"{brain_flag_hint_inline} --json` -- ranked search across neurons, glossary, brain.md (the FIRST thing to run for a "what do we know about X" question)
+- `kluris wake-up{brain_flag_hint_inline} --json` -- compact brain snapshot (already cached from the Bootstrap step)
 - `kluris dream{brain_flag_hint_inline}` -- regenerate maps, auto-fix safe issues, validate remaining links
 - `kluris push{brain_flag_hint_inline}` -- commit and push brain changes to git
 - `kluris mri{brain_flag_hint_inline}` -- run preflight fixes, then generate interactive visualization
@@ -282,6 +296,25 @@ _FLAG_HINT_BLOCK = """
 
 
 When invoking the kluris CLI from this skill, you MUST pass `--brain {brain_name}` on every call (e.g. `kluris wake-up --brain {brain_name} --json`). The skill is named `{skill_name}` precisely because there are multiple brains registered on this machine."""
+
+
+def _posix_path(p: str) -> str:
+    """Return ``p`` in POSIX (forward-slash) form.
+
+    The skill body is consumed by AI agents that invoke bash commands
+    like ``cd <brain_path> && kluris wake-up --json``. On Windows a raw
+    path like ``C:\\Users\\foo\\brain`` makes bash interpret ``\\U`` etc
+    as escape sequences, producing ``C:UsersfooBrain`` and a
+    ``No such file or directory`` error. Emitting ``C:/Users/foo/brain``
+    sidesteps that entirely — forward slashes work in Git Bash, WSL,
+    and cmd.exe, so a single form is portable.
+    """
+    from pathlib import PureWindowsPath, PurePosixPath
+    # If the path looks Windows-style (has a drive letter or backslash),
+    # parse it as Windows and emit as POSIX.
+    if "\\" in p or (len(p) >= 2 and p[1] == ":"):
+        return PureWindowsPath(p).as_posix()
+    return PurePosixPath(p).as_posix()
 
 
 def _build_substitutions(
@@ -303,7 +336,7 @@ def _build_substitutions(
     return {
         "{skill_name}": skill_name,
         "{brain_name}": brain_name,
-        "{brain_path}": brain_path,
+        "{brain_path}": _posix_path(brain_path),
         "{git_label}": "git" if has_git else "no git",
         "{brain_description}": brain_description or f"{brain_name} knowledge base",
         "{brain_flag_hint}": flag_hint,

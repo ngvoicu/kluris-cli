@@ -46,9 +46,14 @@ def test_mri_json(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["mri", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert "nodes" in data
-    assert "edges" in data
-    assert "preflight_fixes" in data
+    # Unified schema: mri always emits {ok, brains: [...]} regardless of brain count.
+    assert "brains" in data
+    assert len(data["brains"]) == 1
+    entry = data["brains"][0]
+    assert entry["name"] == "my-brain"
+    assert "nodes" in entry
+    assert "edges" in entry
+    assert "preflight_fixes" in entry
 
 
 def test_mri_runs_dream_preflight(tmp_path, monkeypatch):
@@ -66,7 +71,8 @@ def test_mri_runs_dream_preflight(tmp_path, monkeypatch):
     map_content = (tmp_path / "my-brain" / "projects" / "map.md").read_text(encoding="utf-8")
 
     assert result.exit_code == 0
-    assert data["preflight_fixes"]["orphan_references_added"] >= 1
+    entry = data["brains"][0]
+    assert entry["preflight_fixes"]["orphan_references_added"] >= 1
     assert "orphan.md" in map_content
 
 

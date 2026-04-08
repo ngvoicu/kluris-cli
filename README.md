@@ -71,11 +71,13 @@ or skip every piece.
 ### How the agent bootstraps (automatic)
 
 On the first `/kluris` call of a session, the agent runs `kluris wake-up --json`
-through its shell to load a compact snapshot of the brain: name, lobes with
-neuron counts, and the 5 most recently updated neurons. You never call it
-manually. The agent refreshes the snapshot after mutating commands
-(`/kluris remember`, `/kluris learn`, `kluris neuron`, `kluris lobe`,
-`kluris dream`, `kluris push`).
+through its shell to load a compact snapshot of the brain: the `brain.md` body,
+lobes with neuron counts, the 5 most recently updated neurons, the full glossary,
+and any deprecation warnings. That's enough context for the agent to decode
+jargon and avoid citing superseded neurons without touching the filesystem
+again for the rest of the session. You never call it manually. The agent
+refreshes the snapshot after mutating commands (`/kluris remember`,
+`/kluris learn`, `kluris neuron`, `kluris lobe`, `kluris dream`, `kluris push`).
 
 If you want to see what the agent sees, run it yourself:
 
@@ -308,7 +310,8 @@ Empty -- build your own structure from scratch.
 | `kluris clone <url>` | Clone a brain from git |
 | `kluris list` | List registered brains |
 | `kluris status` | Brain tree, neuron counts, recent changes |
-| `kluris wake-up` | Compact brain snapshot for agent session bootstrap (`--json`) |
+| `kluris search <query>` | Ranked search across neurons, glossary, brain.md (`--lobe`, `--tag`, `--limit`, `--json`) |
+| `kluris wake-up` | Compact brain snapshot for agent session bootstrap — includes `brain_md`, `glossary`, `deprecation` (`--json`) |
 | `kluris neuron <name>` | Create a neuron (optionally with `--lobe` and `--template`) |
 | `kluris lobe <name>` | Create a new lobe (optionally with `--parent` for nesting) |
 | `kluris dream` | Regenerate maps, fix links, validate structure |
@@ -322,7 +325,7 @@ Empty -- build your own structure from scratch.
 | `kluris help` | Show command help |
 
 All commands support `--json` for machine-readable output.
-The CLI is for mechanical operations. Search and guided documentation happen through `/kluris` inside your agent.
+The CLI is for mechanical operations; guided documentation happens through `/kluris` (or `/kluris-<name>`) inside your agent. Under the hood the agent calls `kluris search` for lookups and `kluris wake-up` for the session bootstrap.
 
 ## Neuron templates
 

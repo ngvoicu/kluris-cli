@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from kluris.core.maps import generate_brain_md, generate_index_md, generate_map_md
+from kluris.core.maps import generate_brain_md, generate_map_md
 from kluris.core.frontmatter import read_frontmatter
 
 

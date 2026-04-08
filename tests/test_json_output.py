@@ -107,8 +107,9 @@ def test_mri_json(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["mri", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert "nodes" in data
-    assert "edges" in data
+    assert "brains" in data
+    assert "nodes" in data["brains"][0]
+    assert "edges" in data["brains"][0]
 
 
 def test_install_json(tmp_path, monkeypatch):

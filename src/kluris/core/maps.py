@@ -179,8 +179,3 @@ def generate_map_md(brain_path: Path, lobe_path: Path) -> None:
     if description:
         metadata["description"] = description
     write_frontmatter(lobe_path / "map.md", metadata, content)
-
-
-def generate_index_md(brain_path: Path) -> None:
-    """Deprecated — index is now part of brain.md. No-op for backward compat."""
-    pass

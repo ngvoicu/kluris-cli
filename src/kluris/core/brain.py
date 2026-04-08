@@ -337,8 +337,19 @@ If you want to peek at what the agent sees, run
 /kluris-{name} find everything related to Keycloak
 ```
 
-Read-only. The agent navigates the brain, reads relevant neurons, and
-summarizes what it finds. Use this when you need context before starting work.
+Under the hood the agent calls `kluris search "<query>" --brain {name} --json`
+which ranks matches across neurons, the glossary, and brain.md in one pass
+and returns the top results as JSON. You can run the same command yourself
+from a terminal:
+
+```bash
+kluris search "authentication" --brain {name}                        # pretty table
+kluris search "oauth" --brain {name} --lobe knowledge --json         # JSON, scoped to knowledge/
+kluris search "SIT" --brain {name} --tag infra --limit 5             # filter by tag
+```
+
+Read-only. Results with `deprecated: true` point at superseded neurons
+and the agent will prefer their `replaced_by` target.
 
 ### Think -- work on a task using brain knowledge
 
@@ -400,13 +411,14 @@ through sections one at a time so you can review each part.
 ## CLI commands
 
 ```bash
-kluris status --brain {name}     # Brain tree, recent changes, neuron counts
-kluris wake-up --brain {name}    # Compact snapshot for agent bootstrap (--json for machines)
-kluris templates                 # List available neuron templates
-kluris dream --brain {name}      # Regenerate maps, auto-fix safe issues, validate remaining links
-kluris push --brain {name}       # Commit and push to git
-kluris mri --brain {name} --open # Generate visualization and open in browser
-kluris help                      # All commands
+kluris search "<query>" --brain {name}  # Ranked search across neurons + glossary + brain.md
+kluris status --brain {name}             # Brain tree, recent changes, neuron counts
+kluris wake-up --brain {name}            # Compact snapshot for agent bootstrap (--json for machines)
+kluris templates                          # List available neuron templates
+kluris dream --brain {name}               # Regenerate maps, auto-fix safe issues, validate remaining links
+kluris push --brain {name}                # Commit and push to git
+kluris mri --brain {name} --open          # Generate visualization and open in browser
+kluris help                               # All commands
 ```
 
 If `{name}` is your only registered brain, you can drop `--brain {name}` from

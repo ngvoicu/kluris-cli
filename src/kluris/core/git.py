@@ -108,31 +108,10 @@ def git_clone(url: str, dest: Path) -> None:
     _run(["git", "clone", url, str(dest)], cwd=dest.parent)
 
 
-def git_file_last_modified(path: Path, filename: str) -> str | None:
-    """Get the last modified date of a file from git log."""
-    result = _run(
-        ["git", "log", "-1", "--format=%aI", "--", filename],
-        cwd=path,
-    )
-    date = result.stdout.strip()
-    return date if date else None
-
-
-def git_file_created_date(path: Path, filename: str) -> str | None:
-    """Get the creation date of a file from git log (first commit that added it)."""
-    result = _run(
-        ["git", "log", "--diff-filter=A", "--format=%aI", "--", filename],
-        cwd=path,
-    )
-    date = result.stdout.strip()
-    return date if date else None
-
-
 def git_log_file_dates(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     """Return ``(latest_by_path, created_by_path)`` from a single git log walk.
 
-    Replaces N per-file ``git_file_last_modified`` + ``git_file_created_date``
-    calls with one subprocess invocation:
+    Single subprocess invocation:
 
         git log --format="COMMIT %aI" --name-only HEAD
 
@@ -142,11 +121,9 @@ def git_log_file_dates(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     - ``created`` is overwritten on EVERY occurrence (= oldest commit, since we
       keep overwriting until the last/oldest occurrence wins)
 
-    Uses ``%aI`` (author ISO date) to match ``git_file_last_modified`` (line 114)
-    and ``git_file_created_date`` (line 124) byte-for-byte.
-
-    Returns ``({}, {})`` if not a git repo or if ``git log`` fails. Caller should
-    typically guard with ``is_git_repo()`` first to short-circuit cleanly.
+    Uses ``%aI`` (author ISO date). Returns ``({}, {})`` if not a git repo
+    or if ``git log`` fails. Caller should typically guard with
+    ``is_git_repo()`` first to short-circuit cleanly.
     """
     try:
         result = _run(

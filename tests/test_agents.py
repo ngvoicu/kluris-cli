@@ -172,3 +172,24 @@ def test_render_skill_git_label():
     no_git_content = _render(has_git=False)
     assert "(git)" in git_content
     assert "(no git)" in no_git_content
+
+
+def test_render_skill_windows_path_is_posix_form():
+    """Windows paths must be baked into SKILL.md as forward-slash POSIX form
+    so bash on Windows (Git Bash / WSL) handles them correctly. A raw
+    ``C:\\Users\\...`` path makes bash interpret ``\\U`` etc as escapes,
+    producing ``C:Users...`` and a 'No such file or directory' error."""
+    content = _render(brain_path="C:\\Users\\Gabriel_Voicu\\Projects\\brain")
+    # The path should appear in forward-slash form, preserving the drive letter
+    assert "C:/Users/Gabriel_Voicu/Projects/brain" in content
+    # The raw Windows path form must NOT appear anywhere in the rendered body
+    assert "C:\\Users\\Gabriel_Voicu" not in content
+    assert "C:\\Users" not in content
+
+
+def test_render_skill_posix_path_passthrough():
+    """POSIX paths pass through unchanged (no mangling on macOS/Linux)."""
+    content = _render(brain_path="/Users/gv/Projects/brain")
+    assert "/Users/gv/Projects/brain" in content
+    # No accidental double slashes or drive letters inserted
+    assert "//" not in content.replace("://", "")

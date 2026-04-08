@@ -21,18 +21,23 @@ pytest tests/test_create.py -v   # single test file
 
 ```
 src/kluris/
-  cli.py              # Click CLI -- all 16 commands in one file (incl. wake-up)
+  cli.py              # Click CLI -- all 17 commands in one file (incl. search, wake-up)
   core/
     config.py          # Pydantic models (GlobalConfig, BrainConfig, BrainEntry)
     brain.py           # BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), validate_brain_name()
     maps.py            # generate_brain_md(), generate_map_md() -- auto-generated files
-    frontmatter.py     # read_frontmatter(), write_frontmatter(), update_frontmatter()
+    frontmatter.py     # read_frontmatter(), write_frontmatter(),
+                       # update_frontmatter(path, patch, *, preloaded=(meta, body)?)
     linker.py          # validate_synapses(), validate_bidirectional(), detect_orphans(),
-                       # detect_deprecation_issues()
+                       # detect_deprecation_issues(), check_frontmatter() with type validation
+    search.py          # _collect_searchable(), _score_hit(), _matched_fields(),
+                       # _extract_snippet(), search_brain() -- backs `kluris search`
     mri.py             # build_graph(), generate_mri_html() -- standalone HTML viz
-    git.py             # git_init(), git_add(), git_commit(), git_log(), git_push(), etc.
+    git.py             # git_init(), git_add(), git_commit(), git_log(),
+                       # git_log_file_dates() batch helper (one subprocess replaces 2N)
     agents.py          # AGENT_REGISTRY (8 agents), per-brain SKILL.md renderer
-                       # (kluris when 1 brain, kluris-<name> when N brains)
+                       # (kluris when 1 brain, kluris-<name> when N brains);
+                       # brain_path emitted in POSIX form (C:/ on Windows) for bash
 ```
 
 ## Key Design Decisions
@@ -96,9 +101,9 @@ The skill body contains six load-bearing sections (in order):
 - **2+ brains + non-interactive** (`--json`, no TTY, or `KLURIS_NO_PROMPT=1`) → resolver errors with the available brains listed and a hint to pass `--brain NAME` or `--brain all`.
 - **Stale brain paths** → annotated `(missing)` in the picker; resolver raises `ClickException` if the user actually tries to use one.
 
-## CLI Commands (16)
+## CLI Commands (17)
 
-create, clone, list, status, wake-up, neuron, lobe, dream, push, mri, templates, install-skills, uninstall-skills, remove, doctor, help
+create, clone, list, status, search, wake-up, neuron, lobe, dream, push, mri, templates, install-skills, uninstall-skills, remove, doctor, help
 
 ## Brain File Structure
 
@@ -126,7 +131,10 @@ create, clone, list, status, wake-up, neuron, lobe, dream, push, mri, templates,
 - **KlurisGroup** -- custom Click group that outputs JSON errors when --json is in args (scans ctx args + sys.argv)
 - **All commands support --json** -- structured output for scripting
 - **Deprecation frontmatter** -- optional `status`, `deprecated_at`, `replaced_by` on neurons; dream reports warnings, doesn't break healthy
-- **wake-up output schema** -- `{ok, name, path, description, lobes[{name, neurons}], total_neurons, recent[{path, updated}], deprecation_count}`
+- **wake-up output schema** -- `{ok, name, path, description, brain_md, lobes[{name, neurons}], total_neurons, recent[{path, updated}], glossary[{term, definition}], deprecation_count, deprecation[]}`
+- **search output schema** -- `{ok, brain, query, total, results[{file, title, matched_fields[], snippet, score, deprecated}]}`
+- **dream uses batch git** -- `_sync_brain_state` calls `is_git_repo()` once, then `git_log_file_dates()` once to fetch `(latest_by_path, created_by_path)`. For a 100-neuron brain that's exactly 2 subprocess calls (was ~200). Uses `%aI` (author date).
+- **mri output schema (unified)** -- always `{ok, brains: [{name, output_path, preflight_fixes, nodes, edges}, ...]}` regardless of brain count.
 - **`_is_interactive()`** helper wraps `sys.stdin.isatty()` so tests can monkeypatch it (CliRunner replaces sys.stdin during invoke and `monkeypatch.setattr("sys.stdin.isatty", ...)` does not survive the swap)
 
 ## Migration from kluris ≤ 1.6.x

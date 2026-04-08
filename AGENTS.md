@@ -22,14 +22,16 @@ No Jinja2 templates -- dependency was removed.
 
 ## Key Files
 
-- `src/kluris/cli.py` -- all 16 Click commands, wizard logic, KlurisGroup error handler, `wake-up` command and collectors, `_resolve_brains` (picker + non-TTY guard + `--brain all`), `_do_install` (per-destination atomic stage-then-rename)
-- `src/kluris/core/agents.py` -- AGENT_REGISTRY (8 agents), per-brain SKILL.md renderer (`render_skill(skill_name, brain_name, brain_path, has_git, brain_description)`). With 1 brain registered the skill is named `kluris`; with N brains each gets `kluris-<name>`. SKILL_BODY contains a single-brain header, Bootstrap, Query first, Intent detection, Writing rules, and CLI commands sections.
+- `src/kluris/cli.py` -- all 17 Click commands, wizard logic, KlurisGroup error handler, `search` + `wake-up` commands and collectors, `_resolve_brains` (picker + non-TTY guard + `--brain all`), `_do_install` (per-destination atomic stage-then-rename), `_sync_brain_state` (batch git log + `update_frontmatter(preloaded=...)`)
+- `src/kluris/core/agents.py` -- AGENT_REGISTRY (8 agents), per-brain SKILL.md renderer (`render_skill(skill_name, brain_name, brain_path, has_git, brain_description)`). With 1 brain registered the skill is named `kluris`; with N brains each gets `kluris-<name>`. SKILL_BODY contains a single-brain header, Bootstrap, Query first, Intent detection (uses `kluris search` as the primary search path), Writing rules, and CLI commands sections. Brain paths are emitted in POSIX form via `_posix_path()` so bash on Windows handles them correctly.
 - `src/kluris/core/brain.py` -- BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), _generate_readme(), validate_brain_name() (rejects reserved word `all`, max 48 chars)
 - `src/kluris/core/config.py` -- Pydantic models, config read/write (with legacy `default_brain` shim), register/unregister
 - `src/kluris/core/maps.py` -- generate_brain_md(), generate_map_md()
-- `src/kluris/core/linker.py` -- synapse validation, bidirectional checks, orphan detection, **detect_deprecation_issues()**
-- `src/kluris/core/mri.py` -- graph building, standalone HTML generation
-- `src/kluris/core/git.py` -- subprocess git wrapper
+- `src/kluris/core/linker.py` -- synapse validation, bidirectional checks, orphan detection, **detect_deprecation_issues()**, type-aware check_frontmatter()
+- `src/kluris/core/search.py` -- powers `kluris search`. `_collect_searchable` walks neurons + glossary + brain.md, `_score_hit` uses occurrence-count ranking, `_extract_snippet` is UTF-8 safe, `search_brain` is the public entry point.
+- `src/kluris/core/frontmatter.py` -- read_frontmatter, write_frontmatter, `update_frontmatter(path, patch, *, preloaded=(meta, body)?)` — the preloaded form skips the second disk read, used by dream's hot path
+- `src/kluris/core/mri.py` -- graph building, standalone HTML generation with file-browser tree sidebar in the expand modal
+- `src/kluris/core/git.py` -- subprocess git wrapper; `git_log_file_dates()` returns `(latest_by_path, created_by_path)` from one walk — replaces the per-file helpers entirely
 
 ## Agent Bootstrap Protocol
 
@@ -60,7 +62,7 @@ non-blocking warnings (text + `--json`). `kluris wake-up --json` exposes a
 - NEURON_TEMPLATES (decision, incident, runbook) are available to all brains
 - brain.md is lightweight (root lobes only, no neuron index)
 - Agents navigate hierarchically: wake-up snapshot -> brain.md -> map.md -> neurons
-- Slash command: one per registered brain. With 1 brain → `/kluris`. With 2+ brains → `/kluris-<name>` per brain. Each handles search, learn, remember, and create -- push and dream are CLI-only.
+- Slash command: one per registered brain. With 1 brain → `/kluris`. With 2+ brains → `/kluris-<name>` per brain. Each handles search, learn, remember, and create -- push and dream are CLI-only. The search intent tells the agent to call `kluris search "<query>" --brain <name> --json` via Bash as the fast path and fall back to manual brain.md → map.md navigation only if the CLI returns zero results.
 - Version must be updated in both pyproject.toml and src/kluris/__init__.py
 - Tests must pass before pushing: `pytest tests/ -q`
 - CI runs on PR only (ubuntu, macos, windows x Python 3.10-3.13)

@@ -7,8 +7,6 @@ from kluris.core.git import (
     git_add,
     git_clone,
     git_commit,
-    git_file_created_date,
-    git_file_last_modified,
     git_init,
     git_log,
     git_push,
@@ -122,30 +120,6 @@ def test_git_clone(tmp_path, bare_remote):
     assert (clone_path / "test.md").read_text() == "hello"
 
 
-def test_git_file_last_modified(tmp_path):
-    git_init(tmp_path)
-    (tmp_path / "test.md").write_text("v1", encoding="utf-8")
-    git_add(tmp_path)
-    git_commit(tmp_path, "first")
-    date = git_file_last_modified(tmp_path, "test.md")
-    assert date is not None
-    # Should be an ISO-ish date string
-    assert "-" in date
-
-
-def test_git_file_created_date(tmp_path):
-    git_init(tmp_path)
-    (tmp_path / "test.md").write_text("v1", encoding="utf-8")
-    git_add(tmp_path)
-    git_commit(tmp_path, "first")
-    (tmp_path / "test.md").write_text("v2", encoding="utf-8")
-    git_add(tmp_path)
-    git_commit(tmp_path, "second")
-    date = git_file_created_date(tmp_path, "test.md")
-    assert date is not None
-    assert "-" in date
-
-
 # --- Batch git_log_file_dates ---
 
 
@@ -223,11 +197,10 @@ def test_git_log_file_dates_non_git_dir_returns_empty_maps(tmp_path):
     assert created == {}
 
 
-def test_git_log_file_dates_uses_author_date_aI_not_committer_date(tmp_path):
-    """The batch helper must use %aI (author date) to match git_file_last_modified
-    and git_file_created_date, NOT %cI (committer date)."""
+def test_git_log_file_dates_uses_author_date_not_committer_date(tmp_path):
+    """The batch helper must use %aI (author date), not %cI (committer date)."""
     import os
-    from kluris.core.git import git_log_file_dates, git_file_last_modified
+    from kluris.core.git import git_log_file_dates
 
     git_init(tmp_path)
     (tmp_path / "test.md").write_text("v1", encoding="utf-8")
@@ -244,31 +217,17 @@ def test_git_log_file_dates_uses_author_date_aI_not_committer_date(tmp_path):
     subprocess.run(["git", "commit", "-m", "x"], cwd=tmp_path, env=env, capture_output=True, check=True)
 
     latest, created = git_log_file_dates(tmp_path)
-    # Both should match the AUTHOR date, not the committer date
+    # Both should match the AUTHOR date (2025-01-01), not the committer date (2026-12-31)
     assert latest["test.md"].startswith("2025-01-01")
     assert created["test.md"].startswith("2025-01-01")
 
-    # Cross-check: git_file_last_modified should also report the author date
-    # (this proves the batch matches the per-file helper byte-for-byte)
-    per_file = git_file_last_modified(tmp_path, "test.md")
-    assert per_file.startswith("2025-01-01")
 
-
-def test_git_log_file_dates_rename_history_parity(tmp_path):
-    """Renamed files: the batch helper must produce dates that match the
-    per-file `git_file_last_modified` / `git_file_created_date` helpers.
-
-    Without `-M` (rename detection), `git log -- newpath` returns the rename
-    commit's date, not the original creation date. The batch behaves the same
-    way because it walks `git log --name-only HEAD` which lists the new path
-    starting from the rename commit. This test pins that parity.
-    """
+def test_git_log_file_dates_rename_history(tmp_path):
+    """Renamed files without rename detection (`-M`): the batch helper reports
+    the rename commit's date, not the original add commit. That matches
+    ``git log -- <new-path>`` semantics."""
     import os
-    from kluris.core.git import (
-        git_log_file_dates,
-        git_file_last_modified,
-        git_file_created_date,
-    )
+    from kluris.core.git import git_log_file_dates
 
     git_init(tmp_path)
 
@@ -295,27 +254,10 @@ def test_git_log_file_dates_rename_history_parity(tmp_path):
 
     latest, created = git_log_file_dates(tmp_path)
 
-    # The batch's view of new-name.md
-    batch_latest = latest.get("new-name.md")
-    batch_created = created.get("new-name.md")
-
-    # Per-file helpers' view of new-name.md
-    per_file_latest = git_file_last_modified(tmp_path, "new-name.md")
-    per_file_created = git_file_created_date(tmp_path, "new-name.md")
-
-    # The batch must match the per-file helpers byte-for-byte (within the
-    # date prefix; both return ISO8601 strings)
-    assert batch_latest is not None
-    assert per_file_latest is not None
-    assert batch_latest.startswith(per_file_latest[:10])
-
-    assert batch_created is not None
-    assert per_file_created is not None
-    # Note: per_file_created may return multi-line stdout if there were
-    # multiple add commits; compare just the first 10 chars (the date)
-    assert batch_created.startswith(per_file_created[:10])
-
     # Both should report the rename commit date for new-name.md, NOT the
-    # original creation commit
-    assert batch_latest.startswith("2026-03-15")
-    assert batch_created.startswith("2026-03-15")
+    # original creation commit. This matches `git log -- new-name.md`.
+    assert latest["new-name.md"].startswith("2026-03-15")
+    assert created["new-name.md"].startswith("2026-03-15")
+    # old-name.md appears in the old commit only
+    assert latest["old-name.md"].startswith("2026-01-15")
+    assert created["old-name.md"].startswith("2026-01-15")
