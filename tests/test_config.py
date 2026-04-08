@@ -24,18 +24,16 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "1.6.2"
+    assert kluris.__version__ == "2.0.0"
 
 
 def test_global_config_defaults():
     cfg = GlobalConfig()
     assert cfg.brains == {}
-    assert cfg.default_brain is None
 
 
 def test_global_config_with_brains():
     cfg = GlobalConfig(
-        default_brain="my-brain",
         brains={
             "my-brain": BrainEntry(
                 path="/home/user/my-brain",
@@ -45,7 +43,6 @@ def test_global_config_with_brains():
             )
         },
     )
-    assert cfg.default_brain == "my-brain"
     assert "my-brain" in cfg.brains
     entry = cfg.brains["my-brain"]
     assert entry.path == "/home/user/my-brain"
@@ -97,12 +94,10 @@ def test_write_read_global_config(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
 
     cfg = GlobalConfig(
-        default_brain="test",
         brains={"test": BrainEntry(path="/tmp/test", description="Test")},
     )
     write_global_config(cfg)
     loaded = read_global_config()
-    assert loaded.default_brain == "test"
     assert "test" in loaded.brains
     assert loaded.brains["test"].path == "/tmp/test"
 
@@ -135,7 +130,35 @@ def test_config_not_found_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "nonexistent.yml"))
     cfg = read_global_config()
     assert cfg.brains == {}
-    assert cfg.default_brain is None
+
+
+def test_legacy_default_brain_pointing_at_real_brain_is_silently_dropped(tmp_path, monkeypatch):
+    """Loading a kluris<=1.6.x YAML with default_brain set to a registered brain works."""
+    import yaml
+    config_path = tmp_path / "config.yml"
+    monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
+    config_path.write_text(yaml.dump({
+        "default_brain": "my-brain",
+        "brains": {"my-brain": {"path": "/tmp/my-brain", "description": "x", "type": "product-group"}},
+    }), encoding="utf-8")
+    cfg = read_global_config()
+    assert "my-brain" in cfg.brains
+    assert not hasattr(cfg, "default_brain")
+
+
+def test_legacy_default_brain_pointing_at_unregistered_brain_is_silently_dropped(tmp_path, monkeypatch):
+    """Loading a kluris<=1.6.x YAML with default_brain pointing at an unknown brain still works."""
+    import yaml
+    config_path = tmp_path / "config.yml"
+    monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
+    config_path.write_text(yaml.dump({
+        "default_brain": "ghost",
+        "brains": {"foo": {"path": "/tmp/foo", "description": "x", "type": "product-group"}},
+    }), encoding="utf-8")
+    cfg = read_global_config()
+    assert "foo" in cfg.brains
+    assert "ghost" not in cfg.brains
+    assert not hasattr(cfg, "default_brain")
 
 
 def test_register_brain(tmp_path, monkeypatch):

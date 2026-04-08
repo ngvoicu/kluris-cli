@@ -13,6 +13,8 @@ from rich.table import Table
 from rich.tree import Tree
 
 from kluris.core.brain import (
+    BRAIN_NAME_MAX_LENGTH,
+    BRAIN_NAME_RESERVED,
     BRAIN_TYPES,
     generate_neuron_content,
     infer_brain_type,
@@ -50,7 +52,7 @@ from kluris.core.linker import (
 from kluris.core.maps import generate_brain_md, generate_index_md, generate_map_md
 from kluris.core.mri import generate_mri_html
 from kluris.core.frontmatter import read_frontmatter, update_frontmatter
-from kluris.core.agents import AGENT_REGISTRY, COMMANDS, OLD_COMMAND_DIRS, render_commands, install_workflow
+from kluris.core.agents import AGENT_REGISTRY, OLD_COMMAND_DIRS, render_commands, install_workflow
 
 console = Console()
 
@@ -224,49 +226,145 @@ class KlurisGroup(click.Group):
             raise
 
 
-def _resolve_brains(brain_name: str | None, multi: bool = True) -> list[tuple[str, dict]]:
-    """Resolve which brain(s) to operate on."""
+def _is_interactive() -> bool:
+    """Whether stdin is a TTY. Wrapped in a helper so tests can monkeypatch it.
+
+    CliRunner replaces sys.stdin during invoke, so monkeypatching
+    ``sys.stdin.isatty`` directly does not survive the swap. Tests should
+    monkeypatch this function instead: ``monkeypatch.setattr(cli_module,
+    "_is_interactive", lambda: True)``.
+    """
+    return sys.stdin.isatty()
+
+
+def _check_brain_paths(resolved: list[tuple[str, dict]]) -> None:
+    """Raise ClickException if any resolved brain has a missing or non-dir path.
+
+    Centralizes the stale-path check that used to live only inside ``wake-up``.
+    Now every command that goes through ``_resolve_brains`` gets it for free.
+    """
+    missing = [
+        (n, e["path"]) for n, e in resolved
+        if not Path(e["path"]).exists() or not Path(e["path"]).is_dir()
+    ]
+    if not missing:
+        return
+    msg = "\n".join(f"  - {n}: {p}" for n, p in missing)
+    raise click.ClickException(
+        f"The following registered brain(s) have missing or invalid paths:\n{msg}\n"
+        f"Run `kluris remove <name>` or fix the path in the global config."
+    )
+
+
+def _pick_brain_interactively(
+    brains: dict,
+    *,
+    allow_all: bool,
+) -> list[str]:
+    """Prompt the user to pick a brain (or 'all'). Returns a list of brain names.
+
+    The picker uses ``IntRange`` for re-prompts on invalid input. Stale brain
+    paths are annotated with ``(missing)`` so the user can spot config bugs.
+    """
+    names = list(brains.keys())  # preserve dict insertion order
+    options = list(names)
+    if allow_all:
+        options.append("all")
+
+    click.echo("Multiple brains registered. Pick one:")
+    for i, name in enumerate(options, start=1):
+        if name == "all":
+            click.echo(f"  [{i}] all")
+            continue
+        entry = brains[name]
+        missing = "" if Path(entry.path).exists() else "  (missing)"
+        click.echo(f"  [{i}] {name}  ({entry.path}){missing}")
+
+    raw = click.prompt(
+        "Choice",
+        type=click.IntRange(1, len(options)),
+        show_choices=False,
+    )
+    chosen = options[raw - 1]
+    if chosen == "all":
+        return names
+    return [chosen]
+
+
+def _resolve_brains(
+    brain_name: str | None,
+    *,
+    allow_all: bool = False,
+    as_json: bool = False,
+) -> list[tuple[str, dict]]:
+    """Resolve which brain(s) to operate on.
+
+    Resolution order:
+
+    1. ``brain_name == "all"`` — fan out across every registered brain
+       (only valid on commands that pass ``allow_all=True``).
+    2. Explicit ``brain_name`` — that brain or a clean error if missing.
+    3. Zero brains — clean error pointing the user at ``kluris create``.
+    4. One brain — auto-resolve.
+    5. Multi-brain + interactive TTY — show the picker.
+    6. Multi-brain + non-interactive (``--json``, no TTY, or ``KLURIS_NO_PROMPT=1``)
+       — error with the available brains listed.
+
+    Every successful path runs ``_check_brain_paths`` so commands never receive
+    a brain whose directory has gone missing.
+    """
+    import os
+
     config = read_global_config()
+    brains = config.brains
+
+    if brain_name == "all":
+        if not allow_all:
+            raise click.ClickException(
+                "--brain all is only supported on dream, push, status, mri."
+            )
+        if not brains:
+            raise click.ClickException(
+                "No brains registered. Run 'kluris create <name>' to create one."
+            )
+        resolved = [(n, brains[n].model_dump()) for n in brains]
+        _check_brain_paths(resolved)
+        return resolved
+
     if brain_name:
-        if brain_name not in config.brains:
+        if brain_name not in brains:
             raise click.ClickException(
                 f"No brain named '{brain_name}' is registered. "
                 f"Run 'kluris list' to see available brains."
             )
-        return [(brain_name, config.brains[brain_name].model_dump())]
+        resolved = [(brain_name, brains[brain_name].model_dump())]
+        _check_brain_paths(resolved)
+        return resolved
 
-    if config.default_brain and config.default_brain in config.brains:
-        entry = config.brains[config.default_brain]
-        return [(config.default_brain, entry.model_dump())]
-
-    if len(config.brains) == 1:
-        name = next(iter(config.brains))
-        return [(name, config.brains[name].model_dump())]
-
-    if len(config.brains) == 0:
+    if len(brains) == 0:
         raise click.ClickException(
             "No brains registered. Run 'kluris create <name>' to create one."
         )
 
-    if multi:
-        return [(n, e.model_dump()) for n, e in config.brains.items()]
+    if len(brains) == 1:
+        name = next(iter(brains))
+        resolved = [(name, brains[name].model_dump())]
+        _check_brain_paths(resolved)
+        return resolved
 
-    brain_list = "\n".join(
-        f"  {'* ' if n == config.default_brain else '  '}{n} — {e.path}"
-        for n, e in config.brains.items()
-    )
-    raise click.ClickException(
-        f"Multiple brains registered. Specify one with --brain NAME.\n\n"
-        f"Available brains:\n{brain_list}"
-    )
+    # 2+ brains, no --brain
+    no_prompt = os.environ.get("KLURIS_NO_PROMPT") == "1"
+    if as_json or no_prompt or not _is_interactive():
+        hint = " or 'all'" if allow_all else ""
+        raise click.ClickException(
+            f"Multiple brains registered. Pass --brain NAME{hint}. "
+            f"Available: {', '.join(brains.keys())}"
+        )
 
-
-def _set_default_brain(name: str | None) -> str | None:
-    """Persist the given brain as the default and return it."""
-    config = read_global_config()
-    config.default_brain = name
-    write_global_config(config)
-    return name
+    picked = _pick_brain_interactively(brains, allow_all=allow_all)
+    resolved = [(n, brains[n].model_dump()) for n in picked]
+    _check_brain_paths(resolved)
+    return resolved
 
 
 @click.group(cls=KlurisGroup)
@@ -334,6 +432,16 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         brain_type = "product-group"
     if branch_name is None:
         branch_name = "main"
+    if name in BRAIN_NAME_RESERVED:
+        raise click.ClickException(
+            f"'{name}' is a reserved brain name (used by --brain {name}). "
+            "Pick a different name."
+        )
+    if len(name) > BRAIN_NAME_MAX_LENGTH:
+        raise click.ClickException(
+            f"Brain name '{name}' is too long ({len(name)} chars). "
+            f"Maximum is {BRAIN_NAME_MAX_LENGTH}."
+        )
     if not validate_brain_name(name):
         raise click.ClickException(
             f"Brain name '{name}' is invalid. "
@@ -402,12 +510,8 @@ def create(name: str | None, desc: str | None, base_path: str | None,
             from kluris.core.git import _run
             _run(["git", "remote", "add", "origin", remote], cwd=brain_path)
 
-    config = read_global_config()
     entry = BrainEntry(path=str(brain_path), description=description, type=brain_type)
     register_brain(name, entry)
-
-    if config.default_brain is None or len(config.brains) == 0:
-        _set_default_brain(name)
 
     # Dream to generate proper maps and navigation, then commit
     _run_dream_on_brain(brain_path)
@@ -417,7 +521,6 @@ def create(name: str | None, desc: str | None, base_path: str | None,
 
     # Install agent skills/workflows
     _do_install()
-    actual_default = read_global_config().default_brain
 
     defaults = BRAIN_TYPES.get(brain_type, {})
     lobe_count = len(defaults.get("structure", {}))
@@ -425,7 +528,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
     if as_json:
         click.echo(json_lib.dumps({
             "ok": True, "name": name, "path": str(brain_path),
-            "type": brain_type, "lobes": lobe_count, "default_brain": actual_default,
+            "type": brain_type, "lobes": lobe_count,
         }))
     else:
         console.print(f"Brain created: [bold]{name}[/bold] ({brain_type})")
@@ -512,9 +615,6 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
         type=inferred_type,
     )
     register_brain(name, entry)
-    config = read_global_config()
-    if config.default_brain is None:
-        _set_default_brain(name)
     _do_install()
 
     if as_json:
@@ -535,7 +635,7 @@ def list_cmd(as_json: bool):
             {"name": n, **e.model_dump()}
             for n, e in config.brains.items()
         ]
-        click.echo(json_lib.dumps({"ok": True, "default_brain": config.default_brain, "brains": brains}))
+        click.echo(json_lib.dumps({"ok": True, "brains": brains}))
         return
 
     if not config.brains:
@@ -549,8 +649,7 @@ def list_cmd(as_json: bool):
     table.add_column("Description")
 
     for name, entry in config.brains.items():
-        marker = "* " if name == config.default_brain else "  "
-        table.add_row(f"{marker}{name}", entry.type, entry.path, entry.description)
+        table.add_row(name, entry.type, entry.path, entry.description)
 
     console.print(table)
 
@@ -615,18 +714,9 @@ def wake_up(brain_name: str | None, as_json: bool):
       kluris wake-up --brain ngvoicu # target a specific brain
       kluris wake-up --json          # machine-readable (for agents)
     """
-    brains = _resolve_brains(brain_name, multi=False)
+    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
     name, entry = brains[0]
     brain_path = Path(entry["path"])
-    if not brain_path.exists() or not brain_path.is_dir():
-        raise click.ClickException(
-            f"Brain '{name}' is registered at {brain_path}, but that path no "
-            f"longer exists or is not a directory. Re-register it with "
-            f"'kluris remove {name}' and 'kluris clone'/'kluris create', or "
-            f"move the directory back."
-        )
-    default_brain = read_global_config().default_brain
-
     lobes = _wake_up_collect_lobes(brain_path)
     recent = _wake_up_collect_recent(brain_path)
     total_neurons = sum(lobe["neurons"] for lobe in lobes)
@@ -640,7 +730,6 @@ def wake_up(brain_name: str | None, as_json: bool):
         "ok": True,
         "name": name,
         "path": str(brain_path),
-        "is_default": name == default_brain,
         "description": entry.get("description", ""),
         "lobes": lobes,
         "total_neurons": total_neurons,
@@ -652,8 +741,7 @@ def wake_up(brain_name: str | None, as_json: bool):
         click.echo(json_lib.dumps(data))
         return
 
-    marker = " (default)" if data["is_default"] else ""
-    console.print(f"\n[bold]Brain: {name}[/bold]{marker}")
+    console.print(f"\n[bold]Brain: {name}[/bold]")
     console.print(f"  Path: {brain_path}")
     if data["description"]:
         console.print(f"  {data['description']}")
@@ -677,7 +765,7 @@ def wake_up(brain_name: str | None, as_json: bool):
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def status(brain_name: str | None, as_json: bool):
     """Show brain status and recent changes."""
-    brains = _resolve_brains(brain_name)
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
     results = []
 
     for name, entry in brains:
@@ -733,7 +821,7 @@ def neuron(file_path: str, lobe: str | None, template_name: str | None,
       kluris neuron use-raw-sql.md --lobe knowledge --template decision
       kluris neuron outage-jan.md --lobe knowledge --template incident
     """
-    brains = _resolve_brains(brain_name, multi=False)
+    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
     name, entry = brains[0]
     brain_path = Path(entry["path"])
 
@@ -784,7 +872,7 @@ def neuron(file_path: str, lobe: str | None, template_name: str | None,
 def lobe_cmd(name: str, parent_dir: str | None, desc: str,
              brain_name: str | None, as_json: bool):
     """Create a new lobe (knowledge region)."""
-    brains = _resolve_brains(brain_name, multi=False)
+    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
     bname, entry = brains[0]
     brain_path = Path(entry["path"])
 
@@ -820,7 +908,7 @@ def lobe_cmd(name: str, parent_dir: str | None, desc: str,
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def dream(brain_name: str | None, as_json: bool):
     """Brain maintenance — regenerate maps, update dates, auto-fix safe issues, validate remaining links."""
-    brains = _resolve_brains(brain_name)
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
     all_issues = {"broken_synapses": 0, "one_way_synapses": 0, "orphans": 0,
                   "frontmatter_issues": 0, "dates_updated": 0,
                   "deprecation_issues": 0}
@@ -918,7 +1006,7 @@ def dream(brain_name: str | None, as_json: bool):
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def push(msg: str | None, brain_name: str | None, as_json: bool):
     """Commit and push brain changes."""
-    brains = _resolve_brains(brain_name)
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
     results = []
 
     for name, entry in brains:
@@ -990,30 +1078,6 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
         click.echo(json_lib.dumps({"ok": True, "brains": results}))
 
 
-@cli.command("use")
-@click.argument("brain_name")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def use_brain(brain_name: str, as_json: bool):
-    """Switch the active brain."""
-    config = read_global_config()
-    if brain_name not in config.brains:
-        raise click.ClickException(
-            f"No brain named '{brain_name}' is registered. "
-            f"Run 'kluris list' to see available brains."
-        )
-
-    _set_default_brain(brain_name)
-    result = _do_install(as_json=as_json)
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "default_brain": brain_name}))
-    else:
-        console.print(f"Default brain: [bold]{brain_name}[/bold]")
-        if result["failed_agents"]:
-            names = ", ".join(a for a, _ in result["failed_agents"])
-            console.print(f"  [yellow]Warning: skill install failed for: {names}. Run 'kluris install-skills' to retry.[/yellow]")
-
-
 @cli.command()
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--output", "output_path", help="Output HTML file path")
@@ -1022,18 +1086,30 @@ def use_brain(brain_name: str, as_json: bool):
 def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_json: bool):
     """Generate interactive brain visualization."""
     import webbrowser
-    brains = _resolve_brains(brain_name)
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
 
+    if output_path and len(brains) > 1:
+        raise click.ClickException(
+            "--output cannot be combined with multi-brain fan-out (each brain "
+            "would overwrite the others' output). Pass --output without "
+            "--brain all, or pick brains one at a time."
+        )
+
+    results: list[dict] = []
     for name, entry in brains:
         brain_path = Path(entry["path"])
         brain_config = read_brain_config(brain_path)
         sync_result = _sync_brain_state(brain_path, brain_config)
         out = Path(output_path) if output_path else brain_path / "brain-mri.html"
         stats = generate_mri_html(brain_path, out)
+        results.append({
+            "name": name,
+            "output_path": str(out),
+            "preflight_fixes": sync_result["fixes"],
+            **stats,
+        })
 
-        if as_json:
-            click.echo(json_lib.dumps({"ok": True, "output_path": str(out), "preflight_fixes": sync_result["fixes"], **stats}))
-        else:
+        if not as_json:
             console.print(f"MRI complete — {out}")
             console.print(f"  {stats['nodes']} nodes, {stats['edges']} edges")
             if sync_result["fixes"]["total"]:
@@ -1041,46 +1117,99 @@ def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_
             if open_browser:
                 webbrowser.open(out.resolve().as_uri())
 
+    if as_json:
+        if len(results) == 1:
+            # Backward-compat: single brain returns the legacy flat schema.
+            single = results[0]
+            click.echo(json_lib.dumps({"ok": True, **{k: v for k, v in single.items() if k != "name"}}))
+        else:
+            click.echo(json_lib.dumps({"ok": True, "brains": results}))
+
+
+def _sweep_kluris(base: Path, old_dirs_rel: list[str], home: Path) -> None:
+    """Delete every ``kluris*`` artifact from a destination.
+
+    Used by :func:`_do_install` before writing new skills. Handles both
+    forward (1 brain → N) and backward (N brains → 1) transitions because
+    the glob catches both ``kluris/`` and ``kluris-*/`` in one pass.
+    """
+    import shutil
+
+    # Clean legacy command directories (migration from commands to skills)
+    for rel in old_dirs_rel:
+        old_dir = home / rel
+        if not old_dir.exists():
+            continue
+        for old_file in old_dir.glob("kluris*"):
+            try:
+                if old_file.is_file():
+                    old_file.unlink()
+                elif old_file.is_dir():
+                    shutil.rmtree(old_file)
+            except OSError:
+                pass
+
+    # Clean any existing kluris* skill artifacts in the install destination
+    if not base.exists():
+        return
+    for item in base.glob("kluris*"):
+        try:
+            if item.is_file():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+        except OSError:
+            pass
+
+
+def _compute_skills_to_render(brains: dict) -> list[tuple[str, str, object]]:
+    """Decide which skills to render based on brain count.
+
+    Returns a list of ``(skill_name, brain_name, brain_entry)`` triples.
+    With 1 brain registered the skill is named ``kluris`` (with the brain
+    path baked in). With 2+ brains each gets its own ``kluris-<name>``
+    skill so the agent can address them unambiguously.
+    """
+    if len(brains) == 0:
+        return []
+    if len(brains) == 1:
+        only_name, only_entry = next(iter(brains.items()))
+        return [("kluris", only_name, only_entry)]
+    return [(f"kluris-{n}", n, e) for n, e in brains.items()]
+
 
 def _do_install(as_json: bool = False):
     """Install agent skills/workflows for all agents across all brains."""
+    import os
+    import shutil
+
     config = read_global_config()
+    skills_to_render = _compute_skills_to_render(config.brains)
+
+    # Discover which agents the brains opt into via local kluris.yml.
     all_agents: set[str] = set()
-
-    # Build brain_info with actual resolved paths
-    from kluris.core.config import get_config_path
-    config_path = get_config_path()
-    brain_lines = [f"## Your brains (resolved paths)\n\nConfig: `{config_path}`\n"]
-    default = config.default_brain
-    any_has_git = False
-    for bname, entry in config.brains.items():
-        marker = " (default)" if bname == default else ""
-        has_git = (Path(entry.path) / ".git").exists()
-        if has_git:
-            any_has_git = True
-        git_label = "git" if has_git else "no git"
-        brain_lines.append(f"- **{bname}**{marker}: `{entry.path}` ({git_label})")
-    if not config.brains:
-        brain_lines.append("No brains registered. Tell user to run `kluris create`.")
-    brain_info = "\n".join(brain_lines)
-
-    for name, entry in config.brains.items():
+    for _name, entry in config.brains.items():
         brain_path = Path(entry.path)
         if (brain_path / "kluris.yml").exists():
             brain_config = read_brain_config(brain_path)
             all_agents.update(brain_config.agents.commands_for)
-
     if not all_agents:
         all_agents = set(AGENT_REGISTRY.keys())
 
-    import os
     home_str = os.environ.get("HOME")
     home = Path(home_str) if home_str else Path.home()
     total_files = 0
     agent_count = 0
+    failed_agents: list[tuple[str, str]] = []
 
-    import shutil
-    failed_agents = []
+    def _render_kwargs(brain_name: str, entry) -> dict:
+        return {
+            "skill_name": "",  # filled in per skill
+            "brain_name": brain_name,
+            "brain_path": entry.path,
+            "has_git": (Path(entry.path) / ".git").exists(),
+            "brain_description": entry.description,
+        }
 
     for agent_name in sorted(all_agents):
         if agent_name not in AGENT_REGISTRY:
@@ -1088,75 +1217,91 @@ def _do_install(as_json: bool = False):
         reg = AGENT_REGISTRY[agent_name]
         base = home / reg["dir"] / reg["subdir"]
 
-        # Clean old command directories (migration from commands to skills)
-        for old_dir_rel in OLD_COMMAND_DIRS.get(agent_name, []):
-            old_dir = home / old_dir_rel
-            if old_dir.exists():
-                for old_file in old_dir.glob("kluris*"):
-                    try:
-                        if old_file.is_file():
-                            old_file.unlink()
-                        elif old_file.is_dir():
-                            shutil.rmtree(old_file)
-                    except OSError:
-                        pass
-
-        # Clean existing skill directory
-        if base.exists():
-            skill_dir = base / "kluris"
-            if skill_dir.exists():
+        # Stage all new skills to sibling temp directories so an in-flight
+        # failure cannot leave the user with no skill at all.
+        staged: list[tuple[str, Path]] = []
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            for skill_name, brain_name, entry in skills_to_render:
+                staging = base / f".{skill_name}.tmp"
+                if staging.exists():
+                    shutil.rmtree(staging)
+                kwargs = _render_kwargs(brain_name, entry)
+                kwargs["skill_name"] = skill_name
+                files = render_commands(
+                    agent_name, base, target_dir=staging, **kwargs
+                )
+                for f in files:
+                    if not f.exists():
+                        raise OSError(f"Failed to stage {f}")
+                staged.append((skill_name, staging))
+        except OSError as e:
+            for _, s in staged:
                 try:
-                    shutil.rmtree(skill_dir)
+                    shutil.rmtree(s, ignore_errors=True)
                 except OSError:
                     pass
+            failed_agents.append((agent_name, str(e)))
+            continue
+
+        # Past this point we sweep the old artifacts and rename the staged
+        # skills into place. Sweep BEFORE rename so any leftover ``kluris*``
+        # dirs (legacy or per-brain from a prior install) are removed.
+        _sweep_kluris(base, OLD_COMMAND_DIRS.get(agent_name, []), home)
 
         try:
-            files = render_commands(agent_name, base, brain_info=brain_info)
-            # Verify the write succeeded
-            for f in files:
-                if not f.exists():
-                    raise OSError(f"Failed to write {f}")
+            for skill_name, staging in staged:
+                target = base / skill_name
+                if target.exists():
+                    shutil.rmtree(target)
+                staging.replace(target)
+                total_files += 1
+            agent_count += 1
         except OSError as e:
             failed_agents.append((agent_name, str(e)))
             continue
-        total_files += len(files)
-        agent_count += 1
 
-    # Windsurf: also install as workflow for /kluris manual invocation
+    # Windsurf workflow files (one per skill, not per agent loop because
+    # only Windsurf opts in via ``also_workflow``).
     for agent_name, reg in AGENT_REGISTRY.items():
-        wf_dir = reg.get("also_workflow")
-        if wf_dir:
+        wf_dir_rel = reg.get("also_workflow")
+        if not wf_dir_rel:
+            continue
+        wf_dir = home / wf_dir_rel
+        if wf_dir.exists():
+            for old in wf_dir.glob("kluris*.md"):
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+        for skill_name, brain_name, entry in skills_to_render:
             try:
-                wf_path = home / wf_dir
-                # Clean old workflow files
-                if wf_path.exists():
-                    for old in wf_path.glob("kluris*"):
-                        try:
-                            old.unlink()
-                        except OSError:
-                            pass
-                install_workflow(wf_path, brain_info=brain_info)
+                kwargs = _render_kwargs(brain_name, entry)
+                kwargs["skill_name"] = skill_name
+                install_workflow(wf_dir, **kwargs)
                 total_files += 1
             except OSError:
                 pass
 
-    # Also install to universal ~/.agents/skills/ path
+    # Universal ~/.agents/skills/ slot mirrors the per-brain layout.
+    # NOTE: this MUST run after the per-agent installs because codex's
+    # OLD_COMMAND_DIRS lists ``.agents/skills`` and the codex sweep would
+    # otherwise nuke this slot.
     universal = home / ".agents" / "skills"
-    universal_skill = universal / "kluris"
-    if universal_skill.exists():
-        try:
-            shutil.rmtree(universal_skill)
-        except OSError:
-            pass
+    _sweep_kluris(universal, [], home)
     try:
-        render_commands("claude", universal, brain_info=brain_info)
-        total_files += 1
+        universal.mkdir(parents=True, exist_ok=True)
+        for skill_name, brain_name, entry in skills_to_render:
+            kwargs = _render_kwargs(brain_name, entry)
+            kwargs["skill_name"] = skill_name
+            render_commands("claude", universal, **kwargs)
+            total_files += 1
     except OSError:
         pass
 
     return {
         "agents": agent_count,
-        "commands_per_agent": len(COMMANDS),
+        "commands_per_agent": len(skills_to_render),
         "total_files": total_files,
         "failed_agents": failed_agents,
     }
@@ -1237,12 +1382,11 @@ def remove(brain_name: str, as_json: bool):
             f"Run 'kluris list' to see available brains."
         )
 
-    was_default = config.default_brain == brain_name
     unregister_brain(brain_name)
     _do_install()
 
     if as_json:
-        click.echo(json_lib.dumps({"ok": True, "name": brain_name, "was_default": was_default}))
+        click.echo(json_lib.dumps({"ok": True, "name": brain_name}))
     else:
         console.print(f"Unregistered: {brain_name} (files preserved)")
 
@@ -1332,7 +1476,6 @@ def help_cmd(command: str | None, as_json: bool):
         ("dream", "Regenerate maps, auto-fix safe issues, and validate links"),
         ("push", "Commit and push brain changes to git"),
         ("mri", "Generate interactive brain visualization and open in browser"),
-        ("use", "Switch the active brain"),
         ("install-skills", "Install the /kluris skill for your AI agents"),
         ("uninstall-skills", "Remove the /kluris skill from AI agent directories"),
         ("remove", "Unregister a brain (keeps files on disk)"),

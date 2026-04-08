@@ -3,6 +3,32 @@
 from kluris.core.agents import AGENT_REGISTRY, render_commands, render_skill
 
 
+def _render(skill_name="kluris", brain_name="test-brain", brain_path="/tmp/test-brain",
+            has_git=False, brain_description="Test brain"):
+    """Convenience wrapper around render_skill with sensible defaults."""
+    return render_skill(
+        skill_name=skill_name,
+        brain_name=brain_name,
+        brain_path=brain_path,
+        has_git=has_git,
+        brain_description=brain_description,
+    )
+
+
+def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="test-brain",
+             brain_path="/tmp/test-brain", has_git=False, brain_description="Test brain"):
+    """Convenience wrapper around render_commands with sensible defaults."""
+    return render_commands(
+        agent_name,
+        tmp_path,
+        skill_name=skill_name,
+        brain_name=brain_name,
+        brain_path=brain_path,
+        has_git=has_git,
+        brain_description=brain_description,
+    )
+
+
 def test_registry_8_agents():
     assert len(AGENT_REGISTRY) == 8
 
@@ -14,28 +40,28 @@ def test_all_agents_use_skills():
 
 
 def test_render_skill_has_frontmatter():
-    content = render_skill()
+    content = _render()
     assert "---" in content
     assert "name: kluris" in content
     assert "description:" in content
 
 
-def test_render_skill_has_brain_info():
-    brain_info = "## Your brains\n\n- **test**: `/tmp/test-brain`"
-    content = render_skill(brain_info)
-    assert "test-brain" in content
+def test_render_skill_has_brain_header():
+    """Skill body bakes in the brain name and path."""
+    content = _render(brain_name="test-brain", brain_path="/tmp/test-brain")
+    assert "Brain: test-brain" in content
+    assert "/tmp/test-brain" in content
 
 
 def test_render_creates_skill_md(tmp_path):
-    files = render_commands("claude", tmp_path)
+    files = _install(tmp_path)
     assert len(files) == 1
     assert files[0].name == "SKILL.md"
     assert files[0].parent.name == "kluris"
 
 
 def test_render_skill_content(tmp_path):
-    brain_info = "## Your brains\n\n- **test**: `/tmp/test-brain`"
-    files = render_commands("claude", tmp_path, brain_info=brain_info)
+    files = _install(tmp_path, brain_name="test-brain", brain_path="/tmp/test-brain")
     content = files[0].read_text()
     assert "name: kluris" in content
     assert "test-brain" in content
@@ -47,7 +73,7 @@ def test_render_same_format_all_agents(tmp_path):
     """All agents get the same SKILL.md format."""
     for agent_name in AGENT_REGISTRY:
         agent_dir = tmp_path / agent_name
-        files = render_commands(agent_name, agent_dir)
+        files = _install(agent_dir, agent_name=agent_name)
         assert len(files) == 1
         assert files[0].name == "SKILL.md"
         content = files[0].read_text()
@@ -56,36 +82,28 @@ def test_render_same_format_all_agents(tmp_path):
 
 def test_skill_has_query_first_protocol():
     """Skill must instruct the agent to query the brain before answering."""
-    content = render_skill()
+    content = _render()
     assert "Query first" in content
-    assert "Never guess" in content
+    assert "Never guess" in content or "never guess" in content
 
 
-def test_skill_has_brain_selection_rules():
-    """Skill must explain how to pick a brain when multiple are registered."""
-    content = render_skill()
-    assert "Brain selection" in content
-    # Three-tier rule: exact name > path hint > default
-    assert "names a brain" in content
-    assert "current working directory" in content
-    assert "(default)" in content
+def test_skill_has_no_brain_selection_section():
+    """Multi-brain selection rules are gone -- each skill is bound to one brain."""
+    content = _render()
+    assert "Brain selection" not in content
+    # The natural-language picker rules from the old body must not appear:
+    assert "names a brain" not in content
 
 
 def test_skill_tells_agent_to_run_wake_up():
     """Skill must tell the agent to bootstrap with kluris wake-up at session start."""
-    content = render_skill()
+    content = _render()
     assert "kluris wake-up" in content
 
 
 def test_skill_bootstrap_instruction_is_deterministic():
-    """Bootstrap instruction must be deterministic, not ambiguous.
-
-    'at session start' is too vague — an agent reading it mid-conversation
-    could decide the session already started and skip wake-up. The instruction
-    must anchor to 'first /kluris call of the session' which the agent can
-    observe directly.
-    """
-    content = render_skill()
+    """Bootstrap instruction must be deterministic, not ambiguous."""
+    content = _render()
     assert "Bootstrap" in content
     assert "first" in content.lower() and "/kluris" in content
     # Cache guidance: agent should reuse wake-up output, not re-run every turn
@@ -94,12 +112,63 @@ def test_skill_bootstrap_instruction_is_deterministic():
 
 def test_skill_bootstrap_lists_refresh_triggers():
     """Skill tells the agent when to re-run wake-up after the brain changes."""
-    content = render_skill()
-    # When the brain mutates (neuron/lobe/remember/learn/dream/push), the
-    # cached snapshot is stale and wake-up must be re-run.
+    content = _render()
     lowered = content.lower()
     assert "re-run" in lowered or "refresh" in lowered
-    # Must mention at least two mutation triggers so the rule is unambiguous
     triggers = ["neuron", "lobe", "dream", "push", "remember", "learn"]
     hits = sum(1 for t in triggers if t in lowered)
     assert hits >= 2
+
+
+def test_render_skill_per_brain_has_brain_flag_hint():
+    """A kluris-<X> skill must instruct the agent to pass --brain X on every CLI call."""
+    content = _render(skill_name="kluris-foo", brain_name="foo")
+    assert "--brain foo" in content
+    assert "kluris-foo" in content
+    # The frontmatter name must match the skill_name
+    assert "name: kluris-foo" in content
+
+
+def test_render_skill_single_brain_no_brain_flag_hint():
+    """The kluris (single-brain) skill must NOT mention --brain anywhere."""
+    content = _render(skill_name="kluris", brain_name="foo")
+    assert "--brain" not in content
+    # The placeholder must be substituted to empty, not left as-is
+    assert "{brain_flag_hint}" not in content
+    assert "{brain_flag_hint_inline}" not in content
+
+
+def test_render_skill_isolation():
+    """Rendering two skills back to back must not mention the other brain."""
+    a = _render(skill_name="kluris-brain-a", brain_name="brain-a", brain_path="/tmp/a")
+    b = _render(skill_name="kluris-brain-b", brain_name="brain-b", brain_path="/tmp/b")
+    assert "brain-a" in a
+    assert "brain-b" not in a
+    assert "brain-b" in b
+    assert "brain-a" not in b
+
+
+def test_render_skill_name_matches_dir(tmp_path):
+    """The frontmatter `name:` field must match the directory name created by render_commands."""
+    files = _install(tmp_path, skill_name="kluris-foo", brain_name="foo")
+    assert files[0].parent.name == "kluris-foo"
+    content = files[0].read_text()
+    assert "name: kluris-foo" in content
+
+
+def test_render_skill_substitutes_all_placeholders():
+    """No raw `{...}` placeholders should leak into the rendered output."""
+    content = _render(skill_name="kluris", brain_name="foo", brain_path="/tmp/foo",
+                      has_git=True, brain_description="A test brain")
+    placeholders = ["{skill_name}", "{brain_name}", "{brain_path}", "{git_label}",
+                    "{brain_description}", "{brain_flag_hint}", "{brain_flag_hint_inline}"]
+    for ph in placeholders:
+        assert ph not in content, f"{ph} was not substituted"
+
+
+def test_render_skill_git_label():
+    """has_git toggles between 'git' and 'no git' in the body."""
+    git_content = _render(has_git=True)
+    no_git_content = _render(has_git=False)
+    assert "(git)" in git_content
+    assert "(no git)" in no_git_content

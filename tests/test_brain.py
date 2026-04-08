@@ -79,8 +79,29 @@ def test_creates_glossary(tmp_path):
 def test_creates_readme(tmp_path):
     scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
     readme = (tmp_path / "brain" / "README.md").read_text()
-    assert "/kluris" in readme
+    assert "/kluris-brain" in readme
     assert "auto-fix safe issues" in readme
+
+
+def test_generated_readme_uses_brain_named_slash(tmp_path):
+    """Generated README must use /kluris-<name> consistently and explain the alias."""
+    scaffold_brain(tmp_path / "foo", "foo", "Foo brain", "product-group")
+    readme = (tmp_path / "foo" / "README.md").read_text()
+    assert "/kluris-foo " in readme  # slash command form, with trailing space
+    # The deleted `kluris use` command must not appear
+    assert "kluris use " not in readme
+    # The alias note must appear (backticked form `/kluris`)
+    assert "`/kluris`" in readme
+    # No code block (lines starting with `/kluris ` not followed by a hyphen)
+    # should leak the bare slash command -- examples must use /kluris-foo
+    in_code_block = False
+    for line in readme.splitlines():
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            # `/kluris ` (with trailing space) inside a code block would be the bug
+            assert "/kluris " not in line, f"bare /kluris leaked into code block: {line}"
 
 
 def test_readme_mentions_wake_up(tmp_path):
@@ -145,6 +166,25 @@ def test_brain_name_sanitization():
     assert validate_brain_name("special!chars") is False
     assert validate_brain_name("") is False
     assert validate_brain_name("UPPERCASE") is False
+
+
+def test_validate_brain_name_rejects_all():
+    """`all` is reserved -- it collides with --brain all."""
+    assert validate_brain_name("all") is False
+
+
+def test_validate_brain_name_accepts_48_chars():
+    """48-char brain name is the boundary -- still valid."""
+    name = "a" + "b" * 47  # 48 chars total
+    assert len(name) == 48
+    assert validate_brain_name(name) is True
+
+
+def test_validate_brain_name_rejects_too_long():
+    """49+ char brain name is rejected (kluris-<name> would be 56+ chars)."""
+    name = "a" + "b" * 48  # 49 chars total
+    assert len(name) == 49
+    assert validate_brain_name(name) is False
 
 
 def test_paths_use_pathlib(tmp_path):

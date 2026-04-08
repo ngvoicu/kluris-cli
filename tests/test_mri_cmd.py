@@ -68,3 +68,38 @@ def test_mri_runs_dream_preflight(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert data["preflight_fixes"]["orphan_references_added"] >= 1
     assert "orphan.md" in map_content
+
+
+def test_mri_brain_all_emits_single_json_envelope(tmp_path, monkeypatch):
+    """`mri --brain all --json` returns ONE JSON envelope with a `brains` array."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "brain-a", tmp_path)
+    create_test_brain(runner, "brain-b", tmp_path)
+
+    result = runner.invoke(cli, ["mri", "--brain", "all", "--json", "--no-open"])
+    assert result.exit_code == 0
+    # Must parse as a single JSON document (no concatenated objects)
+    data = json.loads(result.output)
+    assert data["ok"] is True
+    assert "brains" in data
+    assert len(data["brains"]) == 2
+    names = {b["name"] for b in data["brains"]}
+    assert names == {"brain-a", "brain-b"}
+
+
+def test_mri_output_with_brain_all_rejected(tmp_path, monkeypatch):
+    """`--output --brain all` is rejected because the file would overwrite N times."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "brain-a", tmp_path)
+    create_test_brain(runner, "brain-b", tmp_path)
+
+    result = runner.invoke(
+        cli,
+        ["mri", "--brain", "all", "--output", str(tmp_path / "shared.html"), "--no-open"],
+    )
+    assert result.exit_code != 0
+    assert "--output" in result.output and "all" in result.output

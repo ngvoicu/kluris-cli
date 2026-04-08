@@ -19,7 +19,6 @@ class BrainEntry(BaseModel):
 
 class GlobalConfig(BaseModel):
     """Global kluris config at ~/.config/kluris/config.yml."""
-    default_brain: str | None = None
     brains: dict[str, BrainEntry] = {}
 
 
@@ -74,6 +73,12 @@ def read_global_config() -> GlobalConfig:
     if not path.exists():
         return GlobalConfig()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    # Legacy field cleanup: kluris <= 1.6.x had a `default_brain` field that
+    # was removed when per-brain skill installs replaced the single shared
+    # skill. Drop it explicitly so old YAML loads cleanly even if the model
+    # is later tightened to extra="forbid".
+    if isinstance(data, dict):
+        data.pop("default_brain", None)
     return GlobalConfig.model_validate(data)
 
 
@@ -116,6 +121,4 @@ def unregister_brain(name: str) -> None:
     """Remove a brain from the global config."""
     config = read_global_config()
     config.brains.pop(name, None)
-    if config.default_brain == name:
-        config.default_brain = None
     write_global_config(config)

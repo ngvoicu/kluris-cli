@@ -30,42 +30,47 @@ OLD_COMMAND_DIRS: dict[str, list[str]] = {
 }
 
 SKILL_DESCRIPTION = """\
-You are the team's subject matter expert. Your knowledge comes from a \
-a brain -- a git-backed repo of architecture, decisions, conventions, \
-and learnings curated by humans. Use this skill whenever the user mentions: \
-brain, team knowledge, "what do we know about", decisions, documentation, \
-API endpoints, conventions, deployment, "remember this", "store this", \
-or wants to search, learn, document, or work with shared project knowledge. \
-Also trigger when the user asks how things work, why decisions were made, \
-or needs context from other projects. The brain paths are baked in below \
--- do not search for config files."""
+You are the team's subject matter expert for the {brain_name} brain. Your \
+knowledge comes from a brain -- a git-backed repo of architecture, decisions, \
+conventions, and learnings curated by humans. Use this skill whenever the \
+user mentions: brain, team knowledge, "what do we know about", decisions, \
+documentation, API endpoints, conventions, deployment, "remember this", \
+"store this", or wants to search, learn, document, or work with shared \
+project knowledge. Also trigger when the user asks how things work, why \
+decisions were made, or needs context from other projects. The brain path \
+is baked in below -- do not search for config files."""
 
 SKILL_BODY = """\
-{brain_info}
+# Brain: {brain_name}
+
+You are the SME for the **{brain_name}** brain. The brain lives at `{brain_path}` ({git_label}).
+Description: {brain_description}
+
+This skill is bound to exactly one brain. Do not look for other brains. Do not invent brain switching logic.{brain_flag_hint}
 
 ## Bootstrap
 
-On the FIRST `/kluris` call of the session, run `kluris wake-up --json` via
+On the FIRST `/{skill_name}` call of the session, run `kluris wake-up{brain_flag_hint_inline} --json` via
 your Bash tool before doing anything else. The output is your index for
 the rest of the session:
 
-- `name`, `path`, `description`, `is_default`
+- `name`, `path`, `description`
 - `lobes[]` with neuron counts per top-level lobe
 - `recent[]`: the 5 most recently updated neurons (use these as your starting
   points for "what's hot" questions)
 - `total_neurons`
 
 Cache the wake-up output mentally for the rest of the session. Do NOT re-run
-`kluris wake-up` on every subsequent `/kluris` call -- trust the snapshot
+`kluris wake-up{brain_flag_hint_inline}` on every subsequent `/{skill_name}` call -- trust the snapshot
 you already loaded.
 
-Re-run `kluris wake-up --json` only when the brain actually changes during
+Re-run `kluris wake-up{brain_flag_hint_inline} --json` only when the brain actually changes during
 the session. Concretely, refresh the snapshot after any of these:
-`/kluris remember`, `/kluris learn`, `kluris neuron`, `kluris lobe`,
-`kluris dream`, or `kluris push`. If the user edits files directly and
+`/{skill_name} remember`, `/{skill_name} learn`, `kluris neuron{brain_flag_hint_inline}`, `kluris lobe{brain_flag_hint_inline}`,
+`kluris dream{brain_flag_hint_inline}`, or `kluris push{brain_flag_hint_inline}`. If the user edits files directly and
 tells you about it, refresh then too.
 
-If `kluris wake-up` fails (no brain registered, CLI not installed), report
+If `kluris wake-up{brain_flag_hint_inline}` fails (no brain registered, CLI not installed), report
 the failure plainly and ask the user to run `kluris doctor`.
 
 ## Query first -- never guess
@@ -83,22 +88,6 @@ training data -- the brain is the source of truth for team knowledge.
   knowledge and pretend it came from the brain.
 - If you are unsure about a fact, a decision, or a convention: say "let me
   check the brain" and actually check. Wrong is worse than slow.
-
-## Brain selection
-
-When multiple brains are registered above, pick one using these rules in
-order. Use only the data in the `{brain_info}` block above -- brain names
-and brain paths. Do not invent "tracked project paths" or similar metadata
-that isn't in the skill body.
-
-1. If the user names a brain in their message ("btb-sme brain", "use ngvoicu"),
-   use that exact brain.
-2. Else if the current working directory path contains the brain name OR
-   starts with the brain path shown above, use that brain.
-3. Else use the brain marked `(default)` above.
-
-When in doubt, ask: "You have brains [A, B, C] -- which one should I write to?"
-Never silently pick a non-default brain without a signal.
 
 ## You are the team's subject matter expert
 
@@ -127,7 +116,7 @@ Follow `related:` links in neuron frontmatter to find connected knowledge.
 
 Understand the user's intent from their message:
 
-**Search** -- "`/kluris search X`", "what do we know about X", "find info about Y"
+**Search** -- "`/{skill_name} search X`", "what do we know about X", "find info about Y"
 Follow the reading protocol: start at brain.md, pick relevant lobes from their
 descriptions, read their map.md, then drill into specific neurons. Summarize
 findings. Read-only -- never write during a search.
@@ -169,8 +158,8 @@ Step 4 -- Wizard (one topic at a time, this is the core loop):
   f. Incorporate feedback, show the updated version if changed
   g. Write ONLY after explicit approval
   h. Move to the next topic
-Step 5 -- Recap. What was written, what was skipped. Remind: `kluris dream`
-to regenerate maps. If the brain has git (shown above), also `kluris push`.
+Step 5 -- Recap. What was written, what was skipped. Remind: `kluris dream{brain_flag_hint_inline}`
+to regenerate maps. If the brain has git (shown above), also `kluris push{brain_flag_hint_inline}`.
 
 Lobe routing -- when learning a single project, default to putting everything
 under that project's folder (e.g. projects/<name>/). Only route to other lobes
@@ -204,15 +193,15 @@ Show the populated template before writing. Walk through sections one at a time
 for complex templates -- don't dump a full decision record without review.
 
 **Create lobe** -- "create a new section for monitoring"
-Create directory in brain. Remind user to run `kluris dream`.
+Create directory in brain. Remind user to run `kluris dream{brain_flag_hint_inline}`.
 
 ## Writing rules
 
 - Frontmatter on every neuron: parent, related, tags, created, updated
 - Bidirectional synapses: if A links to B, add reverse link in B
 - Focus on decisions and rationale, not just descriptions
-- Do NOT edit map.md or brain.md -- auto-generated by `kluris dream`
-- After writing, remind user to run `kluris dream` (and `kluris push` if brain has git)
+- Do NOT edit map.md or brain.md -- auto-generated by `kluris dream{brain_flag_hint_inline}`
+- After writing, remind user to run `kluris dream{brain_flag_hint_inline}` (and `kluris push{brain_flag_hint_inline}` if brain has git)
 - Inline links: before writing a neuron, search the brain for neurons that
   relate to key terms in your content. Read their map.md entries to check for
   matches. When you find one, use a markdown link instead of plain text.
@@ -234,39 +223,105 @@ updated: 2026-04-06
 ## CLI commands (for mechanical operations)
 
 These are terminal commands, not skill actions:
-- `kluris dream` -- regenerate maps, auto-fix safe issues, validate remaining links
-- `kluris push` -- commit and push brain changes to git
-- `kluris mri` -- run preflight fixes, then generate interactive visualization
+- `kluris dream{brain_flag_hint_inline}` -- regenerate maps, auto-fix safe issues, validate remaining links
+- `kluris push{brain_flag_hint_inline}` -- commit and push brain changes to git
+- `kluris mri{brain_flag_hint_inline}` -- run preflight fixes, then generate interactive visualization
 - `kluris templates` -- list neuron templates
 """
 
 
-# Single COMMANDS dict for backward compat with render_commands
-COMMANDS = {
-    "kluris": {
-        "description": SKILL_DESCRIPTION,
-        "body": SKILL_BODY,
-    },
-}
+_FLAG_HINT_BLOCK = """
 
 
-def render_skill(brain_info: str = "") -> str:
-    """Render the kluris SKILL.md content."""
-    body = SKILL_BODY.replace("{brain_info}", brain_info)
-    desc = SKILL_DESCRIPTION.replace('"', '\\"')
+When invoking the kluris CLI from this skill, you MUST pass `--brain {brain_name}` on every call (e.g. `kluris wake-up --brain {brain_name} --json`). The skill is named `{skill_name}` precisely because there are multiple brains registered on this machine."""
+
+
+def _build_substitutions(
+    *,
+    skill_name: str,
+    brain_name: str,
+    brain_path: str,
+    has_git: bool,
+    brain_description: str,
+) -> dict[str, str]:
+    """Compute the placeholder substitutions for SKILL_BODY and SKILL_DESCRIPTION."""
+    is_per_brain = skill_name != "kluris"
+    if is_per_brain:
+        flag_hint = _FLAG_HINT_BLOCK.format(brain_name=brain_name, skill_name=skill_name)
+        flag_hint_inline = f" --brain {brain_name}"
+    else:
+        flag_hint = ""
+        flag_hint_inline = ""
+    return {
+        "{skill_name}": skill_name,
+        "{brain_name}": brain_name,
+        "{brain_path}": brain_path,
+        "{git_label}": "git" if has_git else "no git",
+        "{brain_description}": brain_description or f"{brain_name} knowledge base",
+        "{brain_flag_hint}": flag_hint,
+        "{brain_flag_hint_inline}": flag_hint_inline,
+    }
+
+
+def _apply_substitutions(template: str, subs: dict[str, str]) -> str:
+    """Apply placeholder substitutions to a template string."""
+    out = template
+    for key, value in subs.items():
+        out = out.replace(key, value)
+    return out
+
+
+def render_skill(
+    *,
+    skill_name: str,
+    brain_name: str,
+    brain_path: str,
+    has_git: bool,
+    brain_description: str,
+) -> str:
+    """Render a SKILL.md content for a single brain.
+
+    skill_name is ``kluris`` for the single-brain world and ``kluris-<name>``
+    when multiple brains are registered. The body bakes in this single
+    brain's identity and (when per-brain) instructs the agent to pass
+    ``--brain <name>`` on every CLI invocation.
+    """
+    subs = _build_substitutions(
+        skill_name=skill_name,
+        brain_name=brain_name,
+        brain_path=brain_path,
+        has_git=has_git,
+        brain_description=brain_description,
+    )
+    body = _apply_substitutions(SKILL_BODY, subs)
+    desc = _apply_substitutions(SKILL_DESCRIPTION, subs).replace('"', '\\"')
     return (
         "---\n"
-        f"name: kluris\n"
+        f"name: {skill_name}\n"
         f'description: "{desc}"\n'
         "---\n\n"
         f"{body}\n"
     )
 
 
-def _render_workflow(brain_info: str = "") -> str:
-    """Render a Windsurf workflow .md file (for /kluris manual invocation)."""
-    body = SKILL_BODY.replace("{brain_info}", brain_info)
-    desc = SKILL_DESCRIPTION[:200].replace('"', '\\"')
+def _render_workflow(
+    *,
+    skill_name: str,
+    brain_name: str,
+    brain_path: str,
+    has_git: bool,
+    brain_description: str,
+) -> str:
+    """Render a Windsurf workflow .md file (for /<skill_name> manual invocation)."""
+    subs = _build_substitutions(
+        skill_name=skill_name,
+        brain_name=brain_name,
+        brain_path=brain_path,
+        has_git=has_git,
+        brain_description=brain_description,
+    )
+    body = _apply_substitutions(SKILL_BODY, subs)
+    desc = _apply_substitutions(SKILL_DESCRIPTION, subs)[:200].replace('"', '\\"')
     return (
         f"---\n"
         f'description: "{desc}"\n'
@@ -275,26 +330,57 @@ def _render_workflow(brain_info: str = "") -> str:
     )
 
 
-def render_commands(agent_name: str, output_dir: Path, brain_info: str = "") -> list[Path]:
-    """Install kluris SKILL.md for an agent."""
-    skill_dir = output_dir / "kluris"
+def render_commands(
+    agent_name: str,
+    output_dir: Path,
+    *,
+    skill_name: str,
+    brain_name: str,
+    brain_path: str,
+    has_git: bool,
+    brain_description: str,
+    target_dir: Path | None = None,
+) -> list[Path]:
+    """Install one SKILL.md for the given brain into ``output_dir/skill_name``.
+
+    Pass ``target_dir`` to write into a custom directory instead of
+    ``output_dir/skill_name``. Used by the staged install path so writes
+    land in a sibling temp directory before being renamed into place.
+    """
+    skill_dir = target_dir if target_dir is not None else output_dir / skill_name
     skill_dir.mkdir(parents=True, exist_ok=True)
-    content = render_skill(brain_info)
+    content = render_skill(
+        skill_name=skill_name,
+        brain_name=brain_name,
+        brain_path=brain_path,
+        has_git=has_git,
+        brain_description=brain_description,
+    )
     path = skill_dir / "SKILL.md"
     path.write_text(content, encoding="utf-8")
     return [path]
 
 
-def install_workflow(workflow_dir: Path, brain_info: str = "") -> Path:
-    """Install a Windsurf workflow .md for /kluris manual invocation."""
+def install_workflow(
+    workflow_dir: Path,
+    *,
+    skill_name: str,
+    brain_name: str,
+    brain_path: str,
+    has_git: bool,
+    brain_description: str,
+) -> Path:
+    """Install a Windsurf workflow .md file named ``<skill_name>.md``."""
     workflow_dir.mkdir(parents=True, exist_ok=True)
-    wf_file = workflow_dir / "kluris.md"
-    wf_file.write_text(_render_workflow(brain_info), encoding="utf-8")
+    wf_file = workflow_dir / f"{skill_name}.md"
+    wf_file.write_text(
+        _render_workflow(
+            skill_name=skill_name,
+            brain_name=brain_name,
+            brain_path=brain_path,
+            has_git=has_git,
+            brain_description=brain_description,
+        ),
+        encoding="utf-8",
+    )
     return wf_file
-
-
-def install_for_agent(agent_name: str, home: Path | None = None) -> list[Path]:
-    """Install kluris skill for a specific agent at the correct home path."""
-    reg = AGENT_REGISTRY[agent_name]
-    base = (home or Path.home()) / reg["dir"] / reg["subdir"]
-    return render_commands(agent_name, base)

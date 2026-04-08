@@ -74,6 +74,8 @@ BRAIN_TYPES: dict[str, dict] = {
 }
 
 BRAIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+BRAIN_NAME_RESERVED = frozenset({"all"})
+BRAIN_NAME_MAX_LENGTH = 48
 
 GITIGNORE_CONTENT = """\
 # Secrets
@@ -139,8 +141,17 @@ def generate_neuron_content(
 
 
 def validate_brain_name(name: str) -> bool:
-    """Check if a brain name is valid (lowercase alphanumeric + hyphens)."""
+    """Check if a brain name is valid.
+
+    Rules: non-empty; not a reserved word (e.g. ``all`` collides with
+    ``--brain all``); at most BRAIN_NAME_MAX_LENGTH characters; lowercase
+    alphanumeric plus hyphens; first char is a letter; no path traversal.
+    """
     if not name:
+        return False
+    if name in BRAIN_NAME_RESERVED:
+        return False
+    if len(name) > BRAIN_NAME_MAX_LENGTH:
         return False
     if ".." in name or name.startswith("."):
         return False
@@ -278,8 +289,8 @@ kluris clone <this-repo-url>
 
 ### Start building your team knowledge
 
-One command does everything: `/kluris <natural language>`. The agent reads your
-intent and acts accordingly.
+One command does everything: `/kluris-{name} <natural language>`. The agent
+reads your intent and acts accordingly.
 
 {lobe_section}
 
@@ -289,32 +300,41 @@ intent and acts accordingly.
 {tree_output}
 ```
 
-## How to use /kluris
+## How to use /kluris-{name}
 
-Everything goes through one slash command. The agent detects your intent.
-Search and guided documentation happen in `/kluris`; the CLI is for mechanical
-operations like `dream`, `push`, and `status`.
+Everything goes through `/kluris-{name}`. The agent detects your intent and
+acts accordingly. Search and guided documentation happen through the slash
+command; the CLI is for mechanical operations like `dream`, `push`, and
+`status`.
+
+If `{name}` is the only kluris brain registered on your machine, kluris also
+exposes a bare `/kluris` slash command as an alias -- both forms produce the
+same skill body and you can use either. With multiple brains registered, each
+brain installs as `/kluris-<name>` so you can address them unambiguously.
 
 ### Bootstrap (automatic)
 
-On the first `/kluris` call of each session, the agent runs
-`kluris wake-up --json` via its shell and caches a compact snapshot of the
-brain: lobes with neuron counts, the 5 most recently updated neurons, default
-brain marker. You never run it manually. The agent refreshes the snapshot
-after mutating commands (`/kluris remember`, `/kluris learn`, `kluris neuron`,
-`kluris lobe`, `kluris dream`, `kluris push`).
+On the first `/kluris-{name}` call of each session, the agent runs
+`kluris wake-up --brain {name} --json` via its shell and caches a compact
+snapshot of the brain: lobes with neuron counts, the 5 most recently updated
+neurons, total neuron count. You never run it manually. The agent refreshes
+the snapshot after mutating commands (`/kluris-{name} remember`,
+`/kluris-{name} learn`, `kluris neuron --brain {name}`,
+`kluris lobe --brain {name}`, `kluris dream --brain {name}`,
+`kluris push --brain {name}`).
 
-If you want to peek at what the agent sees, run `kluris wake-up` yourself.
+If you want to peek at what the agent sees, run
+`kluris wake-up --brain {name}` yourself.
 
 ### Search -- ask the SME
 
 ```
-/kluris search authentication
-/kluris search Docker setup
-/kluris what do we know about authentication?
-/kluris how does the Docker setup work?
-/kluris what conventions do we follow for API naming?
-/kluris find everything related to Keycloak
+/kluris-{name} search authentication
+/kluris-{name} search Docker setup
+/kluris-{name} what do we know about authentication?
+/kluris-{name} how does the Docker setup work?
+/kluris-{name} what conventions do we follow for API naming?
+/kluris-{name} find everything related to Keycloak
 ```
 
 Read-only. The agent navigates the brain, reads relevant neurons, and
@@ -323,10 +343,10 @@ summarizes what it finds. Use this when you need context before starting work.
 ### Think -- work on a task using brain knowledge
 
 ```
-/kluris add a new API endpoint for user preferences
-/kluris fix the auth token refresh -- use brain knowledge
-/kluris refactor the data layer following our conventions
-/kluris implement the notification system
+/kluris-{name} add a new API endpoint for user preferences
+/kluris-{name} fix the auth token refresh -- use brain knowledge
+/kluris-{name} refactor the data layer following our conventions
+/kluris-{name} implement the notification system
 ```
 
 The agent reads the brain first (project docs, infrastructure, knowledge),
@@ -336,10 +356,10 @@ it flags the conflict before proceeding.
 ### Learn -- collaboratively document a project into the brain
 
 ```
-/kluris learn the API endpoints from this project
-/kluris learn the database schema
-/kluris learn about the Docker and deployment setup
-/kluris learn everything about this service
+/kluris-{name} learn the API endpoints from this project
+/kluris-{name} learn the database schema
+/kluris-{name} learn about the Docker and deployment setup
+/kluris-{name} learn everything about this service
 ```
 
 This is a collaborative wizard, not a dump. The agent analyzes the project,
@@ -356,10 +376,10 @@ links when a topic spans multiple areas.
 ### Remember -- store a specific decision or piece of knowledge
 
 ```
-/kluris remember we chose raw SQL over JPA for performance
-/kluris remember the frontend health check is at /api/health
-/kluris remember we use Cloudflare Tunnel with zero public ports
-/kluris store that all timestamps must be TIMESTAMPTZ
+/kluris-{name} remember we chose raw SQL over JPA for performance
+/kluris-{name} remember the frontend health check is at /api/health
+/kluris-{name} remember we use Cloudflare Tunnel with zero public ports
+/kluris-{name} store that all timestamps must be TIMESTAMPTZ
 ```
 
 The agent finds the right lobe, shows a preview, and asks for confirmation
@@ -368,10 +388,10 @@ before writing.
 ### Create -- make a new neuron from a template
 
 ```
-/kluris create a decision record about migrating to Keycloak
-/kluris create an incident report for the January outage
-/kluris create a runbook for deploying to production
-/kluris create a new lobe for monitoring
+/kluris-{name} create a decision record about migrating to Keycloak
+/kluris-{name} create an incident report for the January outage
+/kluris-{name} create a runbook for deploying to production
+/kluris-{name} create a new lobe for monitoring
 ```
 
 For structured templates (decision, incident, runbook), the agent walks
@@ -380,15 +400,17 @@ through sections one at a time so you can review each part.
 ## CLI commands
 
 ```bash
-kluris status          # Brain tree, recent changes, neuron counts
-kluris wake-up         # Compact snapshot for agent bootstrap (--json for machines)
-kluris use <name>      # Switch the active brain
-kluris templates       # List available neuron templates
-kluris dream           # Regenerate maps, auto-fix safe issues, validate remaining links
-kluris push            # Commit and push to git
-kluris mri --open      # Generate visualization and open in browser
-kluris help            # All commands
+kluris status --brain {name}     # Brain tree, recent changes, neuron counts
+kluris wake-up --brain {name}    # Compact snapshot for agent bootstrap (--json for machines)
+kluris templates                 # List available neuron templates
+kluris dream --brain {name}      # Regenerate maps, auto-fix safe issues, validate remaining links
+kluris push --brain {name}       # Commit and push to git
+kluris mri --brain {name} --open # Generate visualization and open in browser
+kluris help                      # All commands
 ```
+
+If `{name}` is your only registered brain, you can drop `--brain {name}` from
+every CLI invocation -- kluris auto-resolves the single brain.
 
 ## Neuron templates
 

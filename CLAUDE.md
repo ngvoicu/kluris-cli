@@ -12,7 +12,7 @@ Kluris turns AI agents into team subject matter experts by giving them shared, h
 cd kluris-cli
 source .venv/bin/activate        # or: pipx install -e .
 pip install -e ".[dev]"          # dev install with pytest
-pytest tests/ -v                 # run all tests (261 tests)
+pytest tests/ -v                 # run all tests (290 tests)
 pytest tests/ --cov=kluris -q    # with coverage (90%+)
 pytest tests/test_create.py -v   # single test file
 ```
@@ -21,7 +21,7 @@ pytest tests/test_create.py -v   # single test file
 
 ```
 src/kluris/
-  cli.py              # Click CLI -- all 17 commands in one file (incl. wake-up)
+  cli.py              # Click CLI -- all 16 commands in one file (incl. wake-up)
   core/
     config.py          # Pydantic models (GlobalConfig, BrainConfig, BrainEntry)
     brain.py           # BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), validate_brain_name()
@@ -31,7 +31,8 @@ src/kluris/
                        # detect_deprecation_issues()
     mri.py             # build_graph(), generate_mri_html() -- standalone HTML viz
     git.py             # git_init(), git_add(), git_commit(), git_log(), git_push(), etc.
-    agents.py          # AGENT_REGISTRY (8 agents), single `kluris` skill/workflow renderer
+    agents.py          # AGENT_REGISTRY (8 agents), per-brain SKILL.md renderer
+                       # (kluris when 1 brain, kluris-<name> when N brains)
 ```
 
 ## Key Design Decisions
@@ -45,7 +46,11 @@ src/kluris/
 - **Agent skill/workflow templates are inline** in agents.py, not .j2 template files.
 - **MRI uses inline canvas JS** -- no vendored Cytoscape.js. Standalone HTML with search, inspector, and interactive graph navigation.
 - **Cross-platform** -- all file I/O uses `encoding="utf-8"`, all paths use `pathlib.Path`.
-- **wake-up bootstrap protocol** -- SKILL.md instructs the agent to run `kluris wake-up --json` on the first `/kluris` of a session (via Bash), cache the snapshot, and refresh only after brain-mutating commands. This replaces walking brain.md -> map.md -> neurons on every turn.
+- **wake-up bootstrap protocol** -- SKILL.md instructs the agent to run `kluris wake-up --json` (or `kluris wake-up --brain <name> --json` for per-brain skills) on the first `/<skill>` of a session (via Bash), cache the snapshot, and refresh only after brain-mutating commands. This replaces walking brain.md -> map.md -> neurons on every turn.
+- **Per-brain skill scheme** -- with 1 brain registered, install one skill named `kluris` with that brain's path baked in. With 2+ brains, install one `kluris-<name>` skill per brain so each is addressable unambiguously. Transitions in either direction sweep the entire `kluris*` artifact set before writing the new layout (`_sweep_kluris`). Per-destination atomic via stage-then-rename so a partial-write failure leaves the OLD skill in place.
+- **No default brain** -- the legacy `default_brain` field was removed in the multi-brain refactor. Resolution order is: explicit `--brain NAME` → exactly 1 brain registered → interactive picker (TTY only). Non-TTY / `--json` / `KLURIS_NO_PROMPT=1` all force the resolver to error out instead of prompting.
+- **`--brain all`** -- accepted only on fan-out commands (dream, push, status, mri). Other commands reject it with a clear error. `all` is also a reserved brain name to prevent collision.
+- **Sticky-selection tradeoff** -- `kluris use` was removed deliberately. Repeated commands in a terminal session each trigger the picker (or take `--brain`). The compensating affordances are `KLURIS_NO_PROMPT`, `--brain all`, the integer-pick UX, and the per-brain slash command names that make ambiguity disappear in agent workflows.
 - **Deprecation frontmatter is opt-in** -- neurons may set `status: deprecated` + `deprecated_at` + `replaced_by`. Absence of `status` means active. `linker.detect_deprecation_issues()` surfaces 4 kinds of warnings (`active_links_to_deprecated`, `deprecated_without_replacement`, `replaced_by_missing`, `replaced_by_not_active`) through `kluris dream`; they are non-blocking (do not break `healthy`). `kluris wake-up` exposes a `deprecation_count` summary.
 - **KlurisGroup detects --json via ctx args** -- scans `ctx.protected_args + ctx.args` in addition to `sys.argv` so JSON error output works under CliRunner (tests) as well as shell.
 
@@ -57,33 +62,43 @@ src/kluris/
 
 ## Agent Registry (8 agents)
 
-| Agent | Dir | Format |
-|-------|-----|--------|
-| claude | ~/.claude/skills/kluris/ | SKILL.md |
-| cursor | ~/.cursor/skills/kluris/ | SKILL.md |
-| windsurf | ~/.codeium/windsurf/skills/kluris/ | SKILL.md + workflow |
-| copilot | ~/.copilot/skills/kluris/ | SKILL.md |
-| codex | ~/.codex/skills/kluris/ | SKILL.md |
-| gemini | ~/.gemini/skills/kluris/ | SKILL.md |
-| kilocode | ~/.kilo/skills/kluris/ | SKILL.md |
-| junie | ~/.junie/skills/kluris/ | SKILL.md |
+| Agent | Dir (1 brain) | Dir (N brains) | Format |
+|-------|---------------|----------------|--------|
+| claude | ~/.claude/skills/kluris/ | ~/.claude/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| cursor | ~/.cursor/skills/kluris/ | ~/.cursor/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| windsurf | ~/.codeium/windsurf/skills/kluris/ | ~/.codeium/windsurf/skills/kluris-&lt;name&gt;/ | SKILL.md + workflow |
+| copilot | ~/.copilot/skills/kluris/ | ~/.copilot/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| codex | ~/.codex/skills/kluris/ | ~/.codex/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| gemini | ~/.gemini/skills/kluris/ | ~/.gemini/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| kilocode | ~/.kilo/skills/kluris/ | ~/.kilo/skills/kluris-&lt;name&gt;/ | SKILL.md |
+| junie | ~/.junie/skills/kluris/ | ~/.junie/skills/kluris-&lt;name&gt;/ | SKILL.md |
+
+The universal `~/.agents/skills/` slot mirrors the same per-brain layout for tools that scan it.
 
 ## Agent Skill
 
-One `kluris` skill is installed across supported agents.
-Windsurf also gets a `kluris.md` workflow for manual invocation.
-Search and guided documentation happen through `/kluris` in the agent, not a separate CLI search command.
+A single brain registers as `kluris`; multiple brains register as one `kluris-<name>` skill per brain. Each rendered SKILL.md is bound to exactly one brain — there is no runtime brain picker inside the skill body. Windsurf also gets one workflow file per brain (`kluris.md` or `kluris-<name>.md`).
 
-The skill body contains four load-bearing sections (in order):
+The skill body contains six load-bearing sections (in order):
 
-1. **`{brain_info}` block** -- rendered per install with every registered brain and its absolute path; one is marked `(default)`.
-2. **Bootstrap** -- tells the agent to call `kluris wake-up --json` on the first `/kluris` of a session, cache the result, and refresh only after mutating commands.
+1. **Brain header** -- single-brain block at the top: `# Brain: {name}` with the absolute path and git label, plus a per-skill `--brain <name>` instruction when the skill name is `kluris-<X>`.
+2. **Bootstrap** -- tells the agent to call `kluris wake-up{brain_flag} --json` on the first `/<skill>` of a session, cache the result, and refresh only after mutating commands.
 3. **Query first -- never guess** -- enforces "check the brain before answering" and "never fabricate brain content".
-4. **Brain selection** -- three-tier rule for picking a brain when multiple are registered: exact name > cwd path hint > default.
+4. **How the brain is structured** -- top-down navigation rules.
+5. **Intent detection** -- search/think/learn/remember/create patterns with the right brain-flag interpolation.
+6. **Writing rules + CLI commands** -- frontmatter contract and the mechanical CLI examples.
 
-## CLI Commands (17)
+## Multi-brain CLI behavior
 
-create, clone, list, status, wake-up, neuron, lobe, dream, push, mri, templates, install-skills, uninstall-skills, remove, doctor, help, use
+- **0 brains** → resolver errors with a hint to run `kluris create`.
+- **1 brain** → auto-resolves; no `--brain` flag needed; skill installed as `kluris`.
+- **2+ brains + TTY** → interactive picker `[1] foo [2] bar [3] all` for fan-out commands (dream/push/status/mri); `[1] foo [2] bar` (no `all`) for single-brain commands (wake-up/neuron/lobe).
+- **2+ brains + non-interactive** (`--json`, no TTY, or `KLURIS_NO_PROMPT=1`) → resolver errors with the available brains listed and a hint to pass `--brain NAME` or `--brain all`.
+- **Stale brain paths** → annotated `(missing)` in the picker; resolver raises `ClickException` if the user actually tries to use one.
+
+## CLI Commands (16)
+
+create, clone, list, status, wake-up, neuron, lobe, dream, push, mri, templates, install-skills, uninstall-skills, remove, doctor, help
 
 ## Brain File Structure
 
@@ -104,22 +119,30 @@ create, clone, list, status, wake-up, neuron, lobe, dream, push, mri, templates,
 ## Key Conventions
 
 - **encoding="utf-8"** on every write_text() and read_text() call -- Windows compat
-- **validate_brain_name()** -- lowercase alphanumeric + hyphens only
+- **validate_brain_name()** -- lowercase alphanumeric + hyphens only; max 48 chars; rejects reserved word `all`
 - **git_init() sets user.email/name** -- for CI/test environments without global git config
-- **_do_install() does clean-slate** -- deletes existing kluris* files before writing new ones
+- **_do_install() per-destination atomic** -- stages new SKILL.md files into sibling temp dirs, sweeps `kluris*` artifacts only after successful staging, then atomically renames staged dirs into place. Partial-write failures leave the OLD skill in place for that destination.
 - **_run_dream_on_brain()** -- called after neuron/lobe creation to regenerate maps
 - **KlurisGroup** -- custom Click group that outputs JSON errors when --json is in args (scans ctx args + sys.argv)
 - **All commands support --json** -- structured output for scripting
 - **Deprecation frontmatter** -- optional `status`, `deprecated_at`, `replaced_by` on neurons; dream reports warnings, doesn't break healthy
-- **wake-up output schema** -- `{ok, name, path, is_default, description, lobes[{name, neurons}], total_neurons, recent[{path, updated}], deprecation_count}`
+- **wake-up output schema** -- `{ok, name, path, description, lobes[{name, neurons}], total_neurons, recent[{path, updated}], deprecation_count}`
+- **`_is_interactive()`** helper wraps `sys.stdin.isatty()` so tests can monkeypatch it (CliRunner replaces sys.stdin during invoke and `monkeypatch.setattr("sys.stdin.isatty", ...)` does not survive the swap)
+
+## Migration from kluris ≤ 1.6.x
+
+- The legacy `default_brain` field is silently dropped at parse time inside `read_global_config`. Existing YAML loads cleanly; the next mutation rewrites it without that field.
+- The `kluris use <name>` command is gone. Pass `--brain NAME` per call (or pick interactively).
+- The first post-upgrade `_do_install` (triggered by any mutation: `install-skills`, `create`, `clone`, `remove`) sweeps every `kluris/` and `kluris-*/` artifact across all 8 agent dirs + the universal slot + the Windsurf workflow dir, then writes the new layout. Both `install-skills` and `uninstall-skills` already glob `kluris*` so they handle the old and new layouts in one pass.
 
 ## Testing
 
-- 261 tests across 28 test files
+- 290 tests across 28 test files
 - conftest.py has 5 fixtures: cli_runner, temp_config, temp_home, temp_brain, bare_remote
 - Tests use monkeypatch for KLURIS_CONFIG and HOME env vars
 - Git tests use real git in tmp_path (not mocked)
 - bare_remote fixture sets HEAD to refs/heads/main (CI compat)
+- Picker tests monkeypatch `kluris.cli._is_interactive`, NOT `sys.stdin.isatty` (CliRunner stdin swap)
 
 ## CI/CD
 

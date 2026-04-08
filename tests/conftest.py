@@ -87,7 +87,6 @@ def temp_brain(tmp_path, temp_config):
     )
 
     config_data = {
-        "default_brain": "test-brain",
         "brains": {
             "test-brain": {
                 "path": str(brain_path),

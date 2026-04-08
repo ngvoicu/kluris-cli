@@ -33,8 +33,8 @@ def test_list_json(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["list", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert "default_brain" in data
     assert "brains" in data
+    assert "default_brain" not in data
 
 
 def test_status_json(tmp_path, monkeypatch):
@@ -133,7 +133,7 @@ def test_remove_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "name" in data
-    assert "was_default" in data
+    assert "was_default" not in data
 
 
 def test_help_json(tmp_path, monkeypatch):
@@ -143,18 +143,7 @@ def test_help_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "commands" in data
-    assert len(data["commands"]) == 17
-
-
-def test_use_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["use", "my-brain", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert data["default_brain"] == "my-brain"
+    assert len(data["commands"]) == 16
 
 
 def test_doctor_json(tmp_path, monkeypatch):

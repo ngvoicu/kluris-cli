@@ -72,9 +72,9 @@ or skip every piece.
 
 On the first `/kluris` call of a session, the agent runs `kluris wake-up --json`
 through its shell to load a compact snapshot of the brain: name, lobes with
-neuron counts, the 5 most recently updated neurons, and a default marker.
-You never call it manually. The agent refreshes the snapshot after mutating
-commands (`/kluris remember`, `/kluris learn`, `kluris neuron`, `kluris lobe`,
+neuron counts, and the 5 most recently updated neurons. You never call it
+manually. The agent refreshes the snapshot after mutating commands
+(`/kluris remember`, `/kluris learn`, `kluris neuron`, `kluris lobe`,
 `kluris dream`, `kluris push`).
 
 If you want to see what the agent sees, run it yourself:
@@ -82,8 +82,29 @@ If you want to see what the agent sees, run it yourself:
 ```bash
 kluris wake-up            # pretty text
 kluris wake-up --json     # machine-readable
-kluris wake-up --brain X  # target a non-default brain
+kluris wake-up --brain X  # target a specific brain when more than one is registered
 ```
+
+### Working with multiple brains
+
+Each registered brain installs as its own slash command. With one brain
+registered, that command is `/kluris`. With two or more, each brain installs
+as `/kluris-<name>` (e.g. `/kluris-acme`, `/kluris-personal`). Every per-brain
+skill is bound to exactly one brain — the agent never has to guess which one
+you mean.
+
+CLI commands prompt interactively when 2+ brains are registered:
+
+- Fan-out commands (`dream`, `push`, `status`, `mri`) show
+  `[1] acme [2] personal [3] all`. Pick a single brain or apply to every brain.
+- Single-brain commands (`wake-up`, `neuron`, `lobe`) show
+  `[1] acme [2] personal` (no `all` option).
+
+Pass `--brain NAME` to skip the picker, or `--brain all` on fan-out commands
+to act on every brain at once. Scripts and CI must always pass `--brain`
+because non-TTY contexts disable the picker — set `KLURIS_NO_PROMPT=1` to
+force non-interactive mode even from a TTY (useful for wrappers like Claude
+Code that inherit a terminal but cannot block on prompts).
 
 ### Joining an existing brain
 
@@ -286,7 +307,6 @@ Empty -- build your own structure from scratch.
 | `kluris create` | Create a new brain (interactive wizard) |
 | `kluris clone <url>` | Clone a brain from git |
 | `kluris list` | List registered brains |
-| `kluris use <name>` | Switch the active brain |
 | `kluris status` | Brain tree, neuron counts, recent changes |
 | `kluris wake-up` | Compact brain snapshot for agent session bootstrap (`--json`) |
 | `kluris neuron <name>` | Create a neuron (optionally with `--lobe` and `--template`) |
@@ -295,8 +315,8 @@ Empty -- build your own structure from scratch.
 | `kluris push` | Commit and push brain changes to git |
 | `kluris mri` | Visualize the brain (opens in browser by default) |
 | `kluris templates` | List available neuron templates |
-| `kluris install-skills` | Install the `/kluris` skill for your AI agents |
-| `kluris uninstall-skills` | Remove the `/kluris` skill from AI agent directories |
+| `kluris install-skills` | Install the `/kluris` (or `/kluris-<name>`) skill for your AI agents |
+| `kluris uninstall-skills` | Remove all kluris skills from AI agent directories |
 | `kluris remove <name>` | Unregister a brain (keeps files on disk) |
 | `kluris doctor` | Check prerequisites (git, Python, config) |
 | `kluris help` | Show command help |

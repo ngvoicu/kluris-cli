@@ -37,15 +37,6 @@ def test_create_registers(tmp_path, monkeypatch):
     assert "my-brain" in config.brains
 
 
-def test_create_sets_default(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    create_test_brain(runner, "my-brain", tmp_path)
-    config = read_global_config()
-    assert config.default_brain == "my-brain"
-
-
 def test_create_prints_learn_hint(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -87,16 +78,6 @@ def test_create_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert data["name"] == "my-brain"
-
-
-def test_create_json_reports_actual_default(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    create_test_brain(runner, "brain-a", tmp_path)
-    result = runner.invoke(cli, ["create", "brain-b", "--path", str(tmp_path), "--json"])
-    data = json.loads(result.output)
-    assert data["default_brain"] == "brain-a"
 
 
 def test_create_error_invalid_name(tmp_path, monkeypatch):

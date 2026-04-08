@@ -9,7 +9,7 @@ Published to PyPI as `kluris`. Source: `ngvoicu/kluris-cli`.
 
 ```bash
 pip install -e ".[dev]"          # dev install
-pytest tests/ -v                 # 261 tests
+pytest tests/ -v                 # 290 tests
 pytest tests/ --cov=kluris -q    # 90%+ coverage
 ```
 
@@ -22,10 +22,10 @@ No Jinja2 templates -- dependency was removed.
 
 ## Key Files
 
-- `src/kluris/cli.py` -- all 17 Click commands, wizard logic, KlurisGroup error handler, `wake-up` command and collectors
-- `src/kluris/core/agents.py` -- AGENT_REGISTRY (8 agents), single `kluris` skill renderer. SKILL_BODY contains Bootstrap / Query first / Brain selection sections.
-- `src/kluris/core/brain.py` -- BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), _generate_readme()
-- `src/kluris/core/config.py` -- Pydantic models, config read/write, register/unregister
+- `src/kluris/cli.py` -- all 16 Click commands, wizard logic, KlurisGroup error handler, `wake-up` command and collectors, `_resolve_brains` (picker + non-TTY guard + `--brain all`), `_do_install` (per-destination atomic stage-then-rename)
+- `src/kluris/core/agents.py` -- AGENT_REGISTRY (8 agents), per-brain SKILL.md renderer (`render_skill(skill_name, brain_name, brain_path, has_git, brain_description)`). With 1 brain registered the skill is named `kluris`; with N brains each gets `kluris-<name>`. SKILL_BODY contains a single-brain header, Bootstrap, Query first, Intent detection, Writing rules, and CLI commands sections.
+- `src/kluris/core/brain.py` -- BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), _generate_readme(), validate_brain_name() (rejects reserved word `all`, max 48 chars)
+- `src/kluris/core/config.py` -- Pydantic models, config read/write (with legacy `default_brain` shim), register/unregister
 - `src/kluris/core/maps.py` -- generate_brain_md(), generate_map_md()
 - `src/kluris/core/linker.py` -- synapse validation, bidirectional checks, orphan detection, **detect_deprecation_issues()**
 - `src/kluris/core/mri.py` -- graph building, standalone HTML generation
@@ -33,11 +33,12 @@ No Jinja2 templates -- dependency was removed.
 
 ## Agent Bootstrap Protocol
 
-On the first `/kluris` call of a session, the agent runs `kluris wake-up --json`
-via Bash and caches the output. Subsequent calls reuse the cache until one of
-these mutating commands fires: `/kluris remember`, `/kluris learn`,
-`kluris neuron`, `kluris lobe`, `kluris dream`, `kluris push`. The instruction
-is baked into SKILL_BODY's Bootstrap section.
+On the first `/<skill>` call of a session, the agent runs `kluris wake-up --json`
+(or `kluris wake-up --brain <name> --json` for per-brain skills) via Bash and
+caches the output. Subsequent calls reuse the cache until one of these
+mutating commands fires: `/<skill> remember`, `/<skill> learn`, `kluris neuron`,
+`kluris lobe`, `kluris dream`, `kluris push`. The instruction is baked into
+SKILL_BODY's Bootstrap section.
 
 ## Deprecation Frontmatter
 
@@ -59,7 +60,7 @@ non-blocking warnings (text + `--json`). `kluris wake-up --json` exposes a
 - NEURON_TEMPLATES (decision, incident, runbook) are available to all brains
 - brain.md is lightweight (root lobes only, no neuron index)
 - Agents navigate hierarchically: wake-up snapshot -> brain.md -> map.md -> neurons
-- Slash command: 1 (/kluris handles search, learn, remember, and create -- push and dream are CLI-only)
+- Slash command: one per registered brain. With 1 brain → `/kluris`. With 2+ brains → `/kluris-<name>` per brain. Each handles search, learn, remember, and create -- push and dream are CLI-only.
 - Version must be updated in both pyproject.toml and src/kluris/__init__.py
 - Tests must pass before pushing: `pytest tests/ -q`
 - CI runs on PR only (ubuntu, macos, windows x Python 3.10-3.13)

@@ -45,7 +45,7 @@ def test_wake_up_json_schema(temp_brain, cli_runner):
 
     assert data["ok"] is True
     assert data["name"] == "test-brain"
-    assert data["is_default"] is True
+    assert "is_default" not in data  # field removed in multi-brain refactor
     assert str(temp_brain) == data["path"]
 
     # Lobes: list of {name, neurons} dicts
@@ -93,7 +93,7 @@ def test_wake_up_recent_limited_to_five(temp_brain, cli_runner):
 
 
 def test_wake_up_targets_named_brain(tmp_path, temp_config, cli_runner, monkeypatch):
-    """`kluris wake-up --brain NAME` targets a non-default brain."""
+    """`kluris wake-up --brain NAME` targets a specific brain."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     create_test_brain(cli_runner, "brain-a", tmp_path)
@@ -103,7 +103,7 @@ def test_wake_up_targets_named_brain(tmp_path, temp_config, cli_runner, monkeypa
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["name"] == "brain-b"
-    assert data["is_default"] is False
+    assert "is_default" not in data
 
 
 def test_wake_up_unknown_brain_errors(temp_brain, cli_runner):
