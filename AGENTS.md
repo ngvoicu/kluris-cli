@@ -63,6 +63,7 @@ non-blocking warnings (text + `--json`). `kluris wake-up --json` exposes a
 - brain.md is lightweight (root lobes only, no neuron index)
 - Agents navigate hierarchically: wake-up snapshot -> brain.md -> map.md -> neurons
 - Slash command: one per registered brain. With 1 brain → `/kluris`. With 2+ brains → `/kluris-<name>` per brain. Each handles search, learn, remember, and create -- push and dream are CLI-only. The search intent tells the agent to call `kluris search "<query>" --brain <name> --json` via Bash as the fast path and fall back to manual brain.md → map.md navigation only if the CLI returns zero results.
+- `_do_install()` is called by five commands: `create`, `clone`, `remove`, `install-skills`, and `doctor` (added in v2.2.2). `doctor` is the post-`pipx upgrade kluris` refresh path -- run it once after every kluris version bump to refresh the skill files baked into `~/.<agent>/skills/kluris*`. Pass `--no-refresh` to keep doctor read-only.
 - Version must be updated in both pyproject.toml and src/kluris/__init__.py
 - Tests must pass before pushing: `pytest tests/ -q`
 - CI runs on PR only (ubuntu, macos, windows x Python 3.10-3.13)

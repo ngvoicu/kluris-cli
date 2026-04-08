@@ -1670,9 +1670,21 @@ def remove(brain_name: str, force: bool, as_json: bool):
 
 
 @cli.command()
+@click.option("--no-refresh", is_flag=True, help="Skip refreshing installed agent skills")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def doctor(as_json: bool):
-    """Check prerequisites and environment."""
+def doctor(as_json: bool, no_refresh: bool):
+    """Check prerequisites and refresh installed agent skills.
+
+    Verifies git is installed, Python is recent enough, and the kluris
+    config directory is writable. Also re-runs ``_do_install`` to refresh
+    the installed agent skills (``~/.claude/skills/kluris*``, the universal
+    slot, and the Windsurf workflow files) so they reflect the currently
+    registered brains and the current kluris version. This is the muscle-
+    memory step after ``pipx upgrade kluris`` -- run ``kluris doctor`` and
+    everything is back in sync.
+
+    Pass ``--no-refresh`` to run only the read-only prerequisite checks.
+    """
     checks = []
 
     # Git
@@ -1696,6 +1708,26 @@ def doctor(as_json: bool):
         checks.append({"name": "config_dir", "passed": True, "detail": str(config_dir)})
     except OSError as e:
         checks.append({"name": "config_dir", "passed": False, "detail": str(e)})
+
+    # Refresh installed skills (so `kluris doctor` is also "fix what's safe to fix")
+    skills_result: dict | None = None
+    if not no_refresh:
+        try:
+            skills_result = _do_install(as_json=True)
+            n_brains = len(read_global_config().brains)
+            failed = skills_result.get("failed_agents", [])
+            detail = (
+                f"{skills_result.get('total_files', 0)} files written for "
+                f"{skills_result.get('agents', 0)} agents across {n_brains} brain(s)"
+            )
+            if failed:
+                names = ", ".join(a for a, _ in failed)
+                detail += f" (failed: {names})"
+                checks.append({"name": "skills", "passed": False, "detail": detail})
+            else:
+                checks.append({"name": "skills", "passed": True, "detail": detail})
+        except Exception as e:
+            checks.append({"name": "skills", "passed": False, "detail": f"refresh failed: {e}"})
 
     all_passed = all(c["passed"] for c in checks)
 
@@ -1759,7 +1791,7 @@ def help_cmd(command: str | None, as_json: bool):
         ("uninstall-skills", "Remove the /kluris skill from AI agent directories"),
         ("remove", "Unregister a brain (keeps files on disk)"),
         ("templates", "List available neuron templates for the current brain"),
-        ("doctor", "Check prerequisites (git, Python, config dir)"),
+        ("doctor", "Check prerequisites and refresh installed agent skills (--no-refresh to skip)"),
         ("help", "Show this help"),
     ]
 

@@ -321,7 +321,7 @@ Empty -- build your own structure from scratch.
 | `kluris install-skills` | Install the `/kluris` (or `/kluris-<name>`) skill for your AI agents |
 | `kluris uninstall-skills` | Remove all kluris skills from AI agent directories |
 | `kluris remove <name>` | Unregister a brain (keeps files on disk) |
-| `kluris doctor` | Check prerequisites (git, Python, config) |
+| `kluris doctor` | Check prerequisites AND refresh installed agent skills (run after `pipx upgrade kluris`). Pass `--no-refresh` to skip the refresh and run only the read-only checks. |
 | `kluris help` | Show command help |
 
 All commands support `--json` for machine-readable output.

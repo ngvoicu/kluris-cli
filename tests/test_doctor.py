@@ -3,10 +3,12 @@
 import json
 from click.testing import CliRunner
 from kluris.cli import cli
+from conftest import create_test_brain
 
 
 def test_doctor_all_pass(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor"])
     assert result.exit_code == 0
@@ -14,8 +16,64 @@ def test_doctor_all_pass(tmp_path, monkeypatch):
 
 def test_doctor_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert len(data["checks"]) >= 3
+    assert len(data["checks"]) >= 4  # git, python, config_dir, skills
+
+
+def test_doctor_refreshes_installed_skills(tmp_path, monkeypatch):
+    """`kluris doctor` re-runs _do_install so post-upgrade users get fresh
+    SKILL.md files without having to remember `kluris install-skills`."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+
+    skill_file = tmp_path / ".claude" / "skills" / "kluris" / "SKILL.md"
+    assert skill_file.exists()  # written by `create`
+
+    # Sabotage the installed skill (simulate it being stale post-upgrade)
+    skill_file.write_text("OUTDATED_PLACEHOLDER", encoding="utf-8")
+
+    result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 0
+    # The skill should have been rewritten with real content
+    assert "OUTDATED_PLACEHOLDER" not in skill_file.read_text()
+    assert "name: kluris" in skill_file.read_text()
+
+
+def test_doctor_no_refresh_skips_skill_install(tmp_path, monkeypatch):
+    """--no-refresh keeps doctor read-only (skips _do_install)."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+
+    skill_file = tmp_path / ".claude" / "skills" / "kluris" / "SKILL.md"
+    skill_file.write_text("OUTDATED_PLACEHOLDER", encoding="utf-8")
+
+    result = runner.invoke(cli, ["doctor", "--no-refresh"])
+    assert result.exit_code == 0
+    # The placeholder should still be there (no refresh ran)
+    assert "OUTDATED_PLACEHOLDER" in skill_file.read_text()
+
+
+def test_doctor_json_includes_skills_check(tmp_path, monkeypatch):
+    """The skills refresh appears in the JSON checks list with detail."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+
+    result = runner.invoke(cli, ["doctor", "--json"])
+    data = json.loads(result.output)
+    skill_check = next((c for c in data["checks"] if c["name"] == "skills"), None)
+    assert skill_check is not None
+    assert skill_check["passed"] is True
+    assert "1 brain" in skill_check["detail"]

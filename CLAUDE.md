@@ -135,6 +135,7 @@ create, clone, list, status, search, wake-up, neuron, lobe, dream, push, mri, te
 - **search output schema** -- `{ok, brain, query, total, results[{file, title, matched_fields[], snippet, score, deprecated}]}`
 - **dream uses batch git** -- `_sync_brain_state` calls `is_git_repo()` once, then `git_log_file_dates()` once to fetch `(latest_by_path, created_by_path)`. For a 100-neuron brain that's exactly 2 subprocess calls (was ~200). Uses `%aI` (author date).
 - **mri output schema (unified)** -- always `{ok, brains: [{name, output_path, preflight_fixes, nodes, edges}, ...]}` regardless of brain count.
+- **`_do_install` callers** -- five commands rewrite installed SKILL.md files: `create`, `clone`, `remove`, `install-skills`, and `doctor` (added in v2.2.2). `doctor` is the muscle-memory refresh path after `pipx upgrade kluris` -- it runs prerequisite checks AND `_do_install`. Pass `--no-refresh` to skip the refresh.
 - **`_is_interactive()`** helper wraps `sys.stdin.isatty()` so tests can monkeypatch it (CliRunner replaces sys.stdin during invoke and `monkeypatch.setattr("sys.stdin.isatty", ...)` does not survive the swap)
 
 ## Migration from kluris ≤ 1.6.x
