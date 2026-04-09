@@ -1171,7 +1171,10 @@ function resize() {{
 function buildAnchors(width, height) {{
   const cx = width / 2;
   const cy = height / 2;
-  const radius = Math.min(width, height) * 0.40;
+  // Bigger anchor ring -> lobes start much farther apart. The canvas
+  // pans/zooms freely, so anchors near the viewport edge are fine; the
+  // initial render is centered with all anchors visible.
+  const radius = Math.min(width, height) * 0.55;
   const nonRootLobes = uniqueLobes.filter(l => l !== 'root');
   lobeAnchors.set('root', {{ x: cx, y: cy * 0.86 }});
   nonRootLobes.forEach((lobe, i) => {{
@@ -1388,7 +1391,8 @@ function renderLobes() {{
     `;
     card.addEventListener('click', () => {{
       // Toggle the lobe filter. Clicking the active lobe again clears it.
-      if (isLobeFiltered) {{
+      const wasFiltered = isLobeFiltered;
+      if (wasFiltered) {{
         activeFilter = null;
       }} else {{
         activeFilter = {{ kind: 'lobe', value: lobeKey }};
@@ -1397,6 +1401,8 @@ function renderLobes() {{
       }}
       renderLobes();
       refreshVisibility();
+      if (wasFiltered) resetCamera();
+      else fitToFilteredNodes();
     }});
     wrap.appendChild(card);
 
@@ -1436,13 +1442,16 @@ function renderLobes() {{
         `;
         subCard.addEventListener('click', event => {{
           event.stopPropagation();
-          if (isSubFiltered) {{
+          const wasFiltered = isSubFiltered;
+          if (wasFiltered) {{
             activeFilter = null;
           }} else {{
             activeFilter = {{ kind: 'sublobe', value: sub.key }};
           }}
           renderLobes();
           refreshVisibility();
+          if (wasFiltered) resetCamera();
+          else fitToFilteredNodes();
         }});
         subList.appendChild(subCard);
       }}
@@ -1752,6 +1761,30 @@ function animateCamera(tx, ty, ts, duration) {{
   cameraAnim = requestAnimationFrame(step);
 }}
 
+function fitToFilteredNodes() {{
+  // Frame the camera around whatever is currently visible. Used after a
+  // lobe / sublobe filter is applied so the user actually sees the result.
+  if (!filteredNodes.length) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const padding = 100;
+  const minX = Math.min(...filteredNodes.map(n => n.x)) - padding;
+  const maxX = Math.max(...filteredNodes.map(n => n.x)) + padding;
+  const minY = Math.min(...filteredNodes.map(n => n.y)) - padding;
+  const maxY = Math.max(...filteredNodes.map(n => n.y)) + padding;
+  const w = Math.max(1, maxX - minX);
+  const h = Math.max(1, maxY - minY);
+  const scale = Math.min(rect.width / w, rect.height / h) * 0.78;
+  const clampedScale = Math.min(2.4, Math.max(0.42, scale));
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  animateCamera(rect.width / 2 - cx * clampedScale, rect.height / 2 - cy * clampedScale, clampedScale, 320);
+}}
+
+function resetCamera() {{
+  // Smoothly snap the camera back to the default unfiltered view.
+  animateCamera(0, 0, 1, 320);
+}}
+
 function focusOnNode(id) {{
   const node = nodes.find(item => item.id === id);
   if (!node) return;
@@ -1814,7 +1847,7 @@ function tick() {{
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const distance = Math.max(24, Math.hypot(dx, dy));
-      const crossLobe = a.lobe !== b.lobe ? 1.6 : 1.0;
+      const crossLobe = a.lobe !== b.lobe ? 2.6 : 1.0;
       const force = (1200 * crossLobe) / (distance * distance);
       const ux = dx / distance;
       const uy = dy / distance;
@@ -1824,18 +1857,44 @@ function tick() {{
       b.vy += uy * force;
     }}
   }}
-  // Same-lobe cohesion
+  // Same-lobe cohesion. Track members on the centroid record so the
+  // pairwise lobe-vs-lobe push below can reuse them without re-filtering.
   const lobeCentroids = new Map();
   for (const lobe of uniqueLobes) {{
     const members = filteredNodes.filter(n => n.lobe === lobe);
     if (!members.length) continue;
     const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
     const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
-    lobeCentroids.set(lobe, {{ x: cx, y: cy }});
+    lobeCentroids.set(lobe, {{ x: cx, y: cy, members }});
     for (const n of members) {{
       if (n.type !== 'brain') {{
         n.vx += (cx - n.x) * 0.002;
         n.vy += (cy - n.y) * 0.002;
+      }}
+    }}
+  }}
+  // Push different lobes apart at the centroid level so their hulls
+  // never overlap. minDist controls the breathing room; if two lobe
+  // centroids drift closer than that, every member of each lobe gets a
+  // shove away from the other lobe's centroid.
+  const lobeKeys = [...lobeCentroids.keys()];
+  for (let i = 0; i < lobeKeys.length; i++) {{
+    for (let j = i + 1; j < lobeKeys.length; j++) {{
+      const a = lobeCentroids.get(lobeKeys[i]);
+      const b = lobeCentroids.get(lobeKeys[j]);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.max(60, Math.hypot(dx, dy));
+      // Scale minDist with each lobe's spread so big lobes claim more space.
+      const aSpread = Math.max(80, Math.sqrt(a.members.length) * 50);
+      const bSpread = Math.max(80, Math.sqrt(b.members.length) * 50);
+      const minDist = aSpread + bSpread + 220;
+      if (dist < minDist) {{
+        const push = (minDist - dist) * 0.030;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        for (const n of a.members) {{ n.vx -= ux * push; n.vy -= uy * push; }}
+        for (const n of b.members) {{ n.vx += ux * push; n.vy += uy * push; }}
       }}
     }}
   }}

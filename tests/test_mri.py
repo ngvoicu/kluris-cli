@@ -288,6 +288,31 @@ def test_lobes_act_as_filter_not_focus(tmp_path):
     assert "activeFilter = null" in html
 
 
+def test_lobes_have_anti_overlap_physics_and_auto_fit(tmp_path):
+    """Lobe layout must have:
+       1. A wider anchor ring (radius * 0.55 instead of the old 0.40)
+       2. A pairwise lobe-centroid repulsion pass so hulls cannot overlap
+       3. fitToFilteredNodes() / resetCamera() helpers wired into the
+          lobe-card and sublobe-card click handlers, so applying a filter
+          actually frames the result instead of leaving the user staring
+          at off-screen nodes.
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+    # Bigger initial spacing
+    assert "* 0.55" in html
+    # Lobe-vs-lobe centroid repulsion (the "never overlap" pass)
+    assert "Push different lobes apart" in html
+    assert "lobeCentroids.get(lobeKeys[i])" in html
+    # Auto-fit on filter
+    assert "function fitToFilteredNodes" in html
+    assert "function resetCamera" in html
+    assert "fitToFilteredNodes()" in html
+    assert "resetCamera()" in html
+
+
 def test_search_chips_removed(tmp_path):
     """The glossary/neurons type-filter chips are gone -- search hits everything."""
     brain = _make_brain_with_neurons(tmp_path)
