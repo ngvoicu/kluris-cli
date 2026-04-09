@@ -282,6 +282,82 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     gap: 18px;
     padding: 18px;
   }}
+  .shell.left-collapsed {{
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  }}
+  .shell.right-collapsed {{
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  }}
+  .shell.left-collapsed.right-collapsed {{
+    grid-template-columns: minmax(0, 1fr);
+  }}
+  .shell.left-collapsed .panel-left,
+  .shell.right-collapsed .panel-right {{
+    display: none;
+  }}
+  .panel-collapse-btn {{
+    appearance: none;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(8,15,32,0.70);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+  }}
+  .panel-collapse-btn:hover {{
+    color: var(--text);
+    border-color: rgba(123,247,255,0.40);
+    background: rgba(123,247,255,0.12);
+  }}
+  .panel-expand-btn {{
+    appearance: none;
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 56px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(12,21,44,0.88);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 25;
+    backdrop-filter: blur(10px);
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+  }}
+  .panel-expand-btn:hover {{
+    color: var(--text);
+    border-color: rgba(123,247,255,0.45);
+    background: rgba(123,247,255,0.16);
+  }}
+  .panel-expand-btn.panel-expand-left {{
+    left: 0;
+    border-radius: 0 12px 12px 0;
+    border-left: none;
+  }}
+  .panel-expand-btn.panel-expand-right {{
+    right: 0;
+    border-radius: 12px 0 0 12px;
+    border-right: none;
+  }}
+  .panel-expand-btn.visible {{
+    display: flex;
+  }}
   .panel {{
     position: relative;
     z-index: 5;
@@ -304,7 +380,9 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     position: relative;
     padding: 18px 18px 20px;
     height: 100%;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
   }}
   .eyebrow {{
     margin: 0 0 10px;
@@ -315,10 +393,12 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   }}
   h1, h2, h3, p {{ margin: 0; }}
   h1 {{
-    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-size: clamp(1.5rem, 2.6vw, 2.2rem);
     line-height: 1.04;
     letter-spacing: -0.04em;
     text-transform: uppercase;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }}
   .subhead {{
     margin-top: 12px;
@@ -432,14 +512,18 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   .lobes-list {{
     margin-top: 4px;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }}
   .lobe-group {{
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
+    min-width: 0;
   }}
   .lobe-card-wrap {{
     position: relative;
+    min-width: 0;
   }}
   .lobe-card-wrap.has-caret .lobe-card {{
     padding-right: 40px;
@@ -471,10 +555,12 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   }}
   .sublobes-list {{
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     margin-left: 14px;
     padding-left: 10px;
     border-left: 1px dashed rgba(255,255,255,0.10);
+    min-width: 0;
   }}
   .sublobe-card {{
     appearance: none;
@@ -482,8 +568,9 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     align-items: center;
     gap: 10px;
     width: 100%;
+    min-width: 0;
     text-align: left;
-    padding: 8px 12px;
+    padding: 7px 10px;
     border-radius: 12px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
@@ -515,7 +602,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   }}
   .sublobe-name {{
     font-weight: 600;
-    font-size: 0.78rem;
+    font-size: 0.70rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     overflow: hidden;
@@ -526,10 +613,11 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     appearance: none;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     width: 100%;
+    min-width: 0;
     text-align: left;
-    padding: 10px 12px;
+    padding: 9px 11px;
     border-radius: 14px;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.07);
@@ -568,8 +656,8 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   }}
   .lobe-name {{
     font-weight: 700;
-    font-size: 0.86rem;
-    letter-spacing: 0.06em;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -577,7 +665,10 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   }}
   .lobe-meta {{
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 0.70rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }}
   .stage {{
     position: relative;
@@ -963,6 +1054,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 <body>
 <div class="shell">
   <aside class="panel panel-left">
+    <button type="button" class="panel-collapse-btn" id="collapse-left" title="Collapse left panel" aria-label="Collapse left panel">&lsaquo;</button>
     <div class="panel-inner">
       <p class="eyebrow">Brain MRI</p>
       <h1>{brain_name}</h1>
@@ -1000,8 +1092,9 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   </main>
 
   <aside class="panel panel-right">
+    <button type="button" class="panel-collapse-btn" id="collapse-right" title="Collapse right panel" aria-label="Collapse right panel">&rsaquo;</button>
     <div class="panel-inner">
-      <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-right:32px">
         <div><p class="eyebrow" style="margin:0">Inspector</p></div>
         <div style="display:flex;gap:6px">
           <button type="button" class="expand-btn" id="nav-back" title="Back">&larr;</button>
@@ -1016,6 +1109,8 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     </div>
   </aside>
 </div>
+<button type="button" class="panel-expand-btn panel-expand-left" id="expand-left" title="Show left panel" aria-label="Show left panel">&rsaquo;</button>
+<button type="button" class="panel-expand-btn panel-expand-right" id="expand-right" title="Show right panel" aria-label="Show right panel">&lsaquo;</button>
 <div id="content-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -2363,6 +2458,27 @@ document.getElementById('reset-view').addEventListener('click', () => {{
   buildAnchors(rect.width, rect.height);
   nodes = initializeNodes();
 }});
+
+// --- Collapsible side panels ---
+function togglePanel(side) {{
+  const shell = document.querySelector('.shell');
+  const cls = side + '-collapsed';
+  const isCollapsed = shell.classList.toggle(cls);
+  const expandBtn = document.getElementById('expand-' + side);
+  if (expandBtn) expandBtn.classList.toggle('visible', isCollapsed);
+  // The stage column changes size; give the canvas a chance to re-measure
+  // on the next frame so the physics + hull rendering stay centered.
+  requestAnimationFrame(() => {{
+    resize();
+    nodes = initializeNodes();
+    refreshVisibility();
+    updateDetails();
+  }});
+}}
+document.getElementById('collapse-left').addEventListener('click', () => togglePanel('left'));
+document.getElementById('collapse-right').addEventListener('click', () => togglePanel('right'));
+document.getElementById('expand-left').addEventListener('click', () => togglePanel('left'));
+document.getElementById('expand-right').addEventListener('click', () => togglePanel('right'));
 
 document.getElementById('nav-back').addEventListener('click', navBack);
 document.getElementById('nav-forward').addEventListener('click', navForward);

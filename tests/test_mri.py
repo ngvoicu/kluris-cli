@@ -313,6 +313,36 @@ def test_lobes_have_anti_overlap_physics_and_auto_fit(tmp_path):
     assert "resetCamera()" in html
 
 
+def test_sidebars_are_collapsible_and_long_names_dont_overflow(tmp_path):
+    """Left and right panels must each have a collapse button + a matching
+    floating expand button, and the lobes list must be constrained so long
+    lobe/sublobe names cannot introduce a horizontal scrollbar in the panel.
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Collapse + expand controls exist
+    assert 'id="collapse-left"' in html
+    assert 'id="collapse-right"' in html
+    assert 'id="expand-left"' in html
+    assert 'id="expand-right"' in html
+    assert ".panel-collapse-btn" in html
+    assert ".panel-expand-btn" in html
+
+    # Grid overrides for the collapsed states
+    assert ".shell.left-collapsed" in html
+    assert ".shell.right-collapsed" in html
+
+    # JS toggle wiring
+    assert "function togglePanel" in html
+
+    # Horizontal-overflow guards for long lobe / sublobe names
+    assert "overflow-x: hidden" in html
+    assert "grid-template-columns: minmax(0, 1fr)" in html
+
+
 def test_search_chips_removed(tmp_path):
     """The glossary/neurons type-filter chips are gone -- search hits everything."""
     brain = _make_brain_with_neurons(tmp_path)
