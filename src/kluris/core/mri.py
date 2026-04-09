@@ -450,6 +450,63 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     font-size: 0.78rem;
     word-break: break-all;
   }}
+  .lobes-list {{
+    margin-top: 4px;
+    display: grid;
+    gap: 8px;
+  }}
+  .lobe-card {{
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  }}
+  .lobe-card:hover {{
+    border-color: rgba(123,247,255,0.35);
+    background: rgba(123,247,255,0.08);
+    transform: translateY(-1px);
+  }}
+  .lobe-card[disabled] {{
+    cursor: default;
+    opacity: 0.55;
+    transform: none;
+  }}
+  .lobe-swatch {{
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }}
+  .lobe-body {{
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }}
+  .lobe-name {{
+    font-weight: 700;
+    font-size: 0.86rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }}
+  .lobe-meta {{
+    color: var(--muted);
+    font-size: 0.78rem;
+  }}
   .stage {{
     position: relative;
     border-radius: 28px;
@@ -855,6 +912,8 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
         </div>
         <div class="filters" id="type-filters"></div>
       </div>
+      <div class="section-title">Lobes</div>
+      <div class="lobes-list" id="lobes-list"></div>
       <div class="section-title">Results</div>
       <div id="result-count" class="subhead"></div>
       <div class="results" id="search-results"></div>
@@ -919,6 +978,7 @@ const detailsPanel = document.getElementById('details-panel');
 const detailsEmpty = document.getElementById('details-empty');
 const stageFocus = document.getElementById('stage-focus');
 const typeFiltersEl = document.getElementById('type-filters');
+const lobesListEl = document.getElementById('lobes-list');
 const neighbors = new Map();
 for (const node of graph.nodes) neighbors.set(node.id, new Set());
 for (const edge of graph.edges) {{
@@ -1169,6 +1229,58 @@ function renderResults() {{
     `;
     button.addEventListener('click', () => selectNode(node.id, true));
     resultsEl.appendChild(button);
+  }}
+}}
+
+function renderLobes() {{
+  lobesListEl.innerHTML = '';
+  // Aggregate top-level lobes from the source graph: collect their map node id,
+  // human-readable title, and neuron count. Skip the synthetic 'root' bucket.
+  const lobeInfo = new Map();
+  for (const node of nodes) {{
+    if (!node.lobe || node.lobe === 'root') continue;
+    if (!lobeInfo.has(node.lobe)) {{
+      lobeInfo.set(node.lobe, {{
+        mapNodeId: null,
+        title: node.lobe,
+        neuronCount: 0,
+        color: lobeColor(node.lobe),
+      }});
+    }}
+    const info = lobeInfo.get(node.lobe);
+    if (node.type === 'map' && node.sublobe === node.lobe) {{
+      info.mapNodeId = node.id;
+      info.title = node.title || node.lobe;
+    }} else if (node.type === 'neuron') {{
+      info.neuronCount += 1;
+    }}
+  }}
+  if (!lobeInfo.size) {{
+    const empty = document.createElement('div');
+    empty.className = 'details-empty';
+    empty.textContent = 'No lobes in this brain yet. Run kluris lobe to create one.';
+    lobesListEl.appendChild(empty);
+    return;
+  }}
+  const sorted = [...lobeInfo.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [, info] of sorted) {{
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'lobe-card';
+    if (info.mapNodeId == null) card.disabled = true;
+    const swatchShadow = `${{info.color}}55`;
+    const countLabel = `${{info.neuronCount}} neuron${{info.neuronCount === 1 ? '' : 's'}}`;
+    card.innerHTML = `
+      <span class="lobe-swatch" style="background:${{info.color}};box-shadow:0 0 14px ${{swatchShadow}}"></span>
+      <span class="lobe-body">
+        <span class="lobe-name">${{escapeHtml(String(info.title).toUpperCase())}}</span>
+        <span class="lobe-meta">${{countLabel}}</span>
+      </span>
+    `;
+    if (info.mapNodeId != null) {{
+      card.addEventListener('click', () => selectNode(info.mapNodeId, true));
+    }}
+    lobesListEl.appendChild(card);
   }}
 }}
 
@@ -2048,6 +2160,7 @@ addEventListener('resize', () => {{
 }});
 nodes = initializeNodes();
 renderFilters();
+renderLobes();
 refreshVisibility();
 updateDetails();
 loop();

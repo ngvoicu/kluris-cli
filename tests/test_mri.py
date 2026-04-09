@@ -176,6 +176,23 @@ def test_html_has_search_and_details_ui(tmp_path):
     assert "Content preview" in html
 
 
+def test_html_has_lobes_list_in_left_panel(tmp_path):
+    """The left panel must include a Lobes section that mirrors the result-card style."""
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+    # Section title and container
+    assert ">Lobes<" in html
+    assert 'id="lobes-list"' in html
+    # CSS hooks for the new card style
+    assert ".lobe-card" in html
+    assert ".lobe-swatch" in html
+    # JS renderer wired up at startup
+    assert "function renderLobes" in html
+    assert "renderLobes();" in html
+
+
 def test_html_under_500kb(tmp_path):
     brain = _make_brain_with_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
