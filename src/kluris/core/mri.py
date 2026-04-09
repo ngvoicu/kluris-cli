@@ -1764,16 +1764,24 @@ function animateCamera(tx, ty, ts, duration) {{
 function fitToFilteredNodes() {{
   // Frame the camera around whatever is currently visible. Used after a
   // lobe / sublobe filter is applied so the user actually sees the result.
+  //
+  // Key trick: we use each node's stable targetX/targetY (the anchor-based
+  // layout coordinates) instead of live x/y. Physics has not settled at the
+  // moment the click handler fires, so live positions are transient. Target
+  // coords are deterministic and match where the nodes will drift toward,
+  // so the fit is correct regardless of mid-physics state.
   if (!filteredNodes.length) return;
   const rect = canvas.parentElement.getBoundingClientRect();
-  const padding = 100;
-  const minX = Math.min(...filteredNodes.map(n => n.x)) - padding;
-  const maxX = Math.max(...filteredNodes.map(n => n.x)) + padding;
-  const minY = Math.min(...filteredNodes.map(n => n.y)) - padding;
-  const maxY = Math.max(...filteredNodes.map(n => n.y)) + padding;
+  const padding = 140;
+  const xs = filteredNodes.map(n => (n.targetX != null ? n.targetX : n.x));
+  const ys = filteredNodes.map(n => (n.targetY != null ? n.targetY : n.y));
+  const minX = Math.min(...xs) - padding;
+  const maxX = Math.max(...xs) + padding;
+  const minY = Math.min(...ys) - padding;
+  const maxY = Math.max(...ys) + padding;
   const w = Math.max(1, maxX - minX);
   const h = Math.max(1, maxY - minY);
-  const scale = Math.min(rect.width / w, rect.height / h) * 0.78;
+  const scale = Math.min(rect.width / w, rect.height / h) * 0.80;
   const clampedScale = Math.min(2.4, Math.max(0.42, scale));
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
