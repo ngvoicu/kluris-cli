@@ -528,6 +528,24 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     border-color: rgba(123,247,255,0.35);
     background: rgba(123,247,255,0.08);
   }}
+  .conn-show-all {{
+    appearance: none;
+    width: 100%;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px dashed rgba(123,247,255,0.25);
+    background: rgba(123,247,255,0.04);
+    color: var(--accent);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 160ms ease, background 160ms ease;
+  }}
+  .conn-show-all:hover {{
+    border-color: rgba(123,247,255,0.50);
+    background: rgba(123,247,255,0.10);
+  }}
   .result-title {{
     font-weight: 700;
     font-size: 0.98rem;
@@ -1754,15 +1772,21 @@ function updateDetails() {{
   const previewNote = node.content_preview_truncated
     ? '<div class="content-preview-note">Preview truncated for readability. Click expand to read the full document.</div>'
     : '';
-  const connections = connected.length
-    ? connected.map(target => `
+  const CONN_LIMIT = 3;
+  const connectionCards = connected.map(target => `
         <button type="button" class="connection-card" data-node-id="${{target.id}}">
           <div class="result-title">${{escapeHtml(target.title)}}</div>
           <div class="result-meta">${{target.type === 'map' ? 'lobe' : escapeHtml(target.type)}} • ${{escapeHtml(target.sublobe || target.lobe)}}</div>
           <div class="result-path">${{escapeHtml(target.path)}}</div>
         </button>
-      `).join('')
+      `);
+  const connections = connected.length
+    ? connectionCards.slice(0, CONN_LIMIT).join('')
+      + (connected.length > CONN_LIMIT
+        ? `<button type="button" class="conn-show-all" id="conn-show-all">Show all ${{connected.length}} connections</button>`
+        : '')
     : `<div class="details-empty">No connected nodes found for this selection.</div>`;
+  const connectionsAll = connectionCards.join('');
 
   // Build breadcrumbs from path
   const pathParts = node.path.split('/');
@@ -1810,6 +1834,16 @@ function updateDetails() {{
   const expandBtn = document.getElementById('expand-preview');
   if (expandBtn) {{
     expandBtn.addEventListener('click', () => openModal(node));
+  }}
+  const showAllBtn = document.getElementById('conn-show-all');
+  if (showAllBtn) {{
+    showAllBtn.addEventListener('click', () => {{
+      const container = showAllBtn.parentElement;
+      container.innerHTML = connectionsAll;
+      for (const btn of container.querySelectorAll('[data-node-id]')) {{
+        btn.addEventListener('click', () => selectNode(Number(btn.dataset.nodeId), true));
+      }}
+    }});
   }}
 }}
 
