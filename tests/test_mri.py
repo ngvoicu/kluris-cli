@@ -693,3 +693,19 @@ def test_inner_sublobe_no_canvas_hull(tmp_path):
 
     # The skip guard for inner sublobes in the canvas hull pass
     assert "sl.split('/').length > 2" in html
+
+
+def test_inner_sublobe_included_in_parent_hull(tmp_path):
+    """2nd-level sublobe hulls must include descendant nodes (3rd-level+)
+    via startsWith matching. Physics must merge inner sublobes into their
+    parent group so they cluster together.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Hull member filter uses startsWith to include descendants
+    assert "n.sublobe.startsWith(sl + '/')" in html
+    # Physics merges inner sublobes into parent group
+    assert "physicsSublobeKey" in html

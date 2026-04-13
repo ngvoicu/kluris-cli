@@ -2112,7 +2112,7 @@ function focusOnNode(id) {{
     // those should zoom to just their sub-lobe members, not the whole lobe.
     const isSublobe = node.sublobe && node.sublobe !== node.lobe;
     const members = isSublobe
-      ? filteredNodes.filter(n => n.sublobe === node.sublobe)
+      ? filteredNodes.filter(n => n.sublobe === node.sublobe || n.sublobe.startsWith(node.sublobe + '/'))
       : filteredNodes.filter(n => n.lobe === node.lobe);
     if (members.length > 1) {{
       const minX = Math.min(...members.map(n => n.x)) - 60;
@@ -2216,10 +2216,16 @@ function tick() {{
     }}
   }}
   // Sub-lobe cohesion + cross-sub-lobe repulsion
+  // Merge inner sublobes (depth 3+) into their 2nd-level parent for physics
+  function physicsSublobeKey(sl) {{
+    const parts = sl.split('/');
+    return parts.length > 2 ? parts.slice(0, 2).join('/') : sl;
+  }}
   const sublobeGroups = new Map();
   for (const n of filteredNodes) {{
-    if (!sublobeGroups.has(n.sublobe)) sublobeGroups.set(n.sublobe, []);
-    sublobeGroups.get(n.sublobe).push(n);
+    const key = physicsSublobeKey(n.sublobe);
+    if (!sublobeGroups.has(key)) sublobeGroups.set(key, []);
+    sublobeGroups.get(key).push(n);
   }}
   const sublobeCentroids = new Map();
   for (const [sl, members] of sublobeGroups) {{
@@ -2418,16 +2424,18 @@ function draw() {{
   }}
 
   // --- Pass 1b: Sub-lobe group backgrounds ---
+  // Only draw hulls for 2nd-level sublobes (2 segments, e.g. "projects/foo").
+  // Include descendant nodes (3rd-level+) inside the parent hull.
   const sublobes = [...new Set(filteredNodes.map(n => n.sublobe))];
   for (const sl of sublobes) {{
     if (sl === 'root') continue;
-    // Only draw sub-lobe hulls when sublobe differs from lobe (i.e. nested)
-    const members = filteredNodes.filter(n => n.sublobe === sl);
-    if (members.length < 2) continue;
-    const topLobe = members[0].lobe;
+    const topLobe = sl.split('/')[0];
     if (sl === topLobe) continue; // top-level lobe, already drawn above
-    // Skip inner sublobes (depth 3+): they stay inside their parent hull
+    // Skip inner sublobes (depth 3+): they are included in their parent hull
     if (sl.split('/').length > 2) continue;
+    // Include descendants: exact match OR starts with sl + '/'
+    const members = filteredNodes.filter(n => n.sublobe === sl || n.sublobe.startsWith(sl + '/'));
+    if (members.length < 2) continue;
     const color = lobeColor(topLobe);
     const points = members.map(n => ({{ x: n.x, y: n.y }}));
     if (points.length === 2) {{
