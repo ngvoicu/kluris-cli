@@ -597,6 +597,27 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     border-left: 1px dashed rgba(255,255,255,0.10);
     min-width: 0;
   }}
+  .sublobe-group {{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+  }}
+  .sublobe-card-wrap {{
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }}
+  .sublobe-card-wrap.has-caret > button.sublobe-card {{
+    padding-right: 30px;
+  }}
+  .sublobe-card-wrap > .lobe-caret {{
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+  }}
   .sublobe-card {{
     appearance: none;
     display: flex;
@@ -1208,6 +1229,7 @@ let lastPointer = {{ x: 0, y: 0 }};
 const hiddenLobes = new Set();
 const hiddenSublobes = new Set();
 const expandedLobes = new Set();
+const expandedSublobes = new Set();
 
 // --- Color system: two-tier palette ---
 const lobePalette = ['#7bf7ff','#ff8bd8','#f8c76d','#7df7b4','#9ea9ff','#ffa06f','#b8f0c1','#f2a8ff'];
@@ -1555,11 +1577,94 @@ function renderLobes() {{
     group.appendChild(wrap);
 
     if (hasSublobes && isExpanded) {{
+      const sortedSubs = [...info.sublobes.values()].sort((a, b) => a.key.localeCompare(b.key));
+      // Build tree: separate root sublobes (depth 2, e.g. "projects/foo")
+      // from inner sublobes (depth 3+, e.g. "projects/foo/bar").
+      function renderSubTree(container, parentKey, allSubs, color) {{
+        const children = allSubs.filter(s => {{
+          if (!s.key.startsWith(parentKey + '/')) return false;
+          // Only direct children: no further '/' after parentKey + '/'
+          const rest = s.key.slice(parentKey.length + 1);
+          return !rest.includes('/');
+        }});
+        if (!children.length) return;
+        const childList = document.createElement('div');
+        childList.className = 'sublobes-list';
+        for (const child of children) {{
+          const isChildHidden = hiddenSublobes.has(child.key);
+          const hasInner = allSubs.some(s => s.key.startsWith(child.key + '/'));
+          const isChildExpanded = expandedSublobes.has(child.key);
+          const childWrap = document.createElement('div');
+          childWrap.className = 'sublobe-group';
+          const childCard = document.createElement('button');
+          childCard.type = 'button';
+          childCard.className = isChildHidden ? 'sublobe-card dimmed' : 'sublobe-card';
+          childCard.title = isChildHidden ? 'Click to show this sublobe' : 'Click to hide this sublobe';
+          const childCount = `${{child.neuronCount}} neuron${{child.neuronCount === 1 ? '' : 's'}}`;
+          childCard.innerHTML = `
+            <span class="sublobe-tick" style="background:${{color}}"></span>
+            <span class="lobe-body">
+              <span class="sublobe-name">${{escapeHtml(String(child.title))}}</span>
+              <span class="lobe-meta">${{childCount}}</span>
+            </span>
+          `;
+          childCard.addEventListener('click', event => {{
+            event.stopPropagation();
+            if (hiddenSublobes.has(child.key)) {{
+              hiddenSublobes.delete(child.key);
+              for (const s of allSubs) {{
+                if (s.key.startsWith(child.key + '/')) hiddenSublobes.delete(s.key);
+              }}
+            }} else {{
+              hiddenSublobes.add(child.key);
+              for (const s of allSubs) {{
+                if (s.key.startsWith(child.key + '/')) hiddenSublobes.add(s.key);
+              }}
+            }}
+            renderLobes();
+            refreshVisibility();
+            fitToFilteredNodes();
+          }});
+          if (hasInner) {{
+            const innerWrap = document.createElement('div');
+            innerWrap.className = 'sublobe-card-wrap has-caret';
+            innerWrap.appendChild(childCard);
+            const caret = document.createElement('button');
+            caret.type = 'button';
+            caret.className = 'lobe-caret';
+            caret.textContent = isChildExpanded ? '▾' : '▸';
+            caret.setAttribute('aria-label', isChildExpanded ? 'Collapse inner lobes' : 'Expand inner lobes');
+            caret.addEventListener('click', event => {{
+              event.stopPropagation();
+              if (expandedSublobes.has(child.key)) expandedSublobes.delete(child.key);
+              else expandedSublobes.add(child.key);
+              renderLobes();
+            }});
+            innerWrap.appendChild(caret);
+            childWrap.appendChild(innerWrap);
+            if (isChildExpanded) {{
+              renderSubTree(childWrap, child.key, allSubs, color);
+            }}
+          }} else {{
+            childWrap.appendChild(childCard);
+          }}
+          childList.appendChild(childWrap);
+        }}
+        container.appendChild(childList);
+      }}
+      // Render root-level sublobes (direct children of the lobe)
+      const rootSubs = sortedSubs.filter(s => {{
+        const rest = s.key.slice(lobeKey.length + 1);
+        return !rest.includes('/');
+      }});
       const subList = document.createElement('div');
       subList.className = 'sublobes-list';
-      const sortedSubs = [...info.sublobes.values()].sort((a, b) => a.key.localeCompare(b.key));
-      for (const sub of sortedSubs) {{
+      for (const sub of rootSubs) {{
         const isSubHidden = hiddenSublobes.has(sub.key);
+        const hasInner = sortedSubs.some(s => s.key.startsWith(sub.key + '/'));
+        const isSubExpanded = expandedSublobes.has(sub.key);
+        const subWrap = document.createElement('div');
+        subWrap.className = 'sublobe-group';
         const subCard = document.createElement('button');
         subCard.type = 'button';
         subCard.className = isSubHidden ? 'sublobe-card dimmed' : 'sublobe-card';
@@ -1574,13 +1679,45 @@ function renderLobes() {{
         `;
         subCard.addEventListener('click', event => {{
           event.stopPropagation();
-          if (hiddenSublobes.has(sub.key)) hiddenSublobes.delete(sub.key);
-          else hiddenSublobes.add(sub.key);
+          if (hiddenSublobes.has(sub.key)) {{
+            hiddenSublobes.delete(sub.key);
+            for (const s of sortedSubs) {{
+              if (s.key.startsWith(sub.key + '/')) hiddenSublobes.delete(s.key);
+            }}
+          }} else {{
+            hiddenSublobes.add(sub.key);
+            for (const s of sortedSubs) {{
+              if (s.key.startsWith(sub.key + '/')) hiddenSublobes.add(s.key);
+            }}
+          }}
           renderLobes();
           refreshVisibility();
           fitToFilteredNodes();
         }});
-        subList.appendChild(subCard);
+        if (hasInner) {{
+          const innerWrap = document.createElement('div');
+          innerWrap.className = 'sublobe-card-wrap has-caret';
+          innerWrap.appendChild(subCard);
+          const caret = document.createElement('button');
+          caret.type = 'button';
+          caret.className = 'lobe-caret';
+          caret.textContent = isSubExpanded ? '▾' : '▸';
+          caret.setAttribute('aria-label', isSubExpanded ? 'Collapse inner lobes' : 'Expand inner lobes');
+          caret.addEventListener('click', event => {{
+            event.stopPropagation();
+            if (expandedSublobes.has(sub.key)) expandedSublobes.delete(sub.key);
+            else expandedSublobes.add(sub.key);
+            renderLobes();
+          }});
+          innerWrap.appendChild(caret);
+          subWrap.appendChild(innerWrap);
+          if (isSubExpanded) {{
+            renderSubTree(subWrap, sub.key, sortedSubs, info.color);
+          }}
+        }} else {{
+          subWrap.appendChild(subCard);
+        }}
+        subList.appendChild(subWrap);
       }}
       group.appendChild(subList);
     }}
@@ -2493,6 +2630,7 @@ document.getElementById('reset-view').addEventListener('click', () => {{
   hiddenLobes.clear();
   hiddenSublobes.clear();
   expandedLobes.clear();
+  expandedSublobes.clear();
   renderLobes();
   refreshVisibility();
   selectNode(null, false);

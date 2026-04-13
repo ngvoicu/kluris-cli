@@ -619,3 +619,47 @@ def test_inner_sublobe_html_generation_succeeds(tmp_path):
     assert "</html>" in html
     size_kb = output.stat().st_size / 1024
     assert size_kb < 500
+
+
+def test_inner_sublobe_sidebar_has_nested_tree(tmp_path):
+    """Inner sublobes must render nested under their parent in the sidebar,
+    not as flat siblings. The JS must use expandedSublobes state and the
+    recursive renderSubTree helper.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # expandedSublobes state exists alongside expandedLobes
+    assert "const expandedSublobes = new Set()" in html
+    # Recursive tree builder
+    assert "renderSubTree" in html
+    # CSS hooks for nested sublobe groups
+    assert ".sublobe-group" in html
+    assert ".sublobe-card-wrap" in html
+
+
+def test_inner_sublobe_visibility_cascades(tmp_path):
+    """Hiding a parent sublobe must cascade to its inner sublobes.
+    The click handler must use startsWith to toggle descendants.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Cascade logic: startsWith(key + '/') for toggling descendants
+    assert "startsWith(child.key + '/')" in html or "startsWith(sub.key + '/')" in html
+
+
+def test_inner_sublobe_reset_clears_expanded_sublobes(tmp_path):
+    """The reset-view handler must clear expandedSublobes alongside the
+    other state sets.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert "expandedSublobes.clear()" in html
