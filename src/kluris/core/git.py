@@ -102,6 +102,63 @@ def git_push(path: Path, remote: str = "origin", branch: str = "main") -> None:
     _run(["git", "push", remote, branch], cwd=path)
 
 
+def git_fetch(path: Path, remote: str = "origin") -> None:
+    """Fetch remote refs so subsequent upstream/merge checks see fresh state."""
+    _run(["git", "fetch", remote], cwd=path)
+
+
+def git_pull(path: Path) -> None:
+    """Pull current branch from its upstream.
+
+    ``--no-rebase`` forces merge semantics regardless of the user's
+    ``pull.rebase`` config -- predictable behavior for kluris callers.
+    Raises ``CalledProcessError`` on conflicts; caller should then call
+    :func:`git_conflicted_files` to surface the list.
+    """
+    _run(["git", "pull", "--no-rebase"], cwd=path)
+
+
+def git_merge(path: Path, ref: str) -> None:
+    """Merge ``ref`` (e.g. ``'origin/main'``) into the current branch.
+
+    ``--no-edit`` accepts git's default merge commit message so we never
+    pop ``$EDITOR`` on the user mid-command. Raises ``CalledProcessError``
+    on conflicts.
+    """
+    _run(["git", "merge", "--no-edit", ref], cwd=path)
+
+
+def git_has_upstream(path: Path) -> bool:
+    """Return True when HEAD has an upstream tracking branch.
+
+    Local-only branches (e.g. created via ``kluris clone --branch new-x``)
+    have no upstream until they're pushed -- running ``git pull`` against
+    them is an error. Callers should skip the pull step when this returns
+    False.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "@{upstream}"],
+        cwd=path, capture_output=True, text=True, check=False,
+    )
+    return result.returncode == 0
+
+
+def git_current_branch(path: Path) -> str:
+    """Return the current branch name (the short form of HEAD)."""
+    return _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path).stdout.strip()
+
+
+def git_conflicted_files(path: Path) -> list[str]:
+    """Return files with unresolved merge conflicts after a failed pull/merge."""
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        cwd=path, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def git_clone(url: str, dest: Path) -> None:
     """Clone a repo to dest path."""
     dest.parent.mkdir(parents=True, exist_ok=True)

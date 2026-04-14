@@ -34,11 +34,17 @@ from kluris.core.git import (
     git_add,
     git_clone,
     git_commit,
+    git_conflicted_files,
+    git_current_branch,
+    git_fetch,
+    git_has_upstream,
     git_init,
-    is_git_repo,
     git_log,
+    git_merge,
+    git_pull,
     git_push,
     git_status,
+    is_git_repo,
 )
 from kluris.core.linker import (
     _neuron_files,
@@ -1347,6 +1353,136 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
 
     if as_json:
         click.echo(json_lib.dumps({"ok": True, "brains": results}))
+
+
+@cli.command()
+@click.option("--brain", "brain_name", help="Specific brain")
+@click.option("--json", "as_json", is_flag=True, help="JSON output")
+def pull(brain_name: str | None, as_json: bool):
+    """Pull remote changes; optionally merge origin/<default> into current branch."""
+    import os
+
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
+    results: list[dict] = []
+    any_conflict = False
+
+    no_prompt = os.environ.get("KLURIS_NO_PROMPT") == "1"
+    can_prompt = _is_interactive() and not as_json and not no_prompt
+
+    for name, entry in brains:
+        brain_path = Path(entry["path"])
+
+        if not is_git_repo(brain_path):
+            result = {
+                "name": name,
+                "git_enabled": False,
+                "branch": None,
+                "pulled": False,
+                "files_changed": 0,
+                "merged_default": False,
+                "conflicts": [],
+            }
+            results.append(result)
+            if not as_json:
+                console.print(f"{name}: git is disabled (--no-git)")
+            continue
+
+        if git_status(brain_path):
+            raise click.ClickException(
+                f"{name}: brain has uncommitted changes. "
+                "Commit with 'kluris push' or stash them first."
+            )
+
+        brain_config = read_brain_config(brain_path)
+        default = brain_config.git.default_branch
+
+        try:
+            git_fetch(brain_path)
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip() or f"git fetch exited {exc.returncode}"
+            raise click.ClickException(f"{name}: fetch failed -- {stderr}") from exc
+
+        current = git_current_branch(brain_path)
+        head_before = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=brain_path,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        pulled = False
+        merged_default = False
+        conflicts: list[str] = []
+
+        if git_has_upstream(brain_path):
+            try:
+                git_pull(brain_path)
+                pulled = True
+            except subprocess.CalledProcessError:
+                conflicts = git_conflicted_files(brain_path)
+
+        if not conflicts and current != default and can_prompt:
+            if click.confirm(
+                f"  {name}: also merge origin/{default} into {current}?",
+                default=True,
+            ):
+                try:
+                    git_merge(brain_path, f"origin/{default}")
+                    merged_default = True
+                except subprocess.CalledProcessError:
+                    conflicts = git_conflicted_files(brain_path)
+
+        head_after = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=brain_path,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if head_before != head_after and not conflicts:
+            diff = subprocess.run(
+                ["git", "diff", "--name-only", head_before, head_after],
+                cwd=brain_path, capture_output=True, text=True, check=False,
+            )
+            files_changed = len([l for l in diff.stdout.splitlines() if l.strip()])
+        else:
+            files_changed = 0
+
+        results.append({
+            "name": name,
+            "git_enabled": True,
+            "branch": current,
+            "pulled": pulled,
+            "files_changed": files_changed,
+            "merged_default": merged_default,
+            "conflicts": conflicts,
+        })
+
+        if conflicts:
+            any_conflict = True
+            if not as_json:
+                console.print(f"\n[bold red]{name}: merge conflicts in:[/bold red]")
+                for f in conflicts:
+                    console.print(f"  {f}")
+                console.print(
+                    "\nResolve the conflicts in your editor, then:\n"
+                    f"  git -C {brain_path} mergetool    # use your configured merge tool\n"
+                    f"  kluris push                       # commit the merged result and push\n"
+                    "  OR\n"
+                    f"  git -C {brain_path} merge --abort  # throw away the pull\n"
+                )
+            continue
+
+        if not as_json:
+            parts = []
+            if pulled:
+                parts.append(f"pulled from origin/{current}")
+            if merged_default:
+                parts.append(f"merged origin/{default}")
+            if not parts:
+                parts.append("nothing to pull")
+            console.print(f"{name}: {', '.join(parts)} ({files_changed} files changed)")
+
+    if as_json:
+        click.echo(json_lib.dumps({"ok": not any_conflict, "brains": results}))
+
+    if any_conflict:
+        raise SystemExit(1)
 
 
 def _is_wsl() -> bool:

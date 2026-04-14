@@ -156,6 +156,7 @@ contradicts a documented decision, it flags the conflict.
 ```bash
 kluris dream         # regenerate maps, fix links, validate structure
 kluris push          # commit and push to git (if brain uses git)
+kluris pull          # fetch remote changes; asks to merge origin/main if on another branch
 kluris status        # brain tree, neuron counts, recent changes
 kluris mri           # generate visualization, prints the link to open in your browser
 ```
@@ -316,6 +317,7 @@ Empty -- build your own structure from scratch.
 | `kluris lobe <name>` | Create a new lobe (optionally with `--parent` for nesting) |
 | `kluris dream` | Regenerate maps, fix links, validate structure |
 | `kluris push` | Commit and push brain changes to git |
+| `kluris pull` | Pull remote changes; ask to merge `origin/<default>` when on another branch |
 | `kluris mri` | Visualize the brain (opens in browser by default) |
 | `kluris templates` | List available neuron templates |
 | `kluris install-skills` | Install the `/kluris` (or `/kluris-<name>`) skill for your AI agents |
