@@ -1364,22 +1364,29 @@ def _is_wsl() -> bool:
 def _open_in_browser(path: Path) -> None:
     """Open an HTML file in the user's default browser.
 
-    Plain ``webbrowser.open`` falls back to ``xdg-open`` on Linux, which is
-    rarely wired up in a default WSL install -- the file opens silently or
-    not at all. Under WSL we hand off to ``wslview`` (from the ``wslu``
-    package preinstalled on modern Ubuntu WSL) so the HTML lands in the
-    Windows host's default browser. ``explorer.exe`` is a last-resort
-    fallback for older WSL distros without ``wslview``.
+    Non-WSL Linux/mac: plain ``webbrowser.open``.
+
+    WSL is fiddly. ``webbrowser.open`` falls through to ``xdg-open`` which is
+    rarely wired. ``explorer.exe <path>`` doesn't understand Linux paths like
+    ``/home/colin/x.html`` and opens a blank File Explorer window. Even after
+    translating to a UNC path like ``\\\\wsl.localhost\\...\\x.html`` explorer.exe
+    will open the containing folder instead of launching the default app,
+    because UNC paths hit the "show folder" branch. The Windows-canonical
+    "open this with the default app" invocation is ``cmd.exe /c start "" <path>``
+    and it handles UNC paths correctly -- so for WSL we translate with
+    ``wslpath -w`` and hand to ``start``.
     """
-    import shutil
     import webbrowser
     if _is_wsl():
-        if shutil.which("wslview"):
-            subprocess.Popen(["wslview", str(path)])
+        try:
+            win_path = subprocess.run(
+                ["wslpath", "-w", str(path)],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            subprocess.Popen(["cmd.exe", "/c", "start", "", win_path])
             return
-        if shutil.which("explorer.exe"):
-            subprocess.Popen(["explorer.exe", str(path)])
-            return
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
     webbrowser.open(path.resolve().as_uri())
 
 
