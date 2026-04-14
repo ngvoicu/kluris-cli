@@ -1383,7 +1383,19 @@ def _open_in_browser(path: Path) -> None:
                 ["wslpath", "-w", str(path)],
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
-            subprocess.Popen(["cmd.exe", "/c", "start", "", win_path])
+            # Detach cmd.exe from the bash tty: inherited stdin/stdout/stderr
+            # leaves the terminal in a non-canonical state after cmd.exe exits
+            # (observed as "read failed 5: I/O error" and garbled prompts on
+            # Ubuntu WSL). DEVNULL on all three + start_new_session keeps the
+            # parent shell pristine.
+            subprocess.run(
+                ["cmd.exe", "/c", "start", "", win_path],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                check=False,
+            )
             return
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
