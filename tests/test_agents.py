@@ -222,3 +222,28 @@ def test_skill_body_yaml_template_has_frontmatter_fields():
     assert "updated:" in content
     assert "openapi: 3.1.0" in content
     assert "info:" in content
+
+
+# --- Ask-before-write gate (regression guards for the skill prompt) ---
+
+
+def test_skill_has_top_level_write_gate():
+    assert "NEVER write, create, or modify any brain file without EXPLICIT human approval" in _render()
+
+
+def test_skill_remember_has_stop_gate():
+    assert "NEVER write until the human explicitly approves. Silence is not approval." in _render()
+
+
+def test_skill_create_neuron_has_section_interview():
+    c = _render()
+    assert "Walk through the template section by section" in c
+    assert "Move to the NEXT section only after approval" in c
+
+
+def test_skill_create_neuron_forbids_prefill():
+    assert "do NOT pre-fill and dump" in _render()
+
+
+def test_skill_learn_has_explicit_stop():
+    assert 'STOP. NEVER write until the human explicitly says yes' in _render()

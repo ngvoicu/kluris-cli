@@ -112,6 +112,7 @@ directory is the PROJECT you're working in.
 - ANALYZE the current project
 - WRITE to the brain directory
 - Never create brain.md, map.md, or kluris.yml in the current project
+- NEVER write, create, or modify any brain file without EXPLICIT human approval first. STOP and ask before every write -- no exceptions.
 
 ## How the brain is structured
 
@@ -224,7 +225,7 @@ Step 4 -- Wizard (one topic at a time, this is the core loop):
   d. Ask: "Is this correct? Want to change anything?"
   e. The human may approve, edit, add context, or skip
   f. Incorporate feedback, show the updated version if changed
-  g. Write ONLY after explicit approval
+  g. STOP. NEVER write until the human explicitly says yes. Silence or "looks good, next" about the summary is NOT approval to write.
   h. Move to the next topic
 Step 5 -- Recap. What was written, what was skipped. Remind: `kluris dream{brain_flag_hint_inline}`
 to regenerate maps. If the brain has git (shown above), also `kluris push{brain_flag_hint_inline}`.
@@ -254,16 +255,21 @@ Keep definitions under 20 words either way.
 
 **Remember** -- "remember we chose X", "store that we decided Y"
 Write a specific piece of knowledge to the brain.
-Find the right lobe, check for existing neurons.
-Show a preview of what you'd write. Ask: "Is this correct? Want to change anything?"
-Write only after approval.
+1. Find the right lobe, check for existing neurons.
+2. Show a preview of the FULL content you'd write (not a summary).
+3. STOP. Ask: "Is this correct? Want to change anything?"
+4. NEVER write until the human explicitly approves. Silence is not approval.
 
 **Create neuron** -- "create a decision record about X"
 Templates: decision (Context, Decision, Rationale, Alternatives, Consequences),
 incident (Summary, Timeline, Root cause, Impact, Resolution, Lessons learned),
 runbook (Purpose, Prerequisites, Steps, Rollback, Contacts).
-Show the populated template before writing. Walk through sections one at a time
-for complex templates -- don't dump a full decision record without review.
+Walk through the template section by section -- do NOT pre-fill and dump:
+  a. Ask the human about the FIRST section (e.g. Context). Wait for their input.
+  b. Show what you'd write for that section. Ask: "Good? Want to change anything?"
+  c. Move to the NEXT section only after approval.
+  d. After all sections: show the complete neuron, ask for final approval.
+  e. NEVER write the file until the human approves the final version.
 
 **Create lobe** -- "create a new section for monitoring"
 Create directory in brain. Remind user to run `kluris dream{brain_flag_hint_inline}`.
