@@ -1349,6 +1349,40 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
         click.echo(json_lib.dumps({"ok": True, "brains": results}))
 
 
+def _is_wsl() -> bool:
+    """Return True when running under Windows Subsystem for Linux."""
+    import os
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        with open("/proc/version", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def _open_in_browser(path: Path) -> None:
+    """Open an HTML file in the user's default browser.
+
+    Plain ``webbrowser.open`` falls back to ``xdg-open`` on Linux, which is
+    rarely wired up in a default WSL install -- the file opens silently or
+    not at all. Under WSL we hand off to ``wslview`` (from the ``wslu``
+    package preinstalled on modern Ubuntu WSL) so the HTML lands in the
+    Windows host's default browser. ``explorer.exe`` is a last-resort
+    fallback for older WSL distros without ``wslview``.
+    """
+    import shutil
+    import webbrowser
+    if _is_wsl():
+        if shutil.which("wslview"):
+            subprocess.Popen(["wslview", str(path)])
+            return
+        if shutil.which("explorer.exe"):
+            subprocess.Popen(["explorer.exe", str(path)])
+            return
+    webbrowser.open(path.resolve().as_uri())
+
+
 @cli.command()
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--output", "output_path", help="Output HTML file path")
@@ -1356,7 +1390,6 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
 def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_json: bool):
     """Generate interactive brain visualization."""
-    import webbrowser
     brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
 
     if output_path and len(brains) > 1:
@@ -1386,7 +1419,7 @@ def mri(brain_name: str | None, output_path: str | None, open_browser: bool, as_
             if sync_result["fixes"]["total"]:
                 console.print(f"  MRI preflight applied {sync_result['fixes']['total']} automatic fixes")
             if open_browser:
-                webbrowser.open(out.resolve().as_uri())
+                _open_in_browser(out)
 
     if as_json:
         click.echo(json_lib.dumps({"ok": True, "brains": results}))
