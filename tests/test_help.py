@@ -27,7 +27,7 @@ def test_help_json(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["help", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert len(data["commands"]) == 18
+    assert len(data["commands"]) == 19
     names = {c["name"] for c in data["commands"]}
     assert "wake-up" in names
     assert "search" in names

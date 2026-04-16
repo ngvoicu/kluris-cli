@@ -31,7 +31,9 @@ from kluris.core.config import (
     write_global_config,
 )
 from kluris.core.git import (
+    checkout_or_create_branch,
     git_add,
+    git_checkout,
     git_clone,
     git_commit,
     git_conflicted_files,
@@ -39,6 +41,7 @@ from kluris.core.git import (
     git_fetch,
     git_has_upstream,
     git_init,
+    git_list_branches,
     git_log,
     git_merge,
     git_pull,
@@ -607,7 +610,6 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
 
     try:
         if branch_name:
-            from kluris.core.git import checkout_or_create_branch
             checkout_or_create_branch(dest, branch_name)
 
         # Verify this is a brain (has brain.md -- kluris.yml is local-only now)
@@ -1319,6 +1321,83 @@ def dream(brain_name: str | None, as_json: bool):
 
 
 @cli.command()
+@click.argument("name", required=False)
+@click.option("--brain", "brain_name", help="Specific brain")
+@click.option("--list", "list_branches", is_flag=True, help="List all branches")
+@click.option("--json", "as_json", is_flag=True, help="JSON output")
+def branch(name: str | None, brain_name: str | None, list_branches: bool, as_json: bool):
+    """Show, switch, or create a git branch in the brain.
+
+    \b
+      kluris branch                    # show current branch
+      kluris branch feature/monitoring # switch to (or create) branch
+      kluris branch --list             # list all branches
+      kluris branch main               # switch back to main
+    """
+    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
+    bname, entry = brains[0]
+    brain_path = Path(entry["path"])
+
+    if not is_git_repo(brain_path):
+        if as_json:
+            click.echo(json_lib.dumps({"ok": False, "error": f"{bname}: git is disabled"}))
+        else:
+            console.print(f"{bname}: git is disabled (--no-git)")
+        raise SystemExit(1)
+
+    current = git_current_branch(brain_path)
+
+    if list_branches:
+        branches = git_list_branches(brain_path)
+        if as_json:
+            click.echo(json_lib.dumps({
+                "ok": True, "name": bname, "current": current,
+                "branches": branches,
+            }))
+        else:
+            for b in branches:
+                marker = "* " if b == current else "  "
+                console.print(f"{marker}{b}")
+        return
+
+    if name is None:
+        if as_json:
+            click.echo(json_lib.dumps({
+                "ok": True, "name": bname, "current": current,
+            }))
+        else:
+            console.print(f"{bname}: on branch [bold]{current}[/bold]")
+        return
+
+    if name == current:
+        if as_json:
+            click.echo(json_lib.dumps({
+                "ok": True, "name": bname, "current": current,
+                "switched": False,
+            }))
+        else:
+            console.print(f"{bname}: already on [bold]{current}[/bold]")
+        return
+
+    if git_status(brain_path):
+        raise click.ClickException(
+            f"{bname}: brain has uncommitted changes. "
+            "Commit with 'kluris push' or stash them first."
+        )
+
+    git_checkout(brain_path, name)
+    new_branch = git_current_branch(brain_path)
+
+    if as_json:
+        click.echo(json_lib.dumps({
+            "ok": True, "name": bname, "current": new_branch,
+            "previous": current, "switched": True,
+        }))
+    else:
+        console.print(f"{bname}: switched to [bold]{new_branch}[/bold]")
+
+
+@cli.command()
 @click.option("--message", "-m", "msg", help="Commit message")
 @click.option("--brain", "brain_name", help="Specific brain")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
@@ -1342,20 +1421,15 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
                 console.print(f"{name}: git is disabled (--no-git)")
             continue
 
+        current_branch = git_current_branch(brain_path)
         status_out = git_status(brain_path)
         if not status_out:
-            # Report the configured branch instead of a hardcoded "main"
-            # so JSON consumers see the truth.
-            try:
-                clean_branch = read_brain_config(brain_path).git.default_branch
-            except Exception:
-                clean_branch = "main"
             if not as_json:
                 console.print(f"{name}: nothing to push")
             results.append({
                 "name": name,
                 "files_committed": 0,
-                "branch": clean_branch,
+                "branch": current_branch,
                 "pushed": False,
                 "git_enabled": True,
             })
@@ -1380,7 +1454,7 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
 
         pushed = False
         try:
-            git_push(brain_path, "origin", brain_config.git.default_branch)
+            git_push(brain_path, "origin", current_branch)
             pushed = True
         except Exception:
             if not as_json:
@@ -1390,7 +1464,7 @@ def push(msg: str | None, brain_name: str | None, as_json: bool):
         results.append({
             "name": name,
             "files_committed": files,
-            "branch": brain_config.git.default_branch,
+            "branch": current_branch,
             "pushed": pushed,
             "git_enabled": True,
         })
@@ -2070,7 +2144,8 @@ def help_cmd(command: str | None, as_json: bool):
         ("neuron", "Create a new neuron (--template for structured formats)"),
         ("lobe", "Create a new lobe (knowledge region)"),
         ("dream", "Regenerate maps, auto-fix safe issues, and validate links"),
-        ("push", "Commit and push brain changes to git"),
+        ("branch", "Show, switch, or create a git branch in the brain"),
+        ("push", "Commit and push brain changes to the current branch"),
         ("pull", "Pull remote changes; ask to merge origin/<default> when on another branch"),
         ("mri", "Generate interactive brain visualization and open in browser"),
         ("install-skills", "Install the /kluris skill for your AI agents"),

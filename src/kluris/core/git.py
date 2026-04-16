@@ -159,6 +159,21 @@ def git_conflicted_files(path: Path) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def git_list_branches(path: Path) -> list[str]:
+    """Return local branch names sorted alphabetically."""
+    result = _run(["git", "branch", "--format=%(refname:short)"], cwd=path)
+    return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+
+
+def git_checkout(path: Path, branch: str) -> None:
+    """Switch to a branch. Creates it if it doesn't exist locally or on the remote."""
+    local_branches = git_list_branches(path)
+    if branch in local_branches:
+        _run(["git", "checkout", branch], cwd=path)
+    else:
+        checkout_or_create_branch(path, branch)
+
+
 def git_clone(url: str, dest: Path) -> None:
     """Clone a repo to dest path."""
     dest.parent.mkdir(parents=True, exist_ok=True)
