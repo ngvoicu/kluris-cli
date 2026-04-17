@@ -1,6 +1,6 @@
 # Kluris
 
-> Kluris turns a git repository into a brain — making your AI coding agent your team's SME.
+> Kluris turns your AI agents into a subject matter expert that never sleeps and never quits.
 
 *When your best engineer sleeps, Kluris doesn't. When they leave, Kluris stays.*
 
