@@ -2329,6 +2329,7 @@ def help_cmd(command: str | None, as_json: bool):
     commands_info = [
         ("create", "Create a new brain (--type, --remote, --no-git)"),
         ("clone", "Clone a brain from a git remote"),
+        ("register", "Register an existing brain on disk, or extract a brain zip and register it"),
         ("list", "List registered brains"),
         ("status", "Show brain tree, recent changes, and neuron counts"),
         ("search", "Search a brain for a query string (neurons, glossary, brain.md)"),
