@@ -1,9 +1,9 @@
 # AGENTS.md
 
-## Project: kluris-cli
+## Project: kluris
 
 CLI tool that turns AI agents into team subject matter experts with shared, human-curated knowledge.
-Published to PyPI as `kluris`. Source: `ngvoicu/kluris-cli`.
+Published to PyPI as `kluris`. Source: `ngvoicu/kluris`.
 
 ## Quick Reference
 

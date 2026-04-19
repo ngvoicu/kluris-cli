@@ -9,7 +9,6 @@ Kluris turns AI agents into team subject matter experts by giving them shared, h
 ## Build & Test
 
 ```bash
-cd kluris-cli
 source .venv/bin/activate        # or: pipx install -e .
 pip install -e ".[dev]"          # dev install with pytest
 pytest tests/ -v                 # run all tests (473 tests)
