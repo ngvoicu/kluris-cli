@@ -314,6 +314,44 @@ returned by the CLI, not from memory.
    in the first place -- fixing them with more guesses just rewrites the
    problem.
 
+**Review the brain** -- "review the brain", "audit the brain",
+"make the brain nice", "check brain health", "what's wrong with the brain".
+
+This is a read-mostly diagnostic pass. Goal: produce a grouped findings
+report, then offer to fix items one category at a time under the approval
+protocol. Do NOT auto-edit anything during the review step itself.
+
+1. **Run the diagnostics.** Via Bash, in this order:
+   - `kluris dream{brain_flag_hint_inline} --json` -- full validator
+     output: `broken_synapses`, `one_way_synapses`, `orphans`, `deprecation`.
+   - `kluris wake-up{brain_flag_hint_inline} --json` -- lobe inventory,
+     neuron totals per lobe, glossary terms.
+2. **Categorise findings by severity:**
+   - **Broken (must fix):** broken synapses, frontmatter type errors,
+     neurons whose declared `parent:` file doesn't exist.
+   - **Drift (should fix):** one-way synapses, inline markdown links not
+     mirrored in `related:` (or vice versa), deprecated neurons still
+     referenced by active neurons, deprecated neurons with no `replaced_by`.
+   - **Gaps (nice to have):** orphan neurons (no incoming or outgoing
+     edges), stub neurons (bodies with fewer than 10 non-empty lines),
+     neurons with no tags, lobes with no neurons, missing standard files
+     in `projects/<prj>/` lobes (overview / architecture / apis /
+     data-model / conventions / deployment — only flag the ones that
+     fit the project's actual shape), REST-API projects missing
+     `openapi.yml` + `endpoints/`, glossary terms used inline but not
+     defined in `glossary.md`, glossary entries never referenced.
+3. **Produce the report.** One compact grouped list. For each category
+   show the count and up to 5 sample entries with their file paths; if
+   there are more, say "N more — ask to see the full list". Do not dump
+   200 items at once.
+4. **Offer to fix, by category.** Ask which category the user wants to
+   start with. Then walk through items one at a time, proposing a fix
+   for each under the approval protocol. Never batch-fix without consent.
+5. **Do not invent findings.** Every item must point at a real file or
+   a real missing entry surfaced by the diagnostic output or a read of
+   the file. If the brain is clean, say so -- an empty report is the
+   correct answer when nothing is broken.
+
 ## Writing rules
 
 ### Approval protocol

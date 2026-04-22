@@ -35,6 +35,26 @@ def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="tes
     )
 
 
+def test_skill_has_review_intent():
+    """Review is a distinct read-mostly intent so agents know what to do when
+    the user says "review the brain" or "make the brain nice". Must categorise
+    findings (broken/drift/gaps) and NOT auto-edit — propose fixes under the
+    approval protocol instead."""
+    body = _render()
+    assert "Review the brain" in body
+    assert "review the brain" in body
+    assert "audit the brain" in body
+    assert "make the brain nice" in body
+    # Must explicitly forbid auto-editing — review is a diagnostic, fixes
+    # go through the approval protocol.
+    assert "Do NOT auto-edit" in body
+    # Must reference the three severity buckets by name so agents group
+    # the findings consistently.
+    assert "Broken (must fix):" in body
+    assert "Drift (should fix):" in body
+    assert "Gaps (nice to have):" in body
+
+
 def test_skill_has_openapi_endpoints_convention():
     """When learning a project with a REST API, the agent should split the
     knowledge into one openapi.yml neuron plus one markdown neuron per route
