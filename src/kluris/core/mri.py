@@ -44,24 +44,32 @@ def _all_neuron_files(brain_path: Path) -> list[Path]:
 _all_md_files = _all_neuron_files
 
 
-def _extract_title_and_excerpt(path: Path, content: str) -> tuple[str, str]:
-    """Extract a readable title and short excerpt from markdown content."""
-    title = path.stem.replace("-", " ").title()
+def _extract_title_and_excerpt(path: Path, content: str) -> tuple[str, str, str]:
+    """Extract a display title, an authored H1 subtitle, and a short excerpt.
+
+    The display title is always the filename stem (hyphens → spaces,
+    title-cased) so compact labels everywhere in the MRI read consistently
+    — no matter what H1 the author wrote. The authored H1 is returned
+    separately so the modal can still surface it as a subtitle when it
+    adds information beyond the filename.
+    """
+    display_title = path.stem.replace("-", " ").title()
+    authored_title = ""
     excerpt = ""
 
     for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line:
             continue
-        if line.startswith("# ") and title == path.stem.replace("-", " ").title():
-            title = line[2:].strip()
+        if line.startswith("# ") and not authored_title:
+            authored_title = line[2:].strip()
             continue
         if line.startswith(("## ", "- ", "* ", "```", "---", "up ", "sideways ")):
             continue
         excerpt = line
         break
 
-    return title, excerpt[:220]
+    return display_title, authored_title, excerpt[:220]
 
 
 def _build_content_preview(content: str) -> tuple[str, str, bool]:
@@ -148,17 +156,25 @@ def build_graph(brain_path: Path) -> dict:
         is_yaml = f.suffix.lower() in YAML_NEURON_SUFFIXES
         file_type = "yaml" if is_yaml else "markdown"
 
-        title, excerpt = _extract_title_and_excerpt(f, content)
-        # Yaml neurons: prefer frontmatter `title` field if the file's title
-        # would otherwise fall back to the filename stem.
+        title, authored_title, excerpt = _extract_title_and_excerpt(f, content)
+        # Yaml neurons: prefer frontmatter `title` as the display title.
+        # Stems like `openapi.yml` title-case poorly ("Openapi"), and the
+        # frontmatter title is the author's canonical name for the spec.
         if is_yaml:
             fm_title = meta.get("title")
             if isinstance(fm_title, str) and fm_title.strip():
                 title = fm_title.strip()
+                authored_title = ""
 
         content_full, content_preview, preview_truncated = _build_content_preview(content)
         tags = meta.get("tags", [])
         related = meta.get("related", [])
+
+        # authored_title is surfaced in the modal header only when it genuinely
+        # differs from the filename-derived display title — so compact labels
+        # stay uniform while the author's H1 still shows up for context when
+        # it adds something.
+        authored_subtitle = authored_title if authored_title and authored_title != title else ""
 
         nodes.append({
             "id": i,
@@ -170,6 +186,7 @@ def build_graph(brain_path: Path) -> dict:
             "file_type": file_type,
             "file_name": f.name,
             "title": title,
+            "authored_title": authored_subtitle,
             "excerpt": excerpt,
             "content_preview": content_preview,
             "content_preview_truncated": preview_truncated,
@@ -807,6 +824,13 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
   .details-title {{
     font-size: 1.35rem;
     line-height: 1.05;
+  }}
+  .details-subtitle {{
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    line-height: 1.2;
   }}
   .details-path {{
     margin-top: 10px;
@@ -1838,9 +1862,13 @@ function updateDetails() {{
     return `<span class="breadcrumb-current">${{escapeHtml(label)}}</span>`;
   }}).join('<span class="breadcrumb-sep">/</span>');
 
+  const detailsAuthoredSub = node.authored_title
+    ? `<div class="details-subtitle" title="From H1 in the file">${{escapeHtml(node.authored_title)}}</div>`
+    : '';
   detailsPanel.innerHTML = `
     <div class="details-card">
       <div class="details-title">${{escapeHtml(node.title)}}</div>
+      ${{detailsAuthoredSub}}
       <div class="breadcrumbs">${{crumbs}}</div>
       <div class="meta-grid">
         <div class="meta-card"><span class="label">Type</span><span class="value">${{node.type === 'map' ? 'lobe' : node.type === 'neuron' ? 'neuron' : escapeHtml(node.type)}}</span></div>
@@ -1979,7 +2007,10 @@ function renderFileTree(activeNodeId) {{
 function openModal(node) {{
   const modal = document.getElementById('content-modal');
   const breadcrumb = node.path.split('/').map(p => p.replace(/\.(md|yml|yaml)$/, '')).join(' / ');
-  document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
+  const authoredSub = node.authored_title
+    ? ` <span style="color:var(--muted);font-size:0.7em;font-weight:400;margin-left:10px" title="From H1 in the file">· ${{escapeHtml(node.authored_title)}}</span>`
+    : '';
+  document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}}${{authoredSub}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
   renderFileTree(node.id);
   // Render content with clickable markdown links
   // Run regex on raw content BEFORE escaping, then escape text parts individually

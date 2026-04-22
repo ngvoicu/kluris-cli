@@ -107,6 +107,69 @@ def test_html_colors_yaml_neurons_with_periwinkle(tmp_path):
     assert "node.file_type === 'yaml'" in html
 
 
+def test_title_is_filename_stem_not_h1(tmp_path):
+    """Neuron `title` is derived from the filename (hyphens → spaces,
+    title-cased) regardless of the H1 the author wrote. The H1 survives
+    only in `authored_title`, and only when it differs from the filename-
+    derived title — so an H1 like `# emailback - architecture` doesn't
+    pollute compact labels across the MRI."""
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / "brain.md").write_text("---\n---\n# Brain\n", encoding="utf-8")
+    (brain / "projects").mkdir()
+    (brain / "projects" / "emailback").mkdir()
+    (brain / "projects" / "map.md").write_text(
+        "---\nauto_generated: true\n---\n# Projects\n", encoding="utf-8"
+    )
+    (brain / "projects" / "emailback" / "map.md").write_text(
+        "---\nauto_generated: true\n---\n# Emailback\n", encoding="utf-8"
+    )
+    (brain / "projects" / "emailback" / "architecture.md").write_text(
+        "---\nparent: ./map.md\ntags: []\n"
+        "created: 2026-04-01\nupdated: 2026-04-01\n---\n"
+        "# emailback - architecture\n\nThe service uses...\n",
+        encoding="utf-8",
+    )
+    graph = build_graph(brain)
+    node = next(n for n in graph["nodes"] if n["path"] == "projects/emailback/architecture.md")
+    # Title is the filename stem, NOT the redundant H1 prefix
+    assert node["title"] == "Architecture"
+    # Authored H1 is preserved separately for the modal subtitle
+    assert node["authored_title"] == "emailback - architecture"
+
+
+def test_authored_title_hidden_when_same_as_stem(tmp_path):
+    """If the H1 is the same text the filename would already produce,
+    authored_title stays empty — no redundant subtitle."""
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / "brain.md").write_text("---\n---\n# Brain\n", encoding="utf-8")
+    (brain / "knowledge").mkdir()
+    (brain / "knowledge" / "map.md").write_text(
+        "---\nauto_generated: true\n---\n# K\n", encoding="utf-8"
+    )
+    (brain / "knowledge" / "auth-flow.md").write_text(
+        "---\nparent: ./map.md\ntags: []\n"
+        "created: 2026-04-01\nupdated: 2026-04-01\n---\n"
+        "# Auth Flow\n\nHow auth works.\n",
+        encoding="utf-8",
+    )
+    graph = build_graph(brain)
+    node = next(n for n in graph["nodes"] if n["path"] == "knowledge/auth-flow.md")
+    assert node["title"] == "Auth Flow"
+    assert node["authored_title"] == ""
+
+
+def test_yaml_neuron_prefers_frontmatter_title(tmp_path):
+    """Yaml neurons keep using the frontmatter `title:` as the display
+    title (filename stems like `openapi.yml` title-case poorly)."""
+    brain = _make_brain_with_yaml_neurons(tmp_path)
+    graph = build_graph(brain)
+    node = next(n for n in graph["nodes"] if n["path"] == "projects/openapi.yml")
+    assert node["title"] == "Payments API"
+    assert node["authored_title"] == ""
+
+
 def test_html_connection_cards_omit_section_chip_when_same_folder(tmp_path):
     """Left-panel "Connected nodes" cards must drop the sublobe/lobe chip
     when the connection is in the same section as the currently-selected

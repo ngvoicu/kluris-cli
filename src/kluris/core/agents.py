@@ -320,6 +320,13 @@ Other writing rules:
 - Frontmatter on every neuron: `parent`, `related`, `tags`, `created`, `updated`.
 - `parent:` is always `./map.md`.
 - `related:` paths are relative to the current neuron's directory.
+- **H1 titles are the topic only -- never prefixed with the folder, project,
+  or lobe name.** The path already carries that context. Write `# Architecture`
+  in `projects/emailback/architecture.md`, not `# emailback - architecture`.
+  Otherwise every neuron in a project reads "emailback - X", "emailback - Y",
+  "emailback - Z" in visualizations and the repeated prefix drowns out the
+  actual topic. Pick a filename that is already the topic name (hyphens allowed:
+  `data-model.md`, `rest-apis.md`) and make the H1 match.
 - **Actively hunt for synapses before writing.** Before proposing a new neuron,
   run `kluris search "<key-terms>"{brain_flag_hint_inline} --json` with a few
   searches drawn from the neuron's topic, tags, and glossary terms it uses. Any
