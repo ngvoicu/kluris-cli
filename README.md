@@ -287,7 +287,7 @@ acme-brain/
 │   └── environments.md     # <- neuron
 └── knowledge/
     ├── map.md
-    └── use-raw-sql.md      # <- neuron (decision template)
+    └── use-raw-sql.md      # <- neuron (a decision record)
 ```
 
 Folders are **lobes** (knowledge regions). Files are **neurons** (knowledge
@@ -309,8 +309,8 @@ to the brain repo, email it, drop it in Slack.
 ## Brain types (scaffolding only)
 
 Types determine the initial folder structure. After creation, every brain
-works the same -- all templates and commands are available regardless of type.
-You can add or remove lobes freely after creation.
+works the same -- all commands are available regardless of type. You can add
+or remove lobes freely after creation.
 
 ### product-group (default)
 
@@ -418,7 +418,6 @@ Run these in bash, zsh, fish, or PowerShell. They handle setup, git, maintenance
 | `kluris push` | Commit and push to the current branch |
 | `kluris pull` | Pull remote changes for the current branch |
 | `kluris mri` | Visualize the brain (opens in browser by default) |
-| `kluris templates` | List available neuron templates |
 | `kluris remove <name>` | Unregister a brain (keeps files on disk) |
 | `kluris doctor` | Check prerequisites, refresh agent skills, and refresh companion playbooks after `pipx upgrade kluris`. Pass `--no-refresh` to skip writes. |
 | `kluris help` | Show command help |
@@ -432,7 +431,7 @@ Type these inside Claude Code, Cursor, Windsurf, GitHub Copilot, Codex, Gemini C
 | Pattern | What the agent does |
 |---------|---------------------|
 | `/kluris learn <topic>` | Analyzes your code and proposes neurons one at a time (you approve each) |
-| `/kluris remember <fact>` | Captures a decision as a neuron using the right template |
+| `/kluris remember <fact>` | Captures a decision as a neuron in the right lobe |
 | `/kluris search <term>` | Searches the brain for a topic |
 | `/kluris what do we know about ...` | Answers a question grounded in the brain |
 | `/kluris implement <task>` | Implements a task following your brain's conventions |
@@ -444,16 +443,6 @@ Type these inside Claude Code, Cursor, Windsurf, GitHub Copilot, Codex, Gemini C
 | `/kluris deprecate <file>` | Marks a neuron as deprecated |
 
 Agent patterns are free-form — say it naturally. Under the hood the agent calls `kluris search` for lookups and `kluris wake-up` for the session bootstrap, but you never type those yourself when using the slash command.
-
-## Neuron templates
-
-Available in every brain. Use `kluris templates` to see them.
-
-| Template | Sections |
-|----------|----------|
-| `decision` | Context, Decision, Rationale, Alternatives considered, Consequences |
-| `incident` | Summary, Timeline, Root cause, Impact, Resolution, Lessons learned |
-| `runbook` | Purpose, Prerequisites, Steps, Rollback, Contacts |
 
 ## Local config (kluris.yml)
 

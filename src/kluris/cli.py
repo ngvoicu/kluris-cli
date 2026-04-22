@@ -2414,34 +2414,6 @@ def doctor(as_json: bool, no_refresh: bool):
         raise SystemExit(1)
 
 
-@cli.command()
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def templates(as_json: bool):
-    """List available neuron templates."""
-    from kluris.core.brain import NEURON_TEMPLATES
-    tmpls = NEURON_TEMPLATES
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "templates": tmpls}))
-        return
-
-    if not tmpls:
-        console.print("No neuron templates available.")
-        return
-
-    from rich.table import Table
-    table = Table(title="Neuron Templates")
-    table.add_column("Template")
-    table.add_column("Description")
-    table.add_column("Sections")
-
-    for tname, tmpl in tmpls.items():
-        table.add_row(tname, tmpl["description"], ", ".join(tmpl["sections"]))
-
-    console.print(table)
-    console.print("\nAgents use these templates when creating neurons in the brain.")
-
-
 @cli.command("help")
 @click.argument("command", required=False)
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
@@ -2462,7 +2434,6 @@ def help_cmd(command: str | None, as_json: bool):
         ("pull", "Pull remote changes for the current branch"),
         ("mri", "Generate interactive brain visualization and open in browser"),
         ("remove", "Unregister a brain (keeps files on disk)"),
-        ("templates", "List available neuron templates for the current brain"),
         ("doctor", "Check prerequisites and refresh installed agent skills (--no-refresh to skip)"),
         ("help", "Show this help"),
     ]

@@ -170,12 +170,12 @@ Markdown neurons can link to yaml neurons with normal markdown links such as
 Find the right lobe, check for existing neurons, show a full preview, then use
 the approval protocol.
 
-**Create neuron** -- "create a decision record about X".
-Templates: decision (Context, Decision, Rationale, Alternatives, Consequences),
-incident (Summary, Timeline, Root cause, Impact, Resolution, Lessons learned),
-runbook (Purpose, Prerequisites, Steps, Rollback, Contacts).
-Walk through the template section by section -- do NOT pre-fill and dump. Show
-each section, incorporate feedback, then ask for final approval before writing.
+**Create neuron** -- "create a decision record about X", "write an incident
+postmortem for the January outage". Propose a section outline appropriate for
+the kind of document, then walk through it section by section -- do NOT pre-fill and dump.
+Show each section, incorporate feedback, then ask for final approval before
+writing. If the brain already has similar neurons (e.g. an existing decision
+record), match their shape instead of inventing a new one.
 
 **Create lobe** -- "create a new section for monitoring".
 Discuss the lobe name and purpose with the user, then create the directory only
@@ -230,7 +230,6 @@ These are terminal commands, not skill actions:
 - `kluris push{brain_flag_hint_inline}` -- commit and push brain changes
 - `kluris pull{brain_flag_hint_inline}` -- pull remote changes
 - `kluris mri{brain_flag_hint_inline}` -- generate interactive visualization
-- `kluris templates` -- list available neuron templates
 """
 
 

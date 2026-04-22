@@ -33,12 +33,11 @@ def test_full_workflow(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    # 3. Add neuron with decision template
+    # 3. Add a neuron with explicit section headings
     (brain / "knowledge" / "use-raw-sql.md").write_text(
         generate_neuron_content(
             "Use Raw SQL",
             "./map.md",
-            "decision",
             ["Context", "Decision", "Rationale", "Alternatives considered", "Consequences"],
         ),
         encoding="utf-8",

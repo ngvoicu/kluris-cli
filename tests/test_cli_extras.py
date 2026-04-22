@@ -1,4 +1,4 @@
-"""Extra CLI tests for coverage — templates, doctor, help, error paths, edge cases."""
+"""Extra CLI tests for coverage — doctor, help, error paths, edge cases."""
 
 import json
 
@@ -6,27 +6,6 @@ from click.testing import CliRunner
 
 from kluris.cli import cli
 from conftest import create_test_brain
-
-
-def test_templates_command(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    result = runner.invoke(cli, ["templates"])
-    assert result.exit_code == 0
-    assert "decision" in result.output
-    assert "incident" in result.output
-    assert "runbook" in result.output
-
-
-def test_templates_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    runner = CliRunner()
-    result = runner.invoke(cli, ["templates", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert "decision" in data["templates"]
-    assert "incident" in data["templates"]
 
 
 def test_help_unknown_command(tmp_path, monkeypatch):
@@ -101,12 +80,12 @@ def test_main_help():
     assert "uninstall-skills" not in result.output
     assert "  neuron " not in result.output
     assert "  lobe " not in result.output
-    assert "templates" in result.output
+    assert "templates" not in result.output
 
 
 def test_removed_commands_gone():
     runner = CliRunner()
-    for command in ["install-skills", "uninstall-skills", "neuron", "lobe"]:
+    for command in ["install-skills", "uninstall-skills", "neuron", "lobe", "templates"]:
         result = runner.invoke(cli, [command])
         assert result.exit_code != 0
         assert "No such command" in result.output
@@ -116,7 +95,8 @@ def test_version_does_not_mention_companions():
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "kluris 2.11.0"
+    import kluris
+    assert result.output.strip() == f"kluris {kluris.__version__}"
     assert "specmint-core" not in result.output
     assert "specmint-tdd" not in result.output
 

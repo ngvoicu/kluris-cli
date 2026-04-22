@@ -11,7 +11,7 @@ Kluris turns AI agents into team subject matter experts by giving them shared, h
 ```bash
 source .venv/bin/activate        # or: pipx install -e .
 pip install -e ".[dev]"          # dev install with pytest
-pytest tests/ -v                 # run all tests (487 tests)
+pytest tests/ -v                 # run all tests (482 tests)
 pytest tests/ --cov=kluris -q    # with coverage (90%+)
 pytest tests/test_create.py -v   # single test file
 ```
@@ -20,10 +20,10 @@ pytest tests/test_create.py -v   # single test file
 
 ```
 src/kluris/
-  cli.py              # Click CLI -- all 17 commands in one file (incl. search, wake-up, branch, pull, register, companion)
+  cli.py              # Click CLI -- all 16 commands in one file (incl. search, wake-up, branch, pull, register, companion)
   core/
     config.py          # Pydantic models (GlobalConfig, BrainConfig, BrainEntry)
-    brain.py           # BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), validate_brain_name()
+    brain.py           # BRAIN_TYPES, scaffold_brain(), validate_brain_name()
     maps.py            # generate_brain_md(), generate_map_md() -- auto-generated files
     frontmatter.py     # read_frontmatter(), write_frontmatter(),
                        # update_frontmatter(path, patch, *, preloaded=(meta, body)?)
@@ -44,8 +44,7 @@ src/kluris/
 - **All commands in one cli.py** -- not split into separate files. Works fine at current size.
 - **No Jinja2** -- templates are inline Python strings in brain.py and agents.py. Jinja2 was removed from dependencies.
 - **kluris.yml is gitignored** -- local config only (agents, git branch). Not shared between team members.
-- **Brain types are scaffold-only** -- after creation, type is irrelevant. All templates available everywhere.
-- **NEURON_TEMPLATES are global** -- decision, incident, runbook available to every brain regardless of type.
+- **Brain types are scaffold-only** -- after creation, type is irrelevant. Same commands everywhere.
 - **brain.md is lightweight** -- root lobes + glossary link only. No neuron index. Agents navigate through map.md hierarchy.
 - **Agent skill/workflow templates are inline** in agents.py, not .j2 template files.
 - **MRI uses inline canvas JS** -- no vendored Cytoscape.js. Standalone HTML with search, inspector, and interactive graph navigation.
@@ -103,9 +102,9 @@ The skill body contains six load-bearing sections (in order):
 - **2+ brains + non-interactive** (`--json`, no TTY, or `KLURIS_NO_PROMPT=1`) → resolver errors with the available brains listed and a hint to pass `--brain NAME` or `--brain all`.
 - **Stale brain paths** → annotated `(missing)` in the picker; resolver raises `ClickException` if the user actually tries to use one.
 
-## CLI Commands (17)
+## CLI Commands (16)
 
-create, clone, register, list, status, search, wake-up, companion, dream, branch, push, pull, mri, templates, remove, doctor, help
+create, clone, register, list, status, search, wake-up, companion, dream, branch, push, pull, mri, remove, doctor, help
 
 - **`register` (v2.9.0)** -- register a brain already on disk (in-place, no copy) or extract a `.zip` and register the extracted tree. Sibling to `clone` for the non-git-remote path: on-disk directories, teammate-shared zips, restored backups. Identity comes from `brain.md` H1. Auto-detects `git remote get-url origin` to populate `repo` when the directory already has a git remote. Zip extraction defends against zip-slip by resolving each member and rejecting anything outside the extraction root. Cleanup contract: zip source -> rmtree(extracted dir) on any failure (we created it); directory source -> NEVER delete (the user's real brain lives there). Calls `_do_install()` on success so agent skills refresh to include the new brain.
 
@@ -150,7 +149,7 @@ create, clone, register, list, status, search, wake-up, companion, dream, branch
 
 ## Testing
 
-- 487 tests across 34 test files
+- 482 tests across 33 test files
 - conftest.py has 5 fixtures: cli_runner, temp_config, temp_home, temp_brain, bare_remote
 - Tests use monkeypatch for KLURIS_CONFIG and HOME env vars
 - Git tests use real git in tmp_path (not mocked)

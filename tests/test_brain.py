@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from kluris.core.brain import NEURON_TEMPLATES, get_type_defaults, scaffold_brain, validate_brain_name
+from kluris.core.brain import get_type_defaults, scaffold_brain, validate_brain_name
 
 
 # --- [TEST-KLU-09] Brain scaffolding ---
@@ -120,18 +120,6 @@ def test_readme_documents_deprecation_frontmatter(tmp_path):
     assert "status:" in readme
     assert "deprecated" in readme.lower()
     assert "replaced_by" in readme
-
-
-def test_team_has_neuron_templates(tmp_path):
-    """Templates are built into kluris per brain type, not stored in kluris.yml."""
-    
-    templates = NEURON_TEMPLATES
-    assert "decision" in templates
-    assert "incident" in templates
-    assert "runbook" in templates
-    assert len(templates["decision"]["sections"]) == 5
-    assert len(templates["incident"]["sections"]) == 6
-    assert len(templates["runbook"]["sections"]) == 5
 
 
 def test_from_custom_config(tmp_path):

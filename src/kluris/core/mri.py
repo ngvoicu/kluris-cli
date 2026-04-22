@@ -177,7 +177,6 @@ def build_graph(brain_path: Path) -> dict:
             "tags": tags if isinstance(tags, list) else [],
             "created": str(meta.get("created", "")),
             "updated": str(meta.get("updated", "")),
-            "template": str(meta.get("template", "")),
             "parent": str(meta.get("parent", "")),
             "related": related if isinstance(related, list) else [],
         })
@@ -1826,7 +1825,6 @@ function updateDetails() {{
         <div class="meta-card"><span class="label">Section</span><span class="value">${{escapeHtml(node.sublobe || node.lobe)}}</span></div>
         <div class="meta-card"><span class="label">Updated</span><span class="value">${{escapeHtml(node.updated || '—')}}</span></div>
         <div class="meta-card"><span class="label">Created</span><span class="value">${{escapeHtml(node.created || '—')}}</span></div>
-        <div class="meta-card"><span class="label">Template</span><span class="value">${{escapeHtml(node.template || '—')}}</span></div>
         <div class="meta-card"><span class="label">Connections</span><span class="value">${{connected.length}}</span></div>
       </div>
       ${{tags ? `<div class="tag-row">${{tags}}</div>` : ''}}

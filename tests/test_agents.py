@@ -244,7 +244,7 @@ def test_skill_remember_has_stop_gate():
 
 def test_skill_create_neuron_has_section_interview():
     c = _render()
-    assert "Walk through the template section by section" in c
+    assert "walk through it section by section" in c
 
 
 def test_specmint_block_none():

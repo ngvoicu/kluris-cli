@@ -35,12 +35,6 @@ class AgentsConfig(BaseModel):
     ])
 
 
-class NeuronTemplate(BaseModel):
-    """A structured template for creating neurons."""
-    description: str = ""
-    sections: list[str] = Field(default_factory=list)
-
-
 class StructureNode(BaseModel):
     """Nested structure definition for brain scaffolding."""
     description: str = ""

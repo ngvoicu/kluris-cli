@@ -8,29 +8,10 @@ from pathlib import Path
 
 import yaml
 
-from kluris.core.config import BrainConfig, GitConfig, AgentsConfig, NeuronTemplate
+from kluris.core.config import BrainConfig, GitConfig, AgentsConfig
 
 
 # --- Brain type defaults ---
-
-# Neuron templates -- available to ALL brains regardless of type
-NEURON_TEMPLATES: dict[str, dict] = {
-    "decision": {
-        "description": "Architecture or product decision record",
-        "sections": ["Context", "Decision", "Rationale",
-                     "Alternatives considered", "Consequences"],
-    },
-    "incident": {
-        "description": "Incident or outage postmortem",
-        "sections": ["Summary", "Timeline", "Root cause",
-                     "Impact", "Resolution", "Lessons learned"],
-    },
-    "runbook": {
-        "description": "Operational procedure",
-        "sections": ["Purpose", "Prerequisites", "Steps",
-                     "Rollback", "Contacts"],
-    },
-}
 
 # Brain types -- only used for initial scaffolding
 BRAIN_TYPES: dict[str, dict] = {
@@ -103,15 +84,9 @@ def _today() -> str:
     return date.today().isoformat()
 
 
-def lookup_template(name: str, templates: dict) -> dict | None:
-    """Look up a neuron template by name. Returns None if not found."""
-    return templates.get(name)
-
-
 def generate_neuron_content(
     title: str,
     parent_map: str,
-    template_name: str | None = None,
     sections: list[str] | None = None,
 ) -> str:
     """Generate neuron markdown content with frontmatter."""
@@ -121,16 +96,12 @@ def generate_neuron_content(
     frontmatter_lines = [
         "---",
         f"parent: {parent_map}",
-    ]
-    if template_name:
-        frontmatter_lines.append(f"template: {template_name}")
-    frontmatter_lines.extend([
         "related: []",
         "tags: []",
         f"created: {today}",
         f"updated: {today}",
         "---",
-    ])
+    ]
 
     body_lines = [f"# {title}", ""]
     if sections:
@@ -159,7 +130,7 @@ def validate_brain_name(name: str) -> bool:
 
 
 def get_type_defaults(brain_type: str) -> dict:
-    """Return the default structure and templates for a brain type."""
+    """Return the default structure for a brain type."""
     return BRAIN_TYPES.get(brain_type, BRAIN_TYPES["blank"])
 
 
@@ -408,7 +379,7 @@ links when a topic spans multiple areas.
 The agent finds the right lobe, shows a preview, and asks for confirmation
 before writing.
 
-### Create -- make a new neuron from a template
+### Create -- make a new neuron
 
 ```
 /kluris-{name} create a decision record about migrating to Keycloak
@@ -417,8 +388,8 @@ before writing.
 /kluris-{name} create a new lobe for monitoring
 ```
 
-For structured templates (decision, incident, runbook), the agent walks
-through sections one at a time so you can review each part.
+The agent walks through the neuron section by section so you can review each
+part before anything is written.
 
 ## CLI commands
 
@@ -426,7 +397,6 @@ through sections one at a time so you can review each part.
 kluris search "<query>" --brain {name}  # Ranked search across neurons + glossary + brain.md
 kluris status --brain {name}             # Brain tree, recent changes, neuron counts
 kluris wake-up --brain {name}            # Compact snapshot for agent bootstrap (--json for machines)
-kluris templates                          # List available neuron templates
 kluris dream --brain {name}               # Regenerate maps, auto-fix safe issues, validate remaining links
 kluris branch --brain {name}              # Show, switch, or create branches
 kluris push --brain {name}                # Commit and push to the current branch
@@ -452,14 +422,6 @@ kluris companion remove specmint-core --brain {name}
 
 Use `specmint-core` for normal research/interview/spec workflows and
 `specmint-tdd` when you want strict red-green-refactor implementation.
-
-## Neuron templates
-
-| Template | Sections |
-|----------|----------|
-| `decision` | Context, Decision, Rationale, Alternatives considered, Consequences |
-| `incident` | Summary, Timeline, Root cause, Impact, Resolution, Lessons learned |
-| `runbook` | Purpose, Prerequisites, Steps, Rollback, Contacts |
 
 ## File format
 
