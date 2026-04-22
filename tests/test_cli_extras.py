@@ -96,9 +96,29 @@ def test_main_help():
     assert "create" in result.output
     assert "clone" in result.output
     assert "dream" in result.output
-    assert "install-skills" in result.output
-    assert "uninstall-skills" in result.output
+    assert "companion" in result.output
+    assert "install-skills" not in result.output
+    assert "uninstall-skills" not in result.output
+    assert "  neuron " not in result.output
+    assert "  lobe " not in result.output
     assert "templates" in result.output
+
+
+def test_removed_commands_gone():
+    runner = CliRunner()
+    for command in ["install-skills", "uninstall-skills", "neuron", "lobe"]:
+        result = runner.invoke(cli, [command])
+        assert result.exit_code != 0
+        assert "No such command" in result.output
+
+
+def test_version_does_not_mention_companions():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == "kluris 2.11.0"
+    assert "specmint-core" not in result.output
+    assert "specmint-tdd" not in result.output
 
 
 def test_json_error_output(tmp_path, monkeypatch):

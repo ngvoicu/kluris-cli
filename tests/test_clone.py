@@ -77,6 +77,34 @@ def test_clone_brain(tmp_path, monkeypatch):
     assert (dest / "kluris.yml").exists()
 
 
+def test_clone_wizard_prompt_specmint(tmp_path, monkeypatch):
+    bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr("kluris.cli._is_interactive", lambda: True)
+    runner = CliRunner()
+    dest = tmp_path / "wizard-clone"
+
+    result = runner.invoke(cli, ["clone"], input=f"{bare}\n{dest}\n\n1\n")
+
+    assert result.exit_code == 0, result.output
+    assert read_brain_config(dest).companions == ["specmint-core"]
+    assert (tmp_path / ".kluris" / "companions" / "specmint-core" / "SKILL.md").exists()
+
+
+def test_clone_flag_driven_skips_companion_prompt(tmp_path, monkeypatch):
+    bare = _create_remote_brain(tmp_path, monkeypatch)
+    _use_fresh_clone_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr("kluris.cli._is_interactive", lambda: True)
+    runner = CliRunner()
+    dest = tmp_path / "flag-clone"
+
+    result = runner.invoke(cli, ["clone", str(bare), str(dest)])
+
+    assert result.exit_code == 0, result.output
+    assert "Install specmint companions" not in result.output
+    assert read_brain_config(dest).companions == []
+
+
 def test_clone_registers(tmp_path, monkeypatch):
     bare = _create_remote_brain(tmp_path, monkeypatch)
     _use_fresh_clone_registry(tmp_path, monkeypatch)

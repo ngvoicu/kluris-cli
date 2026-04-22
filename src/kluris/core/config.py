@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BrainEntry(BaseModel):
@@ -19,7 +19,7 @@ class BrainEntry(BaseModel):
 
 class GlobalConfig(BaseModel):
     """Global kluris config at ~/.config/kluris/config.yml."""
-    brains: dict[str, BrainEntry] = {}
+    brains: dict[str, BrainEntry] = Field(default_factory=dict)
 
 
 class GitConfig(BaseModel):
@@ -29,30 +29,31 @@ class GitConfig(BaseModel):
 
 class AgentsConfig(BaseModel):
     """Agent installation settings for a brain."""
-    commands_for: list[str] = [
+    commands_for: list[str] = Field(default_factory=lambda: [
         "claude", "cursor", "windsurf", "copilot",
         "codex", "kilocode", "gemini", "junie",
-    ]
+    ])
 
 
 class NeuronTemplate(BaseModel):
     """A structured template for creating neurons."""
     description: str = ""
-    sections: list[str] = []
+    sections: list[str] = Field(default_factory=list)
 
 
 class StructureNode(BaseModel):
     """Nested structure definition for brain scaffolding."""
     description: str = ""
-    children: dict[str, str | StructureNode] = {}
+    children: dict[str, str | StructureNode] = Field(default_factory=dict)
 
 
 class BrainConfig(BaseModel):
     """Local brain config stored in kluris.yml (gitignored)."""
     name: str
     description: str = ""
-    git: GitConfig = GitConfig()
-    agents: AgentsConfig = AgentsConfig()
+    git: GitConfig = Field(default_factory=GitConfig)
+    agents: AgentsConfig = Field(default_factory=AgentsConfig)
+    companions: list[str] = Field(default_factory=list)
 
 
 # --- Config file operations ---

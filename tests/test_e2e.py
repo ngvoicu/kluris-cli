@@ -4,7 +4,7 @@ import json
 from click.testing import CliRunner
 from kluris.cli import cli
 from conftest import create_test_brain
-from kluris.core.config import read_global_config
+from kluris.core.brain import generate_neuron_content
 
 
 def test_full_workflow(tmp_path, monkeypatch):
@@ -19,14 +19,30 @@ def test_full_workflow(tmp_path, monkeypatch):
 
     brain = tmp_path / "my-brain"
 
-    # 2. Add neurons
-    runner.invoke(cli, ["neuron", "auth.md", "--lobe", "projects"])
-    runner.invoke(cli, ["neuron", "naming.md", "--lobe", "knowledge"])
-    runner.invoke(cli, ["neuron", "deploy.md", "--lobe", "infrastructure"])
+    # 2. Add neurons directly, matching the agent workflow.
+    (brain / "projects" / "auth.md").write_text(
+        generate_neuron_content("Auth", "./map.md"),
+        encoding="utf-8",
+    )
+    (brain / "knowledge" / "naming.md").write_text(
+        generate_neuron_content("Naming", "./map.md"),
+        encoding="utf-8",
+    )
+    (brain / "infrastructure" / "deploy.md").write_text(
+        generate_neuron_content("Deploy", "./map.md"),
+        encoding="utf-8",
+    )
 
     # 3. Add neuron with decision template
-    result = runner.invoke(cli, ["neuron", "use-raw-sql.md", "--lobe", "knowledge", "--template", "decision"])
-    assert result.exit_code == 0
+    (brain / "knowledge" / "use-raw-sql.md").write_text(
+        generate_neuron_content(
+            "Use Raw SQL",
+            "./map.md",
+            "decision",
+            ["Context", "Decision", "Rationale", "Alternatives considered", "Consequences"],
+        ),
+        encoding="utf-8",
+    )
     content = (brain / "knowledge" / "use-raw-sql.md").read_text()
     assert "## Context" in content
 

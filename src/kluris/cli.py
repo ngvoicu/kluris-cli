@@ -12,24 +12,26 @@ from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
+from kluris import __version__
 from kluris.core.brain import (
     BRAIN_NAME_MAX_LENGTH,
     BRAIN_NAME_RESERVED,
     BRAIN_TYPES,
-    generate_neuron_content,
     infer_brain_type,
-    lookup_template,
     scaffold_brain,
     validate_brain_name,
 )
 from kluris.core.config import (
+    BrainConfig,
     BrainEntry,
     read_brain_config,
     read_global_config,
     register_brain,
     unregister_brain,
+    write_brain_config,
     write_global_config,
 )
+from kluris.core import companions
 from kluris.core.git import (
     checkout_or_create_branch,
     git_add,
@@ -62,7 +64,7 @@ from kluris.core.linker import (
 from kluris.core.maps import generate_brain_md, generate_map_md
 from kluris.core.mri import generate_mri_html
 from kluris.core.frontmatter import read_frontmatter, update_frontmatter
-from kluris.core.agents import AGENT_REGISTRY, OLD_COMMAND_DIRS, render_commands, install_workflow
+from kluris.core.agents import AGENT_REGISTRY, OLD_COMMAND_DIRS, render_commands
 
 console = Console()
 
@@ -392,8 +394,80 @@ def _resolve_brains(
     return resolved
 
 
+def _home_path() -> Path:
+    """Return the effective home path used for kluris runtime files."""
+    import os
+    home_str = os.environ.get("HOME")
+    return Path(home_str) if home_str else Path.home()
+
+
+def _wizard_can_prompt(as_json: bool) -> bool:
+    """Return True when it is safe to add optional wizard prompts."""
+    import os
+    return not as_json and os.environ.get("KLURIS_NO_PROMPT") != "1" and _is_interactive()
+
+
+def _prompt_for_companions() -> list[str]:
+    """Ask the interactive companion opt-in question."""
+    console.print("  Install specmint companions for this brain?")
+    console.print("    [1] specmint-core (forge -> interview -> spec)")
+    console.print("    [2] specmint-tdd  (same, with strict red-green-refactor)")
+    console.print("    [3] both")
+    console.print("    [4] skip")
+    choice = click.prompt(
+        "  Choice",
+        default="4",
+        type=click.Choice(["1", "2", "3", "4"]),
+    )
+    if choice == "1":
+        return ["specmint-core"]
+    if choice == "2":
+        return ["specmint-tdd"]
+    if choice == "3":
+        return ["specmint-core", "specmint-tdd"]
+    return []
+
+
+def _write_brain_companions(brain_path: Path, selected: list[str]) -> list[str]:
+    """Normalize and persist companion opt-ins for a brain."""
+    config = read_brain_config(brain_path)
+    config.companions = companions.normalize(selected)
+    write_brain_config(config, brain_path)
+    return config.companions
+
+
+def _install_companions(selected: list[str]) -> None:
+    """Copy selected companion playbooks into the runtime companion home."""
+    home = _home_path()
+    for name in companions.normalize(selected):
+        companions.install(name, home)
+
+
+def _maybe_prompt_companions_for_new_brain(brain_path: Path, should_prompt: bool) -> list[str]:
+    """Prompt during wizard-style creation/clone/register and persist the choice."""
+    if not should_prompt:
+        return []
+    selected = _prompt_for_companions()
+    if not selected:
+        return []
+    selected = _write_brain_companions(brain_path, selected)
+    _install_companions(selected)
+    return selected
+
+
+def _read_companion_state(entry: BrainEntry) -> list[str] | None:
+    """Return companion names for list output; None means unknown/stale path."""
+    brain_path = Path(entry.path)
+    if not (brain_path / "kluris.yml").exists():
+        return None
+    try:
+        return companions.normalize(read_brain_config(brain_path).companions)
+    except Exception:
+        return None
+
+
 @click.group(cls=KlurisGroup)
-@click.version_option(package_name="kluris")
+@click.version_option(version=__version__, prog_name="kluris", message="%(prog)s %(version)s")
 def cli():
     """Kluris — Turn AI agents into team subject matter experts."""
 
@@ -424,6 +498,14 @@ def create(name: str | None, desc: str | None, base_path: str | None,
       kluris create my-brain --type personal --path ~/brains --no-git  # no prompts
       kluris create team-brain --remote git@github.com:team/brain.git
     """
+    companion_prompt = _wizard_can_prompt(as_json) and (
+        not name
+        or not desc
+        or not base_path
+        or brain_type is None
+        or (not no_git and remote is None)
+    )
+
     # Prompt for anything not provided, unless --json (fully non-interactive)
     if not as_json:
         if not name:
@@ -525,6 +607,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
 
     description = desc or f"{name} knowledge base"
     scaffold_brain(brain_path, name, description, brain_type, custom_config, branch=branch_name or "main")
+    selected_companions = _maybe_prompt_companions_for_new_brain(brain_path, companion_prompt)
 
     if not no_git:
         git_init(brain_path)
@@ -554,6 +637,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         click.echo(json_lib.dumps({
             "ok": True, "name": name, "path": str(brain_path),
             "type": brain_type, "lobes": lobe_count,
+            "companions": selected_companions,
         }))
     else:
         console.print(f"Brain created: [bold]{name}[/bold] ({brain_type})")
@@ -580,6 +664,7 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
       kluris clone git@github.com:team/brain.git
       kluris clone git@github.com:team/brain.git ~/my-copy --branch develop
     """
+    companion_prompt = _wizard_can_prompt(as_json) and not url
     if not url:
         console.print("\n[bold]Clone a brain[/bold]\n")
         url = click.prompt("  Git remote URL", type=str)
@@ -645,6 +730,7 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
             )
             write_brain_config(local_config, dest)
 
+        selected_companions = _maybe_prompt_companions_for_new_brain(dest, companion_prompt)
         brain_config = read_brain_config(dest)
         entry = BrainEntry(
             path=str(dest),
@@ -668,7 +754,13 @@ def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_jso
         raise click.ClickException(f"Clone setup failed: {exc}") from exc
 
     if as_json:
-        click.echo(json_lib.dumps({"ok": True, "name": name, "path": str(dest), "remote": url}))
+        click.echo(json_lib.dumps({
+            "ok": True,
+            "name": name,
+            "path": str(dest),
+            "remote": url,
+            "companions": selected_companions,
+        }))
     else:
         console.print(f"Brain cloned: [bold]{name}[/bold]")
         console.print(f"  Path: {dest}")
@@ -737,6 +829,7 @@ def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
     import shutil
     import zipfile
 
+    companion_prompt = _wizard_can_prompt(as_json) and not source
     if not source:
         console.print("\n[bold]Register a brain[/bold]\n")
         source = click.prompt("  Path to brain directory or .zip", type=str)
@@ -857,6 +950,7 @@ def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
             )
             write_brain_config(local_config, brain_root)
 
+        selected_companions = _maybe_prompt_companions_for_new_brain(brain_root, companion_prompt)
         brain_config = read_brain_config(brain_root)
         remote_url = _get_git_origin_url(brain_root)
 
@@ -884,6 +978,7 @@ def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
             "name": name,
             "path": str(brain_root),
             "remote": remote_url,
+            "companions": selected_companions,
         }))
     else:
         console.print(f"Brain registered: [bold]{name}[/bold]")
@@ -899,10 +994,11 @@ def list_cmd(as_json: bool):
     config = read_global_config()
 
     if as_json:
-        brains = [
-            {"name": n, **e.model_dump()}
-            for n, e in config.brains.items()
-        ]
+        brains = []
+        for n, e in config.brains.items():
+            item = {"name": n, **e.model_dump()}
+            item["companions"] = _read_companion_state(e)
+            brains.append(item)
         click.echo(json_lib.dumps({"ok": True, "brains": brains}))
         return
 
@@ -915,11 +1011,90 @@ def list_cmd(as_json: bool):
     table.add_column("Type")
     table.add_column("Path")
     table.add_column("Description")
+    table.add_column("Companions")
 
     for name, entry in config.brains.items():
-        table.add_row(name, entry.type, entry.path, entry.description)
+        state = _read_companion_state(entry)
+        companion_text = "(unknown)" if state is None else (", ".join(state) if state else "(none)")
+        table.add_row(name, entry.type, entry.path, entry.description, companion_text)
 
     console.print(table)
+
+
+@cli.group(cls=KlurisGroup)
+def companion():
+    """Manage embedded companion playbooks per brain."""
+
+
+@companion.command("add")
+@click.argument("name", type=click.Choice(list(companions.KNOWN)))
+@click.option("--brain", "brain_name", help="Brain name or 'all'")
+@click.option("--json", "as_json", is_flag=True, help="JSON output")
+def companion_add(name: str, brain_name: str | None, as_json: bool):
+    """Opt one or more brains into an embedded companion playbook."""
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
+    home = _home_path()
+    companions.install(name, home)
+
+    changed: list[str] = []
+    for brain, entry in brains:
+        brain_path = Path(entry["path"])
+        cfg = read_brain_config(brain_path)
+        cfg.companions = companions.normalize([*cfg.companions, name])
+        write_brain_config(cfg, brain_path)
+        changed.append(brain)
+
+    _do_install()
+
+    payload = {
+        "ok": True,
+        "name": name,
+        "brains": changed,
+        "opted_in": True,
+        "files_copied": True,
+    }
+    if as_json:
+        click.echo(json_lib.dumps(payload))
+    else:
+        console.print(f"Added companion [bold]{name}[/bold] to: {', '.join(changed)}")
+
+
+@companion.command("remove")
+@click.argument("name", type=click.Choice(list(companions.KNOWN)))
+@click.option("--brain", "brain_name", help="Brain name or 'all'")
+@click.option("--json", "as_json", is_flag=True, help="JSON output")
+def companion_remove(name: str, brain_name: str | None, as_json: bool):
+    """Remove a companion opt-in from one or more brains.
+
+    This updates brain config and regenerates SKILL.md files. The global
+    companion copy under ~/.kluris/companions is kept for cheap reuse.
+    """
+    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
+
+    changed: list[str] = []
+    for brain, entry in brains:
+        brain_path = Path(entry["path"])
+        cfg = read_brain_config(brain_path)
+        cfg.companions = companions.normalize([c for c in cfg.companions if c != name])
+        write_brain_config(cfg, brain_path)
+        changed.append(brain)
+
+    _do_install()
+
+    payload = {
+        "ok": True,
+        "name": name,
+        "brains": changed,
+        "opted_in": False,
+        "files_kept": True,
+    }
+    if as_json:
+        click.echo(json_lib.dumps(payload))
+    else:
+        console.print(
+            f"Removed companion [bold]{name}[/bold] from: {', '.join(changed)}"
+        )
+        console.print("Runtime companion files were kept under ~/.kluris/companions.")
 
 
 _WAKE_UP_SKIP_DIRS = {".git", ".github", ".vscode", ".idea", "node_modules", "__pycache__"}
@@ -1311,133 +1486,6 @@ def status(brain_name: str | None, as_json: bool):
 
     if as_json:
         click.echo(json_lib.dumps({"ok": True, "brains": results}))
-
-
-@cli.command()
-@click.argument("file_path")
-@click.option("--lobe", help="Target lobe folder")
-@click.option("--template", "template_name", help="Neuron template (e.g. decision, incident, runbook)")
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--force", is_flag=True, help="Overwrite the neuron if it already exists")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def neuron(file_path: str, lobe: str | None, template_name: str | None,
-           brain_name: str | None, force: bool, as_json: bool):
-    """Create a new neuron (knowledge file).
-
-    \b
-    Templates give neurons a consistent structure:
-      decision  — Context, Decision, Rationale, Alternatives, Consequences
-      incident  — Summary, Timeline, Root cause, Impact, Resolution, Lessons
-      runbook   — Purpose, Prerequisites, Steps, Rollback, Contacts
-
-    \b
-    Examples:
-      kluris neuron auth.md --lobe projects/btb-backend
-      kluris neuron use-raw-sql.md --lobe knowledge --template decision
-      kluris neuron outage-jan.md --lobe knowledge --template incident
-
-    Fails if the target file already exists. Use --force to overwrite.
-    """
-    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
-    name, entry = brains[0]
-    brain_path = Path(entry["path"])
-
-    if lobe:
-        target_dir = (brain_path / lobe).resolve()
-    else:
-        target_dir = (brain_path / Path(file_path).parent).resolve() if "/" in file_path else brain_path
-
-    _ensure_within_brain(target_dir, brain_path)
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_file = target_dir / Path(file_path).name
-
-    if target_file.exists() and not force:
-        rel = target_file.relative_to(brain_path)
-        raise click.ClickException(
-            f"Neuron '{rel}' already exists. Edit it directly, pick a "
-            f"different filename, or pass --force to overwrite."
-        )
-
-    parent_map = "./map.md"
-    sections = None
-    if template_name:
-        from kluris.core.brain import NEURON_TEMPLATES
-        templates = NEURON_TEMPLATES
-        tmpl = lookup_template(template_name, templates)
-        if tmpl is None:
-            available = ", ".join(templates.keys()) if templates else "(none for this brain type)"
-            raise click.ClickException(
-                f"Template '{template_name}' not found. Available: {available}"
-            )
-        sections = tmpl["sections"]
-
-    content = generate_neuron_content(
-        target_file.stem.replace("-", " ").title(),
-        parent_map, template_name, sections,
-    )
-    target_file.write_text(content, encoding="utf-8")
-
-    # Regenerate maps to include the new neuron
-    _run_dream_on_brain(brain_path)
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "path": str(target_file), "lobe": lobe or "", "template": template_name or ""}))
-    else:
-        console.print(f"Created: {target_file.relative_to(brain_path)}")
-
-
-@cli.command("lobe")
-@click.argument("name")
-@click.option("--parent", "parent_dir", help="Parent lobe folder")
-@click.option("--description", "desc", default="", help="Lobe description")
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--force", is_flag=True, help="Allow creating into an existing directory")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def lobe_cmd(name: str, parent_dir: str | None, desc: str,
-             brain_name: str | None, force: bool, as_json: bool):
-    """Create a new lobe (knowledge region).
-
-    Fails if the target directory already exists. Use --force to create into
-    an existing directory (useful if you want to add a description to a lobe
-    that was created outside kluris).
-    """
-    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
-    bname, entry = brains[0]
-    brain_path = Path(entry["path"])
-
-    if parent_dir:
-        lobe_path = (brain_path / parent_dir / name).resolve()
-    else:
-        lobe_path = (brain_path / name).resolve()
-
-    _ensure_within_brain(lobe_path, brain_path)
-
-    if lobe_path.exists() and not force:
-        rel = lobe_path.relative_to(brain_path)
-        raise click.ClickException(
-            f"Lobe '{rel}/' already exists. Pick a different name, or pass "
-            f"--force to reuse the directory."
-        )
-
-    lobe_path.mkdir(parents=True, exist_ok=True)
-
-    if desc:
-        from kluris.core.frontmatter import write_frontmatter
-        title = name.replace("-", " ").title()
-        write_frontmatter(
-            lobe_path / "map.md",
-            {"auto_generated": True, "description": desc},
-            f"# {title}\n\n{desc}\n",
-        )
-
-    # Regenerate maps to include the new lobe
-    _run_dream_on_brain(brain_path)
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "path": str(lobe_path), "parent": parent_dir or ""}))
-    else:
-        console.print(f"Created lobe: {lobe_path.relative_to(brain_path)}")
 
 
 @cli.command()
@@ -1934,7 +1982,6 @@ def _compute_skills_to_render(brains: dict) -> list[tuple[str, str, object]]:
 
 def _do_install(as_json: bool = False):
     """Install agent skills/workflows for all agents across all brains."""
-    import os
     import shutil
 
     config = read_global_config()
@@ -1950,19 +1997,28 @@ def _do_install(as_json: bool = False):
     if not all_agents:
         all_agents = set(AGENT_REGISTRY.keys())
 
-    home_str = os.environ.get("HOME")
-    home = Path(home_str) if home_str else Path.home()
+    home = _home_path()
+    companion_home = (home / ".kluris" / "companions").as_posix()
     total_files = 0
     agent_count = 0
     failed_agents: list[tuple[str, str]] = []
 
     def _render_kwargs(brain_name: str, entry) -> dict:
+        brain_path = Path(entry.path)
+        brain_companions: list[str] = []
+        if (brain_path / "kluris.yml").exists():
+            try:
+                brain_companions = companions.normalize(read_brain_config(brain_path).companions)
+            except Exception:
+                brain_companions = []
         return {
             "skill_name": "",  # filled in per skill
             "brain_name": brain_name,
             "brain_path": entry.path,
-            "has_git": (Path(entry.path) / ".git").exists(),
+            "has_git": (brain_path / ".git").exists(),
             "brain_description": entry.description,
+            "companions": brain_companions,
+            "companion_home": companion_home,
         }
 
     for agent_name in sorted(all_agents):
@@ -2115,69 +2171,6 @@ def _do_install(as_json: bool = False):
     }
 
 
-@cli.command("install-skills")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def install_commands(as_json: bool):
-    """Install kluris skill into AI agent directories."""
-    result = _do_install(as_json)
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, **result}))
-    else:
-        console.print(f"Installed {result['total_files']} files for {result['agents']} agents")
-        if result["failed_agents"]:
-            names = ", ".join(a for a, _ in result["failed_agents"])
-            console.print(f"  [yellow]Warning: failed for: {names}[/yellow]")
-
-
-@cli.command("uninstall-skills")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def uninstall_skills(as_json: bool):
-    """Remove all kluris skills from AI agent directories."""
-    import os
-    import shutil
-    home = Path(os.environ.get("HOME", "")) if os.environ.get("HOME") else Path.home()
-    removed = 0
-
-    agents_cleaned = []
-    for agent_name, reg in AGENT_REGISTRY.items():
-        agent_removed = False
-        # Clean new skill dirs
-        base = home / reg["dir"] / reg["subdir"]
-        if base.exists():
-            for item in base.glob("kluris*"):
-                if item.is_file():
-                    item.unlink()
-                    removed += 1
-                    agent_removed = True
-                elif item.is_dir():
-                    removed += sum(1 for _ in item.rglob("*") if _.is_file())
-                    shutil.rmtree(item)
-                    agent_removed = True
-
-        # Clean old command dirs
-        for old_dir_rel in OLD_COMMAND_DIRS.get(agent_name, []):
-            old_dir = home / old_dir_rel
-            if old_dir.exists():
-                for item in old_dir.glob("kluris*"):
-                    if item.is_file():
-                        item.unlink()
-                        removed += 1
-                        agent_removed = True
-                    elif item.is_dir():
-                        removed += sum(1 for _ in item.rglob("*") if _.is_file())
-                        shutil.rmtree(item)
-                        agent_removed = True
-
-        if agent_removed:
-            agents_cleaned.append(agent_name)
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "removed": removed, "agents": len(agents_cleaned)}))
-    else:
-        console.print(f"Removed {removed} files from {len(agents_cleaned)} agents")
-
-
 @cli.command()
 @click.argument("brain_name")
 @click.option("--force", is_flag=True, help="Unregister even if the brain has uncommitted changes")
@@ -2260,12 +2253,40 @@ def doctor(as_json: bool, no_refresh: bool):
     except OSError as e:
         checks.append({"name": "config_dir", "passed": False, "detail": str(e)})
 
-    # Refresh installed skills (so `kluris doctor` is also "fix what's safe to fix")
+    # Refresh companions and installed skills (so `kluris doctor` is also
+    # "fix what's safe to fix")
     skills_result: dict | None = None
+    companion_results: list[dict] = []
     if not no_refresh:
+        config = read_global_config()
+        home = _home_path()
+        companion_targets = companions.normalize([
+            *companions.installed(home),
+            *companions.referenced(config),
+        ])
+        for companion_name in companion_targets:
+            try:
+                companions.refresh(companion_name, home)
+                companion_results.append({"name": companion_name, "refreshed": True})
+                checks.append({
+                    "name": f"companion:{companion_name}",
+                    "passed": True,
+                    "detail": f"refreshed {companion_name}",
+                })
+            except Exception as e:
+                companion_results.append({
+                    "name": companion_name,
+                    "refreshed": False,
+                    "error": str(e),
+                })
+                checks.append({
+                    "name": f"companion:{companion_name}",
+                    "passed": False,
+                    "detail": f"refresh failed: {e}",
+                })
         try:
             skills_result = _do_install(as_json=True)
-            n_brains = len(read_global_config().brains)
+            n_brains = len(config.brains)
             failed = skills_result.get("failed_agents", [])
             detail = (
                 f"{skills_result.get('total_files', 0)} files written for "
@@ -2283,7 +2304,11 @@ def doctor(as_json: bool, no_refresh: bool):
     all_passed = all(c["passed"] for c in checks)
 
     if as_json:
-        click.echo(json_lib.dumps({"ok": all_passed, "checks": checks}))
+        click.echo(json_lib.dumps({
+            "ok": all_passed,
+            "checks": checks,
+            "companions": companion_results,
+        }))
     else:
         for c in checks:
             icon = "[green]PASS[/green]" if c["passed"] else "[red]FAIL[/red]"
@@ -2318,7 +2343,7 @@ def templates(as_json: bool):
         table.add_row(tname, tmpl["description"], ", ".join(tmpl["sections"]))
 
     console.print(table)
-    console.print(f"\nUsage: kluris neuron <file>.md --lobe <lobe> --template <name>")
+    console.print("\nAgents use these templates when creating neurons in the brain.")
 
 
 @cli.command("help")
@@ -2334,15 +2359,12 @@ def help_cmd(command: str | None, as_json: bool):
         ("status", "Show brain tree, recent changes, and neuron counts"),
         ("search", "Search a brain for a query string (neurons, glossary, brain.md)"),
         ("wake-up", "Compact brain snapshot for agent session bootstrap"),
-        ("neuron", "Create a new neuron (--template for structured formats)"),
-        ("lobe", "Create a new lobe (knowledge region)"),
+        ("companion", "Opt brains into embedded companion playbooks"),
         ("dream", "Regenerate maps, auto-fix safe issues, and validate links"),
         ("branch", "Show, switch, or create a git branch in the brain"),
         ("push", "Commit and push brain changes to the current branch"),
         ("pull", "Pull remote changes for the current branch"),
         ("mri", "Generate interactive brain visualization and open in browser"),
-        ("install-skills", "Install the /kluris skill for your AI agents"),
-        ("uninstall-skills", "Remove the /kluris skill from AI agent directories"),
         ("remove", "Unregister a brain (keeps files on disk)"),
         ("templates", "List available neuron templates for the current brain"),
         ("doctor", "Check prerequisites and refresh installed agent skills (--no-refresh to skip)"),

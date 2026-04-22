@@ -1544,7 +1544,7 @@ function renderLobes() {{
   if (!lobeInfo.size) {{
     const empty = document.createElement('div');
     empty.className = 'details-empty';
-    empty.textContent = 'No lobes in this brain yet. Run kluris lobe to create one.';
+    empty.textContent = 'No lobes in this brain yet. Ask your agent to create one, then run kluris dream.';
     lobesListEl.appendChild(empty);
     return;
   }}

@@ -4,6 +4,7 @@ import json
 from click.testing import CliRunner
 from kluris.cli import cli
 from conftest import create_test_brain
+from kluris.core.config import read_brain_config, write_brain_config
 
 
 def test_doctor_all_pass(tmp_path, monkeypatch):
@@ -22,11 +23,12 @@ def test_doctor_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert len(data["checks"]) >= 4  # git, python, config_dir, skills
+    assert "companions" in data
 
 
 def test_doctor_refreshes_installed_skills(tmp_path, monkeypatch):
     """`kluris doctor` re-runs _do_install so post-upgrade users get fresh
-    SKILL.md files without having to remember `kluris install-skills`."""
+    SKILL.md files without needing a separate skill install command."""
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -77,3 +79,44 @@ def test_doctor_json_includes_skills_check(tmp_path, monkeypatch):
     assert skill_check is not None
     assert skill_check["passed"] is True
     assert "1 brain" in skill_check["detail"]
+
+
+def test_doctor_refreshes_referenced_companion(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+    brain = tmp_path / "my-brain"
+    cfg = read_brain_config(brain)
+    cfg.companions = ["specmint-core"]
+    write_brain_config(cfg, brain)
+
+    companion_dir = tmp_path / ".kluris" / "companions" / "specmint-core"
+    assert not companion_dir.exists()
+
+    result = runner.invoke(cli, ["doctor", "--json"])
+
+    data = json.loads(result.output)
+    assert result.exit_code == 0, result.output
+    assert (companion_dir / "SKILL.md").exists()
+    assert data["companions"] == [{"name": "specmint-core", "refreshed": True}]
+
+
+def test_doctor_no_refresh_skips_companion_refresh(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+    brain = tmp_path / "my-brain"
+    cfg = read_brain_config(brain)
+    cfg.companions = ["specmint-core"]
+    write_brain_config(cfg, brain)
+
+    result = runner.invoke(cli, ["doctor", "--no-refresh", "--json"])
+
+    data = json.loads(result.output)
+    assert result.exit_code == 0, result.output
+    assert data["companions"] == []
+    assert not (tmp_path / ".kluris" / "companions" / "specmint-core").exists()

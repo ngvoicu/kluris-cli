@@ -47,169 +47,108 @@ You are the SME for the **{brain_name}** brain. The brain lives at `{brain_path}
 Description: {brain_description}
 
 This skill is bound to exactly one brain. Do not look for other brains. Do not invent brain switching logic.{brain_flag_hint}
-
+{specmint_block}
 ## Bootstrap
 
 On the FIRST `/{skill_name}` call of the session, run `kluris wake-up{brain_flag_hint_inline} --json` via
-your Bash tool before doing anything else. The output is your index for
-the rest of the session:
+your Bash tool before doing anything else. Cache that wake-up output and trust
+it for the rest of the session; do not re-run wake-up on every turn.
 
-- `name`, `path`, `description`
-- `type`: the brain's architecture type (e.g. `product-group`, `personal`,
-  `product`, `research`, `blank`). Tells you what KIND of brain this is.
-- `type_structure`: a dict mapping each scaffold lobe name to its purpose
-  (e.g. `{{"projects": "Per-project sub-folders...", "infrastructure": "Hosting, CI/CD..."}}`).
-  This is a HINT only — it covers the lobes the brain was scaffolded with,
-  but the brain may have custom lobes or a custom structure that
-  `type_structure` doesn't know about. Always prefer `lobes[].description`
-  (below) as the authoritative source for what each lobe is for.
-- `brain_md`: the raw body of `brain.md` (lobe descriptions + glossary link).
-  Read it FROM THE SNAPSHOT. Do NOT open `brain.md` separately.
-- `lobes[]` with `name`, `description` (from map.md), and neuron counts per
-  top-level lobe. Use `description` to understand what each lobe is actually
-  for — this is authoritative for ALL lobes, including custom ones added after
-  brain creation that are not in `type_structure`.
-- `recent[]`: the 5 most recently updated neurons (use these as your starting
-  points for "what's hot" questions)
-- `total_neurons`
-- `glossary[]`: every term in the brain's glossary as `{term, definition}`.
-  When the user uses a project-specific term, look it up HERE before asking.
-  Do NOT open `glossary.md` separately unless you need to edit it.
-- `deprecation[]`: list of deprecation warnings with `kind`, `file`, and
-  `target`/`source`. Before citing a neuron, check whether it appears in this
-  list. If a neuron you want to quote is marked `status: deprecated`, prefer
-  its `replaced_by` target instead -- and explicitly tell the user the old
-  decision was superseded.
-- `deprecation_count`: convenience summary.
+The wake-up output is your compact brain index:
+- `brain_md`: top-level lobe descriptions from `brain.md`
+- `lobes[]`: lobe names, descriptions, and neuron counts
+- `recent[]`: recently updated neurons
+- `glossary[]`: domain terms
+- `deprecation[]`: stale/superseded knowledge warnings
 
-Cache the wake-up output mentally for the rest of the session. Do NOT re-run
-`kluris wake-up{brain_flag_hint_inline}` on every subsequent `/{skill_name}` call -- trust the snapshot
-you already loaded.
+Re-run `kluris wake-up{brain_flag_hint_inline} --json` only after the brain changes:
+`/{skill_name} remember`, `/{skill_name} learn`, `kluris dream{brain_flag_hint_inline}`,
+`kluris push{brain_flag_hint_inline}`, or direct file edits the user tells you about.
 
-Re-run `kluris wake-up{brain_flag_hint_inline} --json` only when the brain actually changes during
-the session. Concretely, refresh the snapshot after any of these:
-`/{skill_name} remember`, `/{skill_name} learn`, `kluris neuron{brain_flag_hint_inline}`, `kluris lobe{brain_flag_hint_inline}`,
-`kluris dream{brain_flag_hint_inline}`, or `kluris push{brain_flag_hint_inline}`. If the user edits files directly and
-tells you about it, refresh then too.
-
-If `kluris wake-up{brain_flag_hint_inline}` fails (no brain registered, CLI not installed), report
-the failure plainly and ask the user to run `kluris doctor`.
+If the `kluris` CLI is unavailable, the brain is still a plain filesystem tree
+at `{brain_path}`. Read `brain.md`, `glossary.md`, and each relevant lobe's
+`map.md` directly with your Read tool. This is slower than the indexed CLI
+snapshot but fully functional. If the CLI should be installed but is broken,
+tell the user to run `kluris doctor`.
 
 ## Query first -- never guess
 
-Before answering any question about decisions, conventions, architecture,
-deployments, or past work, you MUST check the brain first. Never guess from
-training data -- the brain is the source of truth for team knowledge.
+Before answering questions about decisions, conventions, architecture,
+deployments, APIs, or past work, check the brain first. Never guess from
+training data and pretend it came from the brain.
 
-- When the user asks "what do we know about X", "how does Y work", "why did
-  we choose Z": navigate the brain FIRST, then answer from what you find.
-  Start with the wake-up snapshot you already loaded (`brain_md` body + lobes
-  + recent neurons + glossary). That gives you the full top-level index
-  without any extra reads. Then pick a relevant lobe, read its `map.md`,
-  and drill into the specific neuron files you need.
-- If you check and nothing is documented, say so explicitly: "Nothing documented
-  about X yet." Do NOT fabricate brain content. Do NOT fill gaps with training
-  knowledge and pretend it came from the brain.
-- If you are unsure about a fact, a decision, or a convention: say "let me
-  check the brain" and actually check. Wrong is worse than slow.
-- Before citing any neuron, check whether it appears in the wake-up
-  `deprecation[]` list. If the neuron is deprecated, prefer its `replaced_by`
-  target and explicitly note that the old decision was superseded.
+Start with the cached wake-up snapshot. For targeted lookup, prefer
+`kluris search "<query>"{brain_flag_hint_inline} --json`; it ranks neurons,
+glossary terms, and brain.md in one pass. Use `--lobe <name>`, `--tag <tag>`,
+or `--limit 20` when useful. If search finds nothing, navigate manually:
+`brain_md` + `lobes[]` -> relevant `map.md` -> specific neuron files.
 
-## You are the team's subject matter expert
+If nothing is documented, say so plainly: "Nothing documented about X yet."
+If a result is deprecated, prefer its replacement and mention that the old
+knowledge was superseded.
+
+### When NOT to check the brain
+
+You may skip the brain lookup for clearly trivial or unrelated work:
+- typo fixes, comment-only edits, import ordering, or pure formatting
+- files outside the brain's domain, including generated artifacts, vendored
+  third-party code, lockfiles, and build output
+- syntax-only refactors such as renaming a local variable or extracting a
+  constant when no domain decision is involved
+
+This is an exception list, not permission to ignore the brain for real design
+or implementation choices.
+
+## Brain vs current project
 
 The brain is a SEPARATE git repo at the path shown above. The current
 directory is the PROJECT you're working in.
-- ANALYZE the current project
-- WRITE to the brain directory
+- Analyze the current project
+- Write durable knowledge to the brain directory
 - Never create brain.md, map.md, or kluris.yml in the current project
 - NEVER write, create, or modify any brain file without EXPLICIT human approval first. STOP and ask before every write -- no exceptions.
 
 ## How the brain is structured
 
-Brains have different structures depending on their type. The wake-up
-snapshot tells you the brain's `type` (e.g. `product-group`, `personal`,
-`product`, `research`) and `type_structure` (what each lobe is FOR).
-Use `lobes[]` to discover what lobes actually exist and `type_structure`
-to understand each lobe's intended purpose when routing content.
+Lobes are directories, neurons are files inside them. Every neuron (`.md`,
+`.yml`, or `.yaml`) must live inside a lobe directory. The brain root contains
+only auto-managed/support files such as `brain.md`, `glossary.md`, `README.md`,
+`kluris.yml`, and `.gitignore`.
 
-**CRITICAL: Lobes are directories, neurons are files inside them.** Every
-neuron (`.md` or `.yml`) MUST live inside a lobe directory. NEVER create
-files directly at the brain root. The only root-level files are the
-auto-managed `brain.md`, `glossary.md`, `README.md`, and `.gitignore`.
-If you want to write about "infrastructure" and an `infrastructure/` lobe
-exists, the content goes INSIDE that lobe as a neuron -- not as a flat
-`infrastructure.md` at the root.
+Use the wake-up snapshot as your top-level index. Pick relevant lobes from
+`brain_md` and `lobes[]`, then read only the `map.md` files and neurons you
+need. Max 3 lobes and max 10 neurons per query unless the user asks for a deep
+audit. Follow `related:` links in frontmatter when they clarify context.
 
-The brain can be large. NEVER read it all at once. The wake-up snapshot is
-your pre-loaded top-level index:
-- `type` + `type_structure` — brain architecture and lobe purposes
-- `brain_md` (from the snapshot) lists every lobe with its one-line description
-- `lobes[]` (from the snapshot) has neuron counts per top-level lobe
-- `glossary[]` (from the snapshot) defines domain-specific terms
-- Each lobe directory has a `map.md` on disk -- lists its neurons and sub-lobes
-- Sub-lobes have their own `map.md`, and so on
-
-Navigate top-down from the snapshot: pick relevant lobes using `brain_md` +
-`lobes[]` → read those lobes' `map.md` files → drill into the neurons you
-actually need. Max 3 lobes, max 10 neurons per query. Follow `related:` links
-in neuron frontmatter to find connected knowledge.
-
-The wake-up snapshot already contains `brain.md` and the full glossary, so
-do NOT re-Read those two files unless the snapshot is missing them or you
-need to edit them. `map.md` files are still on-demand reads -- they're
-auto-generated per-lobe and only loaded when you're drilling into that lobe.
+The wake-up snapshot already includes `brain.md` and the glossary, so do not
+read those files separately unless the snapshot is missing them or you need to
+edit them.
 
 ## Intent detection
 
 Understand the user's intent from their message:
 
-**Search** -- "`/{skill_name} search X`", "what do we know about X", "find info about Y"
-FIRST PREFERENCE: run `kluris search "<query>"{brain_flag_hint_inline} --json`
-via your Bash tool. That command walks every neuron + glossary entry +
-brain.md in one pass and returns the top 10 ranked results as JSON with
-fields `file`, `title`, `matched_fields`, `snippet`, `score`, `deprecated`.
-For a two-word query use the full phrase or just the most distinctive word.
-Read the `snippet` first; only open the neuron file if the snippet is
-insufficient or you need surrounding context.
-Use `--lobe <name>` to scope the search to a single lobe (e.g.
-`kluris search "oauth" --lobe projects{brain_flag_hint_inline}`). Use
-`--tag <tag>` to scope by frontmatter tag. Use `--limit 20` when 10 is too
-few. Results with `deprecated: true` point at superseded neurons — prefer
-their `replaced_by` target and tell the user the old knowledge is stale.
-FALLBACK: if `kluris search` returns no results (the query is too broad or
-the brain uses different terminology), navigate the wake-up snapshot's
-`brain_md` + `lobes[]` to pick a relevant lobe, read its `map.md`, and
-drill into specific neurons.
-Read-only -- never write during a search.
-If nothing is documented: "Nothing documented about X yet." Never fabricate.
+**Search** -- "`/{skill_name} search X`", "what do we know about X", "find info about Y".
+Run `kluris search "<query>"{brain_flag_hint_inline} --json`, read snippets first,
+then open specific neurons only when needed. Read-only: never write during
+search.
 
-**Think** -- "implement X", "work on Y using brain knowledge"
-Before touching code, follow the reading protocol to load relevant context.
-Quote the specific neuron paths you're applying (e.g. "Based on
-knowledge/use-raw-sql.md..."). If no brain knowledge is relevant to the task,
-say "No brain knowledge applies here" before proceeding.
-If code contradicts a documented decision, STOP and show the conflict: what the
-code does vs what the neuron says. Ask the human how to proceed -- update the
-code, update the neuron, or proceed anyway with a note.
+**Think** -- "implement X", "work on Y using brain knowledge".
+Load relevant brain context before touching code. Quote the neuron paths you
+are applying. If no brain knowledge applies, say that before proceeding. If code
+contradicts documented knowledge, stop and show the conflict before changing
+anything.
 
-**Learn from project** -- "learn the endpoints", "document the schema"
-Analyze the CURRENT PROJECT, write to the BRAIN.
-Never clobber an existing neuron by writing a fresh file on top of it. If
-the target neuron already exists, either (a) propose updating it in place
-(Read current → show diff → Write merged), or (b) propose a new neuron
-under a different filename. Both paths require the human's explicit approval
-before writing. Never silently overwrite.
+**Learn from project** -- "learn the endpoints", "document the schema".
+Analyze the current project, then collaboratively write to the brain. Show the
+full proposed neuron content, target lobe, and filename. Apply the approval
+protocol before writing.
 
-Yaml neurons -- when the user asks for OpenAPI, JSON Schema, or any other
-structured machine-readable spec, write a `.yml` / `.yaml` file in the
-matching lobe directory. Kluris will index it as a first-class neuron
-alongside markdown, BUT only if it declares itself via a `#---` hash
-frontmatter block at the very top of the file. Without the block, the
-file is invisible to every kluris scanner. Template (all fields except
-`updated` are optional for yaml neurons):
+Yaml neurons -- for OpenAPI, JSON Schema, or other machine-readable specs,
+write a `.yml` or `.yaml` file in the matching lobe. It is indexed only when it
+has a `#---` hash frontmatter block at the top. Example:
 
-```
+```yaml
 #---
 # parent: ./map.md
 # related: [./auth.md]
@@ -221,122 +160,48 @@ openapi: 3.1.0
 info:
   title: Payments API
   version: 1.0.0
-paths: {{}}
+paths: []
 ```
 
-Markdown neurons can link to yaml neurons via inline
-`[API spec](./openapi.yml)` syntax just like `.md` targets. Yaml neurons
-show on the MRI canvas in a distinct periwinkle color so they read as
-"structured spec" at a glance.
+Markdown neurons can link to yaml neurons with normal markdown links such as
+`[API spec](./openapi.yml)`.
 
-The brain is sacred. Writing to it is a collaborative process between you
-and the human. You are partners building shared knowledge together.
+**Remember** -- "remember we chose X", "store that we decided Y".
+Find the right lobe, check for existing neurons, show a full preview, then use
+the approval protocol.
 
-Step 1 -- Discover (silent). Analyze the project, build an internal list of topics.
-Step 2 -- Read brain.md to understand which lobes exist and what each is for.
-Step 3 -- Summary. "I found N topics. Based on this brain's lobes, here's where
-I'd put them. Let's walk through one at a time."
-Step 4 -- Wizard (one topic at a time, this is the core loop):
-  a. Show the FULL content you intend to write -- not a summary, the actual
-     neuron with all sections, frontmatter, and links. The human must see
-     exactly what will be written to judge correctness.
-  b. State the target lobe and neuron name -- pick based on lobe descriptions.
-  c. If you think part of this topic also belongs in another lobe or neuron,
-     suggest it: "This also touches [other lobe] -- want a separate neuron
-     there with a link?" Let the human decide.
-  d. Ask: "Is this correct? Want to change anything?"
-  e. The human may approve, edit, add context, or skip
-  f. Incorporate feedback, show the updated version if changed
-  g. STOP. NEVER write until the human explicitly says yes. Silence or "looks good, next" about the summary is NOT approval to write.
-  h. Move to the next topic
-Step 5 -- Recap. What was written, what was skipped. Remind: `kluris dream{brain_flag_hint_inline}`
-to regenerate maps. If the brain has git (shown above), also `kluris push{brain_flag_hint_inline}`.
-
-Lobe routing -- use the brain's `type_structure` (from wake-up) to understand
-what each lobe is FOR, then actively evaluate every topic against the full
-lobe set. This is architecture-aware routing, not just name-matching.
-
-When learning a single project, default to `projects/<name>/` for
-project-specific content. But for each topic, ask yourself: does this belong
-in another lobe based on its PURPOSE? Consult `type_structure` to decide.
-Examples for a `product-group` brain:
-- Docker build pipeline → `infrastructure/` (it's hosting/CI/CD)
-- "We chose raw SQL over JPA" → `knowledge/` (it's a cross-cutting decision)
-- API endpoint details → `projects/<name>/` (project-specific)
-- Shared environment variables → `infrastructure/` (cross-cutting infra)
-
-When routing cross-cutting content to another lobe, add a `related:` synapse
-back to the project neuron so both sides are linked. Example: move production
-environment details to `infrastructure/production-environment.md` and add a
-`related:` link from the project overview to that neuron.
-
-If a topic doesn't fit any existing lobe, propose creating a new lobe or
-sub-lobe: "This doesn't fit the current lobes. Want me to create a
-`monitoring/` lobe for observability content?" Lobe creation is always a
-discussion -- the human decides the brain's architecture.
-
-If unsure where something goes, ask: "This could go in [lobe A] since it's
-cross-cutting, or stay in projects/<name>/ since it's specific. Which do
-you prefer?"
-
-Read existing neurons in target lobes first -- update or extend, don't create
-duplicates.
-Domain terms and acronyms discovered → include as a wizard step: show the
-proposed glossary additions, ask for approval before appending to `glossary.md`.
-Glossary format -- one term per line. Match whatever format the existing
-glossary.md already uses. Kluris accepts two formats:
-  1. Markdown table row: `| Term | Definition in one sentence. |`
-     (This is what `kluris create` scaffolds. Append rows under the existing
-     `|------|` separator.)
-  2. Bold-dash line: `**Term** -- Definition in one sentence.`
-Keep definitions under 20 words either way.
-
-**Remember** -- "remember we chose X", "store that we decided Y"
-Write a specific piece of knowledge to the brain.
-1. Find the right lobe, check for existing neurons.
-2. Show a preview of the FULL content you'd write (not a summary).
-3. STOP. Ask: "Is this correct? Want to change anything?"
-4. NEVER write until the human explicitly approves. Silence is not approval.
-
-**Create neuron** -- "create a decision record about X"
+**Create neuron** -- "create a decision record about X".
 Templates: decision (Context, Decision, Rationale, Alternatives, Consequences),
 incident (Summary, Timeline, Root cause, Impact, Resolution, Lessons learned),
 runbook (Purpose, Prerequisites, Steps, Rollback, Contacts).
-Walk through the template section by section -- do NOT pre-fill and dump:
-  a. Ask the human about the FIRST section (e.g. Context). Wait for their input.
-  b. Show what you'd write for that section. Ask: "Good? Want to change anything?"
-  c. Move to the NEXT section only after approval.
-  d. After all sections: show the complete neuron, ask for final approval.
-  e. NEVER write the file until the human approves the final version.
+Walk through the template section by section -- do NOT pre-fill and dump. Show
+each section, incorporate feedback, then ask for final approval before writing.
 
-**Create lobe** -- "create a new section for monitoring"
-Create directory in brain. Remind user to run `kluris dream{brain_flag_hint_inline}`.
+**Create lobe** -- "create a new section for monitoring".
+Discuss the lobe name and purpose with the user, then create the directory only
+after approval. Remind the user to run `kluris dream{brain_flag_hint_inline}`.
 
 ## Writing rules
 
-- NEVER create `.md` or `.yml` files directly at the brain root. All neurons
-  go inside lobe directories. The brain root contains only `brain.md`,
-  `glossary.md`, `README.md`, `kluris.yml`, and `.gitignore` — nothing else.
-- Frontmatter on every neuron: parent, related, tags, created, updated
-- `parent:` is ALWAYS `./map.md` -- it points at the neuron's own lobe's
-  `map.md`, which sits in the same directory as the neuron itself. Never
-  write an absolute brain path like `projects/btb-core` here.
-- `related:` entries are paths relative to THIS NEURON'S directory. Use
-  `../` to climb up to the brain root before descending into another lobe.
-- Bidirectional synapses: if A links to B, add reverse link in B
-- Focus on decisions and rationale, not just descriptions
-- Do NOT edit map.md or brain.md -- auto-generated by `kluris dream{brain_flag_hint_inline}`
-- Do NOT clobber an existing neuron by writing a fresh file on top of it.
-  If the target file already exists, read it, show the human a diff of
-  your proposed change, and write the merged content. Never silently
-  overwrite.
-- After writing, remind user to run `kluris dream{brain_flag_hint_inline}` (and `kluris push{brain_flag_hint_inline}` if brain has git)
-- Inline links: before writing a neuron, search the brain for neurons that
-  relate to key terms in your content. Read their map.md entries to check for
-  matches. When you find one, use a markdown link instead of plain text.
-  Example: a project neuron mentions "SIT" -- search infrastructure/ for
-  environment-related neurons, find `environments.md` defines SIT, write
-  `[SIT](../../infrastructure/environments.md)`. More links = more useful brain.
+### Approval protocol
+
+For Learn, Remember, and Create flows:
+1. Show the FULL content you intend to write, not a summary.
+2. State the target lobe and neuron filename.
+3. Ask: "Is this correct? Want to change anything?"
+4. STOP. NEVER write until the human explicitly approves. Silence is not approval.
+5. After writing, remind the user to run `kluris dream{brain_flag_hint_inline}` and, if the brain uses git, `kluris push{brain_flag_hint_inline}`.
+
+Other writing rules:
+- Never create `.md`, `.yml`, or `.yaml` neurons directly at the brain root.
+- Frontmatter on every neuron: `parent`, `related`, `tags`, `created`, `updated`.
+- `parent:` is always `./map.md`.
+- `related:` paths are relative to the current neuron's directory.
+- Bidirectional synapses: if A links to B, add the reverse link in B.
+- Focus on decisions and rationale, not just descriptions.
+- Do not edit `map.md` or `brain.md`; they are auto-generated by `kluris dream{brain_flag_hint_inline}`.
+- Do not clobber existing neurons. Read the current file, show the proposed
+  diff or merged content, and write only after explicit approval.
 
 Frontmatter example for a neuron at `projects/btb-core/auth-flow.md`:
 ```yaml
@@ -354,17 +219,18 @@ updated: 2026-04-06
 Body content here.
 ```
 
-## CLI commands (for mechanical operations)
+## CLI commands
 
 These are terminal commands, not skill actions:
-- `kluris search "<query>"{brain_flag_hint_inline} --json` -- ranked search across neurons, glossary, brain.md (the FIRST thing to run for a "what do we know about X" question)
-- `kluris wake-up{brain_flag_hint_inline} --json` -- compact brain snapshot (already cached from the Bootstrap step)
-- `kluris dream{brain_flag_hint_inline}` -- regenerate maps, auto-fix safe issues, validate remaining links
-- `kluris branch{brain_flag_hint_inline}` -- show, switch, or create a git branch
-- `kluris push{brain_flag_hint_inline}` -- commit and push to the current branch
-- `kluris pull{brain_flag_hint_inline}` -- pull remote changes for the current branch
-- `kluris mri{brain_flag_hint_inline}` -- run preflight fixes, then generate interactive visualization
-- `kluris templates` -- list neuron templates
+- `kluris search "<query>"{brain_flag_hint_inline} --json` -- ranked search across neurons, glossary, and brain.md
+- `kluris wake-up{brain_flag_hint_inline} --json` -- compact brain snapshot
+- `kluris dream{brain_flag_hint_inline}` -- regenerate maps, auto-fix safe issues, and validate links
+- `kluris status{brain_flag_hint_inline}` -- show brain tree, recent changes, and counts
+- `kluris branch{brain_flag_hint_inline}` -- show, switch, or create a branch
+- `kluris push{brain_flag_hint_inline}` -- commit and push brain changes
+- `kluris pull{brain_flag_hint_inline}` -- pull remote changes
+- `kluris mri{brain_flag_hint_inline}` -- generate interactive visualization
+- `kluris templates` -- list available neuron templates
 """
 
 
@@ -372,6 +238,54 @@ _FLAG_HINT_BLOCK = """
 
 
 When invoking the kluris CLI from this skill, you MUST pass `--brain {brain_name}` on every call (e.g. `kluris wake-up --brain {brain_name} --json`). The skill is named `{skill_name}` precisely because there are multiple brains registered on this machine."""
+
+
+_COMPANION_ORDER = ("specmint-core", "specmint-tdd")
+
+
+def _build_specmint_block(
+    companions: list[str] | tuple[str, ...] | None,
+    companion_home: str | None,
+) -> str:
+    """Render the optional specmint companion block."""
+    selected = [name for name in _COMPANION_ORDER if name in set(companions or [])]
+    if not selected:
+        return ""
+    if not companion_home:
+        raise ValueError("companion_home is required when rendering companion blocks")
+
+    home = _posix_path(companion_home)
+    core_path = f"{home}/specmint-core/SKILL.md"
+    tdd_path = f"{home}/specmint-tdd/SKILL.md"
+
+    if selected == ["specmint-core", "specmint-tdd"]:
+        routing = (
+            f"- TDD-heavy work -> read `{tdd_path}`\n"
+            f"- Other multi-step work -> read `{core_path}`"
+        )
+    elif selected == ["specmint-core"]:
+        routing = (
+            f"- Multi-step work -> read `{core_path}`\n"
+            "- If the user explicitly wants strict TDD, suggest "
+            "`kluris companion add specmint-tdd` for this brain."
+        )
+    else:
+        routing = (
+            f"- TDD-heavy or spec-worthy work -> read `{tdd_path}`\n"
+            "- For non-TDD spec planning, this playbook is still usable; "
+            "keep the TDD gates only when they match the user's intent."
+        )
+
+    return (
+        "\n## Spec-worthy work first\n\n"
+        "When the user proposes multi-step work (new feature, refactor across "
+        "files, migration, new subsystem), pause before coding and follow the "
+        "embedded companion playbook:\n\n"
+        f"{routing}\n\n"
+        "Kluris ships these playbooks embedded. Do not direct the user to "
+        "install a separate specmint skill or package.\n\n"
+        "Small single-file edits do not need a spec; proceed directly.\n"
+    )
 
 
 def _posix_path(p: str) -> str:
@@ -400,6 +314,8 @@ def _build_substitutions(
     brain_path: str,
     has_git: bool,
     brain_description: str,
+    companions: list[str] | None = None,
+    companion_home: str | None = None,
 ) -> dict[str, str]:
     """Compute the placeholder substitutions for SKILL_BODY and SKILL_DESCRIPTION."""
     is_per_brain = skill_name != "kluris"
@@ -417,6 +333,7 @@ def _build_substitutions(
         "{brain_description}": brain_description or f"{brain_name} knowledge base",
         "{brain_flag_hint}": flag_hint,
         "{brain_flag_hint_inline}": flag_hint_inline,
+        "{specmint_block}": _build_specmint_block(companions, companion_home),
     }
 
 
@@ -435,6 +352,8 @@ def render_skill(
     brain_path: str,
     has_git: bool,
     brain_description: str,
+    companions: list[str] | None = None,
+    companion_home: str | None = None,
 ) -> str:
     """Render a SKILL.md content for a single brain.
 
@@ -449,6 +368,8 @@ def render_skill(
         brain_path=brain_path,
         has_git=has_git,
         brain_description=brain_description,
+        companions=companions,
+        companion_home=companion_home,
     )
     body = _apply_substitutions(SKILL_BODY, subs)
     desc = _apply_substitutions(SKILL_DESCRIPTION, subs).replace('"', '\\"')
@@ -468,6 +389,8 @@ def _render_workflow(
     brain_path: str,
     has_git: bool,
     brain_description: str,
+    companions: list[str] | None = None,
+    companion_home: str | None = None,
 ) -> str:
     """Render a Windsurf workflow .md file (for /<skill_name> manual invocation)."""
     subs = _build_substitutions(
@@ -476,6 +399,8 @@ def _render_workflow(
         brain_path=brain_path,
         has_git=has_git,
         brain_description=brain_description,
+        companions=companions,
+        companion_home=companion_home,
     )
     body = _apply_substitutions(SKILL_BODY, subs)
     desc = _apply_substitutions(SKILL_DESCRIPTION, subs)[:200].replace('"', '\\"')
@@ -496,6 +421,8 @@ def render_commands(
     brain_path: str,
     has_git: bool,
     brain_description: str,
+    companions: list[str] | None = None,
+    companion_home: str | None = None,
     target_dir: Path | None = None,
 ) -> list[Path]:
     """Install one SKILL.md for the given brain into ``output_dir/skill_name``.
@@ -512,6 +439,8 @@ def render_commands(
         brain_path=brain_path,
         has_git=has_git,
         brain_description=brain_description,
+        companions=companions,
+        companion_home=companion_home,
     )
     path = skill_dir / "SKILL.md"
     path.write_text(content, encoding="utf-8")
@@ -526,6 +455,8 @@ def install_workflow(
     brain_path: str,
     has_git: bool,
     brain_description: str,
+    companions: list[str] | None = None,
+    companion_home: str | None = None,
 ) -> Path:
     """Install a Windsurf workflow .md file named ``<skill_name>.md``."""
     workflow_dir.mkdir(parents=True, exist_ok=True)
@@ -537,6 +468,8 @@ def install_workflow(
             brain_path=brain_path,
             has_git=has_git,
             brain_description=brain_description,
+            companions=companions,
+            companion_home=companion_home,
         ),
         encoding="utf-8",
     )

@@ -1,6 +1,4 @@
-"""Tests for kluris install-skills command."""
-
-import json
+"""Tests for kluris skill installation through lifecycle commands."""
 
 from click.testing import CliRunner
 
@@ -72,8 +70,8 @@ def test_install_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "my-brain", tmp_path)
-    result1 = runner.invoke(cli, ["install-skills"])
-    result2 = runner.invoke(cli, ["install-skills"])
+    result1 = runner.invoke(cli, ["doctor"])
+    result2 = runner.invoke(cli, ["doctor"])
     assert result1.exit_code == 0
     assert result2.exit_code == 0
 
@@ -89,46 +87,9 @@ def test_install_cleans_old_commands(tmp_path, monkeypatch):
     old_cmd_dir.mkdir(parents=True, exist_ok=True)
     stale = old_cmd_dir / "kluris.md"
     stale.write_text("stale", encoding="utf-8")
-    # Install skills should clean it
-    runner.invoke(cli, ["install-skills"])
+    # Doctor refresh should clean it through _do_install.
+    runner.invoke(cli, ["doctor"])
     assert not stale.exists()
-
-
-def test_install_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    runner = CliRunner()
-    create_test_brain(runner, "my-brain", tmp_path)
-    result = runner.invoke(cli, ["install-skills", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert data["agents"] == 8
-    assert data["total_files"] > 0
-
-
-def test_uninstall_skills(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    runner = CliRunner()
-    create_test_brain(runner, "my-brain", tmp_path)
-    assert (tmp_path / ".claude" / "skills" / "kluris" / "SKILL.md").exists()
-    result = runner.invoke(cli, ["uninstall-skills"])
-    assert result.exit_code == 0
-    assert not (tmp_path / ".claude" / "skills" / "kluris").exists()
-
-
-def test_uninstall_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    runner = CliRunner()
-    create_test_brain(runner, "my-brain", tmp_path)
-    result = runner.invoke(cli, ["uninstall-skills", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert data["removed"] > 0
 
 
 # --- Per-brain install behavior (multi-brain refactor) ---
@@ -287,8 +248,8 @@ def test_install_partial_failure_keeps_old_skill(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli_module, "render_commands", flaky_render)
 
-    # Trigger a re-install -- the first destination's staging will fail.
-    runner.invoke(cli, ["install-skills"])
+    # Trigger a refresh -- the first destination's staging will fail.
+    runner.invoke(cli, ["doctor"])
 
     # The original skill must still exist (sweep didn't run for the failed dest).
     # Pick any destination -- at least one must still have the old SKILL.md

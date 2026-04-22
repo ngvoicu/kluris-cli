@@ -11,7 +11,7 @@ Kluris turns AI agents into team subject matter experts by giving them shared, h
 ```bash
 source .venv/bin/activate        # or: pipx install -e .
 pip install -e ".[dev]"          # dev install with pytest
-pytest tests/ -v                 # run all tests (473 tests)
+pytest tests/ -v                 # run all tests (487 tests)
 pytest tests/ --cov=kluris -q    # with coverage (90%+)
 pytest tests/test_create.py -v   # single test file
 ```
@@ -20,7 +20,7 @@ pytest tests/test_create.py -v   # single test file
 
 ```
 src/kluris/
-  cli.py              # Click CLI -- all 20 commands in one file (incl. search, wake-up, branch, pull, register)
+  cli.py              # Click CLI -- all 17 commands in one file (incl. search, wake-up, branch, pull, register, companion)
   core/
     config.py          # Pydantic models (GlobalConfig, BrainConfig, BrainEntry)
     brain.py           # BRAIN_TYPES, NEURON_TEMPLATES, scaffold_brain(), validate_brain_name()
@@ -57,6 +57,9 @@ src/kluris/
 - **Sticky-selection tradeoff** -- `kluris use` was removed deliberately. Repeated commands in a terminal session each trigger the picker (or take `--brain`). The compensating affordances are `KLURIS_NO_PROMPT`, `--brain all`, the integer-pick UX, and the per-brain slash command names that make ambiguity disappear in agent workflows.
 - **Deprecation frontmatter is opt-in** -- neurons may set `status: deprecated` + `deprecated_at` + `replaced_by`. Absence of `status` means active. `linker.detect_deprecation_issues()` surfaces 4 kinds of warnings (`active_links_to_deprecated`, `deprecated_without_replacement`, `replaced_by_missing`, `replaced_by_not_active`) through `kluris dream`; they are non-blocking (do not break `healthy`). `kluris wake-up` exposes a `deprecation_count` summary.
 - **KlurisGroup detects --json via ctx args** -- scans `ctx.protected_args + ctx.args` in addition to `sys.argv` so JSON error output works under CliRunner (tests) as well as shell.
+- **Companions are embedded, not installed as separate skills** -- specmint-core/tdd ship inside the kluris package and are copied to `~/.kluris/companions/<name>/SKILL.md` on opt-in. Layer-1 SKILL.md references their paths; they are NOT auto-loaded as agent skills.
+- **BrainConfig.companions** -- per-brain opt-in list; missing from older kluris.yml defaults to `[]`.
+- **Companion refresh on doctor** -- `kluris doctor` calls `companions.refresh()` for the union of referenced and installed known companions so pipx-upgraded kluris auto-updates bundled playbooks without version comparison.
 
 ## Config Paths
 
@@ -96,13 +99,13 @@ The skill body contains six load-bearing sections (in order):
 
 - **0 brains** → resolver errors with a hint to run `kluris create`.
 - **1 brain** → auto-resolves; no `--brain` flag needed; skill installed as `kluris`.
-- **2+ brains + TTY** → interactive picker `[1] foo [2] bar [3] all` for fan-out commands (dream/push/pull/status/mri); `[1] foo [2] bar` (no `all`) for single-brain commands (wake-up/neuron/lobe).
+- **2+ brains + TTY** → interactive picker `[1] foo [2] bar [3] all` for fan-out commands (dream/push/pull/status/mri/companion add/remove); `[1] foo [2] bar` (no `all`) for single-brain commands (wake-up/search).
 - **2+ brains + non-interactive** (`--json`, no TTY, or `KLURIS_NO_PROMPT=1`) → resolver errors with the available brains listed and a hint to pass `--brain NAME` or `--brain all`.
 - **Stale brain paths** → annotated `(missing)` in the picker; resolver raises `ClickException` if the user actually tries to use one.
 
-## CLI Commands (20)
+## CLI Commands (17)
 
-create, clone, register, list, status, search, wake-up, neuron, lobe, dream, branch, push, pull, mri, templates, install-skills, uninstall-skills, remove, doctor, help
+create, clone, register, list, status, search, wake-up, companion, dream, branch, push, pull, mri, templates, remove, doctor, help
 
 - **`register` (v2.9.0)** -- register a brain already on disk (in-place, no copy) or extract a `.zip` and register the extracted tree. Sibling to `clone` for the non-git-remote path: on-disk directories, teammate-shared zips, restored backups. Identity comes from `brain.md` H1. Auto-detects `git remote get-url origin` to populate `repo` when the directory already has a git remote. Zip extraction defends against zip-slip by resolving each member and rejecting anything outside the extraction root. Cleanup contract: zip source -> rmtree(extracted dir) on any failure (we created it); directory source -> NEVER delete (the user's real brain lives there). Calls `_do_install()` on success so agent skills refresh to include the new brain.
 
@@ -128,7 +131,7 @@ create, clone, register, list, status, search, wake-up, neuron, lobe, dream, bra
 - **validate_brain_name()** -- lowercase alphanumeric + hyphens only; max 48 chars; rejects reserved word `all`
 - **git_init() sets user.email/name** -- for CI/test environments without global git config
 - **_do_install() per-destination atomic** -- stages new SKILL.md files into sibling temp dirs, sweeps `kluris*` artifacts only after successful staging, then atomically renames staged dirs into place. Partial-write failures leave the OLD skill in place for that destination.
-- **_run_dream_on_brain()** -- called after neuron/lobe creation to regenerate maps
+- **_run_dream_on_brain()** -- called after scaffold/import paths to regenerate maps
 - **KlurisGroup** -- custom Click group that outputs JSON errors when --json is in args (scans ctx args + sys.argv)
 - **All commands support --json** -- structured output for scripting
 - **Deprecation frontmatter** -- optional `status`, `deprecated_at`, `replaced_by` on neurons; dream reports warnings, doesn't break healthy
@@ -136,18 +139,18 @@ create, clone, register, list, status, search, wake-up, neuron, lobe, dream, bra
 - **search output schema** -- `{ok, brain, query, total, results[{file, title, matched_fields[], snippet, score, deprecated}]}`
 - **dream uses batch git** -- `_sync_brain_state` calls `is_git_repo()` once, then `git_log_file_dates()` once to fetch `(latest_by_path, created_by_path)`. For a 100-neuron brain that's exactly 2 subprocess calls (was ~200). Uses `%aI` (author date).
 - **mri output schema (unified)** -- always `{ok, brains: [{name, output_path, preflight_fixes, nodes, edges}, ...]}` regardless of brain count.
-- **`_do_install` callers** -- six commands rewrite installed SKILL.md files: `create`, `clone`, `register` (v2.9.0), `remove`, `install-skills`, and `doctor` (added in v2.2.2). `doctor` is the muscle-memory refresh path after `pipx upgrade kluris` -- it runs prerequisite checks AND `_do_install`. Pass `--no-refresh` to skip the refresh.
+- **`_do_install` callers** -- six command paths rewrite installed SKILL.md files: `create`, `clone`, `register`, `remove`, `companion add/remove`, and `doctor`. `doctor` is the muscle-memory refresh path after `pipx upgrade kluris` -- it runs prerequisite checks, refreshes companions, AND `_do_install`. Pass `--no-refresh` to skip the refresh.
 - **`_is_interactive()`** helper wraps `sys.stdin.isatty()` so tests can monkeypatch it (CliRunner replaces sys.stdin during invoke and `monkeypatch.setattr("sys.stdin.isatty", ...)` does not survive the swap)
 
 ## Migration from kluris ≤ 1.6.x
 
 - The legacy `default_brain` field is silently dropped at parse time inside `read_global_config`. Existing YAML loads cleanly; the next mutation rewrites it without that field.
 - The `kluris use <name>` command is gone. Pass `--brain NAME` per call (or pick interactively).
-- The first post-upgrade `_do_install` (triggered by any mutation: `install-skills`, `create`, `clone`, `remove`) sweeps every `kluris/` and `kluris-*/` artifact across all 8 agent dirs + the universal slot + the Windsurf workflow dir, then writes the new layout. Both `install-skills` and `uninstall-skills` already glob `kluris*` so they handle the old and new layouts in one pass.
+- The first post-upgrade `_do_install` (triggered by any mutation: `create`, `clone`, `register`, `remove`, `companion add/remove`, or `doctor`) sweeps every `kluris/` and `kluris-*/` artifact across all 8 agent dirs + the universal slot + the Windsurf workflow dir, then writes the new layout.
 
 ## Testing
 
-- 473 tests across 34 test files (test_register.py adds 19 tests for the v2.9.0 register command)
+- 487 tests across 34 test files
 - conftest.py has 5 fixtures: cli_runner, temp_config, temp_home, temp_brain, bare_remote
 - Tests use monkeypatch for KLURIS_CONFIG and HOME env vars
 - Git tests use real git in tmp_path (not mocked)

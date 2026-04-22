@@ -24,7 +24,7 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "2.10.2"
+    assert kluris.__version__ == "2.11.0"
 
 
 def test_global_config_defaults():
@@ -65,6 +65,7 @@ def test_brain_config_defaults():
     assert cfg.description == ""
     assert isinstance(cfg.git, GitConfig)
     assert isinstance(cfg.agents, AgentsConfig)
+    assert cfg.companions == []
 
 
 def test_git_config_defaults():
@@ -123,6 +124,34 @@ def test_write_read_brain_config(tmp_path):
     loaded = read_brain_config(brain_path)
     assert loaded.name == "my-brain"
     assert loaded.description == "Test brain"
+    assert loaded.companions == []
+
+
+def test_brain_config_companions_round_trip(tmp_path):
+    brain_path = tmp_path / "my-brain"
+    brain_path.mkdir()
+
+    cfg = BrainConfig(
+        name="my-brain",
+        description="Test brain",
+        companions=["specmint-core", "specmint-tdd"],
+    )
+    write_brain_config(cfg, brain_path)
+
+    loaded = read_brain_config(brain_path)
+    assert loaded.companions == ["specmint-core", "specmint-tdd"]
+
+
+def test_old_brain_config_without_companions_loads_with_default(tmp_path):
+    brain_path = tmp_path / "old-brain"
+    brain_path.mkdir()
+    (brain_path / "kluris.yml").write_text(
+        "name: old-brain\ndescription: Old brain\n",
+        encoding="utf-8",
+    )
+
+    loaded = read_brain_config(brain_path)
+    assert loaded.companions == []
 
 
 def test_config_not_found_returns_empty(tmp_path, monkeypatch):

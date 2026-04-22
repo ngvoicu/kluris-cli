@@ -266,7 +266,7 @@ def _generate_readme(name: str, description: str, tree_output: str,
             f"{lobe_rows}\n"
         )
     else:
-        lobe_section = "## Lobes\n\n(empty -- add lobes with `kluris lobe <name>`)\n"
+        lobe_section = "## Lobes\n\n(empty -- ask your agent to create a lobe, then run `kluris dream`)\n"
 
     return f"""\
 # {name}
@@ -332,9 +332,8 @@ On the first `/kluris-{name}` call of each session, the agent runs
 snapshot of the brain: lobes with neuron counts, the 5 most recently updated
 neurons, total neuron count. You never run it manually. The agent refreshes
 the snapshot after mutating commands (`/kluris-{name} remember`,
-`/kluris-{name} learn`, `kluris neuron --brain {name}`,
-`kluris lobe --brain {name}`, `kluris dream --brain {name}`,
-`kluris push --brain {name}`).
+`/kluris-{name} learn`, `kluris dream --brain {name}`,
+`kluris push --brain {name}`, or direct brain-file edits).
 
 If you want to peek at what the agent sees, run
 `kluris wake-up --brain {name}` yourself.
@@ -439,6 +438,21 @@ kluris help                               # All commands
 If `{name}` is your only registered brain, you can drop `--brain {name}` from
 every CLI invocation -- kluris auto-resolves the single brain.
 
+## Companions
+
+This brain can opt into embedded specmint playbooks. Companions are copied from
+the installed Kluris package into `~/.kluris/companions/<name>/` and the
+generated `/kluris-{name}` skill points to them for spec-worthy work.
+
+```bash
+kluris companion add specmint-core --brain {name}
+kluris companion add specmint-tdd --brain {name}
+kluris companion remove specmint-core --brain {name}
+```
+
+Use `specmint-core` for normal research/interview/spec workflows and
+`specmint-tdd` when you want strict red-green-refactor implementation.
+
 ## Neuron templates
 
 | Template | Sections |
@@ -509,41 +523,6 @@ description: my-brain knowledge base
 git:
   commit_prefix: "brain:"
 ```
-
-## Pair with Specmint (optional)
-
-Kluris is the brain. [Specmint](https://specmint.io) turns a feature request
-into a persistent spec built from deep research and iterative interviews.
-Pair them and specs for this project get grounded in this brain, not just
-the raw code.
-
-**Inside your AI coding agent:**
-
-```text
-> /specmint-core:forge add a new feature
-```
-
-Specmint reads the code *and* consults this brain
-(`/kluris-{name} what do we know about <topic>`), so Phase 2 asks only the
-questions neither can answer. Phase 3 writes a spec where every decision
-references a neuron.
-
-Two flavors, installable like kluris skills:
-
-- `specmint-core` -- spec-first workflow (Research · Interview · Spec · Implement)
-- `specmint-tdd` -- same forge flow with strict TDD (red-green-refactor)
-
-```bash
-# Claude Code
-/plugin marketplace add ngvoicu/specmint-core
-/plugin marketplace add ngvoicu/specmint-tdd
-
-# Any AI tool (Codex, Cursor, Windsurf, Cline, Gemini CLI, ...)
-npx skills add ngvoicu/specmint-core
-npx skills add ngvoicu/specmint-tdd
-```
-
-More at [specmint.io](https://specmint.io).
 
 ## Rules
 

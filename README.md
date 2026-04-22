@@ -72,7 +72,7 @@ Kluris lives in two places. Knowing which is which makes everything else click.
 | Surface | Prompt | Where you type it | What it is | Examples |
 |---------|:------:|-------------------|-----------|----------|
 | **Terminal** | `$ kluris …` | Your shell — bash, zsh, fish, PowerShell | The `kluris` Python CLI | `kluris create`, `kluris dream`, `kluris push`, `kluris mri`, `kluris doctor` |
-| **AI agent** | `> /kluris …` | Inside your coding agent — Claude Code, Cursor, Windsurf, Codex, Copilot, Gemini CLI, Kilo, Junie | The per-brain slash-command skill installed by `kluris install-skills` | `/kluris learn …`, `/kluris remember …`, `/kluris search …`, `/kluris what …`, `/kluris implement …`, `/kluris fix …` |
+| **AI agent** | `> /kluris …` | Inside your coding agent — Claude Code, Cursor, Windsurf, Codex, Copilot, Gemini CLI, Kilo, Junie | The per-brain slash-command skill Kluris keeps refreshed automatically | `/kluris learn …`, `/kluris remember …`, `/kluris search …`, `/kluris what …`, `/kluris implement …`, `/kluris fix …` |
 
 Throughout this README:
 
@@ -136,7 +136,7 @@ and any deprecation warnings. That's enough context for the agent to decode
 jargon and avoid citing superseded neurons without touching the filesystem
 again for the rest of the session. You never call it manually. The agent
 refreshes the snapshot after mutating commands (`/kluris remember`,
-`/kluris learn`, `kluris neuron`, `kluris lobe`, `kluris dream`, `kluris push`).
+`/kluris learn`, `kluris dream`, `kluris push`) or direct brain-file edits.
 
 If you want to see what the agent sees, run it yourself **in your terminal**:
 
@@ -387,11 +387,12 @@ Empty -- build your own structure from scratch.
 ## How it works
 
 1. **Terminal** — `kluris create` creates a brain (interactive wizard)
-2. **Terminal** — `kluris install-skills` gives the `/kluris` (or `/kluris-<name>`) skill to your AI agents
-3. **Inside your AI coding agent** — open any project and use `/kluris`; the agent becomes an SME
-4. Agent and human curate the brain together — you review and approve every entry
-5. **Terminal** — `kluris dream` maintains brain structure
-6. **Terminal** — `kluris mri` visualizes the brain
+2. **Terminal** — Kluris refreshes the `/kluris` (or `/kluris-<name>`) skill automatically
+3. **Terminal** — optional companions add embedded specmint workflows per brain
+4. **Inside your AI coding agent** — open any project and use `/kluris`; the agent becomes an SME
+5. Agent and human curate the brain together — you review and approve every entry
+6. **Terminal** — `kluris dream` maintains brain structure
+7. **Terminal** — `kluris mri` visualizes the brain
 
 ## Commands reference
 
@@ -410,18 +411,16 @@ Run these in bash, zsh, fish, or PowerShell. They handle setup, git, maintenance
 | `kluris status` | Brain tree, neuron counts, recent changes |
 | `kluris search <query>` | Ranked search across neurons, glossary, brain.md (`--lobe`, `--tag`, `--limit`, `--json`) |
 | `kluris wake-up` | Compact brain snapshot for agent session bootstrap — includes `brain_md`, `glossary`, `deprecation` (`--json`) |
-| `kluris neuron <name>` | Create a neuron (optionally with `--lobe` and `--template`) |
-| `kluris lobe <name>` | Create a new lobe (optionally with `--parent` for nesting) |
+| `kluris companion add specmint-core\|specmint-tdd` | Opt a brain into an embedded companion playbook |
+| `kluris companion remove specmint-core\|specmint-tdd` | Remove a companion opt-in from a brain |
 | `kluris dream` | Regenerate maps, fix links, validate structure |
 | `kluris branch [name]` | Show, switch, or create a git branch (`--list` to see all) |
 | `kluris push` | Commit and push to the current branch |
 | `kluris pull` | Pull remote changes for the current branch |
 | `kluris mri` | Visualize the brain (opens in browser by default) |
 | `kluris templates` | List available neuron templates |
-| `kluris install-skills` | Install the `/kluris` (or `/kluris-<name>`) skill for your AI agents |
-| `kluris uninstall-skills` | Remove all kluris skills from AI agent directories |
 | `kluris remove <name>` | Unregister a brain (keeps files on disk) |
-| `kluris doctor` | Check prerequisites AND refresh installed agent skills (run after `pipx upgrade kluris`). Pass `--no-refresh` to skip the refresh and run only the read-only checks. |
+| `kluris doctor` | Check prerequisites, refresh agent skills, and refresh companion playbooks after `pipx upgrade kluris`. Pass `--no-refresh` to skip writes. |
 | `kluris help` | Show command help |
 
 All CLI commands support `--json` for machine-readable output.
@@ -502,25 +501,29 @@ Phase 1a reads your codebase. Phase 1b consults the brain
 neither can answer. Phase 3 writes a spec where every decision references
 a neuron.
 
-Two flavors — both installable like the kluris skill:
+Two flavors — both installable per brain as Kluris companions:
 
-| Plugin | What it is |
-|--------|-----------|
+| Companion | What it is |
+|-----------|-----------|
 | [`specmint-core`](https://github.com/ngvoicu/specmint-core) | Spec-first workflow — Research · Interview · Spec · Implement |
 | [`specmint-tdd`](https://github.com/ngvoicu/specmint-tdd) | Same forge flow with strict TDD — a failing test before any implementation |
 
-**Install — Claude Code:**
+Companions ship inside the `kluris` Python package. Enabling one copies only
+its `SKILL.md` into `~/.kluris/companions/<name>/SKILL.md` and adds a short
+reference snippet to that brain's generated Kluris skill.
+
+**Enable for one brain:**
 
 ```bash
-/plugin marketplace add ngvoicu/specmint-core
-/plugin marketplace add ngvoicu/specmint-tdd
+kluris companion add specmint-core --brain my-brain
+kluris companion add specmint-tdd --brain my-brain
 ```
 
-**Install — any AI tool** (Codex, Cursor, Windsurf, Cline, Gemini CLI, …):
+**Enable for every registered brain:**
 
 ```bash
-npx skills add ngvoicu/specmint-core
-npx skills add ngvoicu/specmint-tdd
+kluris companion add specmint-core --brain all
+kluris companion add specmint-tdd --brain all
 ```
 
 More at [specmint.io](https://specmint.io).

@@ -942,7 +942,8 @@ def test_search_command_listed_in_help(tmp_path, monkeypatch):
     data = json.loads(result.output)
     names = {c["name"] for c in data["commands"]}
     assert "search" in names
-    assert len(data["commands"]) == 20  # 19 before register was added (v2.9.1)
+    assert "companion" in names
+    assert len(data["commands"]) == 17
 
 
 # --- yaml-neurons search tests ---

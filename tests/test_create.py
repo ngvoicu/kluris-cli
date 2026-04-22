@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 from kluris.cli import cli
 from conftest import create_test_brain
-from kluris.core.config import read_global_config
+from kluris.core.config import read_brain_config, read_global_config
 
 
 def test_create_team(tmp_path, monkeypatch):
@@ -110,6 +110,7 @@ def test_create_with_all_flags_no_prompts(tmp_path, monkeypatch):
                                   "--no-git"])
     assert result.exit_code == 0
     assert "What does this brain cover" not in result.output
+    assert "Install specmint companions" not in result.output
     assert (tmp_path / "my-brain" / "brain.md").exists()
 
 
@@ -144,3 +145,33 @@ def test_create_wizard_prompts_for_missing(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "What does this brain cover" in result.output
     assert (tmp_path / "my-brain" / "brain.md").exists()
+
+
+def test_create_prompt_specmint(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("kluris.cli._is_interactive", lambda: True)
+    runner = CliRunner()
+    wizard_input = f"my-brain\nTest brain\n{tmp_path}\nproduct-group\n3\n3\n"
+
+    result = runner.invoke(cli, ["create"], input=wizard_input)
+
+    assert result.exit_code == 0, result.output
+    brain = tmp_path / "my-brain"
+    assert read_brain_config(brain).companions == ["specmint-core", "specmint-tdd"]
+    assert (tmp_path / ".kluris" / "companions" / "specmint-core" / "SKILL.md").exists()
+    assert (tmp_path / ".kluris" / "companions" / "specmint-tdd" / "SKILL.md").exists()
+    content = (tmp_path / ".claude" / "skills" / "kluris" / "SKILL.md").read_text(encoding="utf-8")
+    assert "## Spec-worthy work first" in content
+
+
+def test_create_noninteractive_skips_prompt(tmp_path, monkeypatch):
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["create", "my-brain", "--path", str(tmp_path), "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert read_brain_config(tmp_path / "my-brain").companions == []
+    assert "Install specmint companions" not in result.output

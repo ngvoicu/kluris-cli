@@ -71,6 +71,33 @@ def test_register_dir_succeeds(tmp_path, monkeypatch):
     assert Path(config.brains["source-brain"].path).resolve() == source.resolve()
 
 
+def test_register_wizard_prompt_specmint(tmp_path, monkeypatch):
+    source = _make_source_brain(tmp_path, monkeypatch)
+    _use_fresh_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr("kluris.cli._is_interactive", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["register"], input=f"{source}\n2\n")
+
+    assert result.exit_code == 0, result.output
+    assert read_brain_config(source).companions == ["specmint-tdd"]
+    home = tmp_path / "register-home"
+    assert (home / ".kluris" / "companions" / "specmint-tdd" / "SKILL.md").exists()
+
+
+def test_register_flag_driven_skips_companion_prompt(tmp_path, monkeypatch):
+    source = _make_source_brain(tmp_path, monkeypatch)
+    _use_fresh_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr("kluris.cli._is_interactive", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["register", str(source)])
+
+    assert result.exit_code == 0, result.output
+    assert "Install specmint companions" not in result.output
+    assert read_brain_config(source).companions == []
+
+
 def test_register_dir_in_place_does_not_move_source(tmp_path, monkeypatch):
     """register must never move or delete the source directory."""
     source = _make_source_brain(tmp_path, monkeypatch)

@@ -34,6 +34,7 @@ def test_list_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "brains" in data
+    assert data["brains"][0]["companions"] == []
     assert "default_brain" not in data
 
 
@@ -48,28 +49,6 @@ def test_status_json(tmp_path, monkeypatch):
     assert "brains" in data
     assert "lobes" in data["brains"][0]
     assert "neurons" in data["brains"][0]
-
-
-def test_neuron_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["neuron", "auth.md", "--lobe", "projects", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert "path" in data
-
-
-def test_lobe_json(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runner = CliRunner()
-    _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["lobe", "experiments", "--json"])
-    data = json.loads(result.output)
-    assert data["ok"] is True
-    assert "path" in data
 
 
 def test_dream_json(tmp_path, monkeypatch):
@@ -112,17 +91,22 @@ def test_mri_json(tmp_path, monkeypatch):
     assert "edges" in data["brains"][0]
 
 
-def test_install_json(tmp_path, monkeypatch):
+def test_companion_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     _create_brain(runner, tmp_path)
-    result = runner.invoke(cli, ["install-skills", "--json"])
+    result = runner.invoke(cli, ["companion", "add", "specmint-core", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
-    assert "agents" in data
-    assert data["commands_per_agent"] == 1
-    assert "total_files" in data
+    assert data["name"] == "specmint-core"
+    assert data["opted_in"] is True
+
+    result = runner.invoke(cli, ["companion", "remove", "specmint-core", "--json"])
+    data = json.loads(result.output)
+    assert data["ok"] is True
+    assert data["opted_in"] is False
+    assert data["files_kept"] is True
 
 
 def test_remove_json(tmp_path, monkeypatch):
@@ -144,16 +128,18 @@ def test_help_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "commands" in data
-    assert len(data["commands"]) == 20
+    assert len(data["commands"]) == 17
 
 
 def test_doctor_json(tmp_path, monkeypatch):
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     result = runner.invoke(cli, ["doctor", "--json"])
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "checks" in data
+    assert "companions" in data
 
 
 def test_error_json(tmp_path, monkeypatch):

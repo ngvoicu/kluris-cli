@@ -29,14 +29,14 @@ def test_single_brain_auto(tmp_path, monkeypatch):
     assert len(data["brains"]) == 1
 
 
-def test_multi_brain_neuron_picker_required(tmp_path, monkeypatch):
-    """With 2+ brains and no --brain (no TTY under CliRunner), neuron must error."""
+def test_multi_brain_wake_up_picker_required(tmp_path, monkeypatch):
+    """With 2+ brains and no --brain (no TTY under CliRunner), wake-up must error."""
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "brain-a", tmp_path)
     create_test_brain(runner, "brain-b", tmp_path)
-    result = runner.invoke(cli, ["neuron", "test.md", "--lobe", "projects"])
+    result = runner.invoke(cli, ["wake-up"])
     assert result.exit_code != 0
     assert "Multiple brains" in result.output
 
@@ -72,8 +72,8 @@ def test_multi_brain_all_option_for_fan_out(tmp_path, monkeypatch):
     assert "brain-b" in result.output
 
 
-def test_multi_brain_picker_not_offered_for_neuron(tmp_path, monkeypatch):
-    """Single-brain commands like neuron must NOT show [3] all in the picker."""
+def test_multi_brain_picker_not_offered_for_wake_up(tmp_path, monkeypatch):
+    """Single-brain commands like wake-up must NOT show [3] all in the picker."""
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     import kluris.cli as cli_module
@@ -81,9 +81,7 @@ def test_multi_brain_picker_not_offered_for_neuron(tmp_path, monkeypatch):
     runner = CliRunner()
     create_test_brain(runner, "brain-a", tmp_path)
     create_test_brain(runner, "brain-b", tmp_path)
-    result = runner.invoke(
-        cli, ["neuron", "test.md", "--lobe", "projects"], input="1\n"
-    )
+    result = runner.invoke(cli, ["wake-up"], input="1\n")
     # Verify [3] all is absent from the picker output
     assert "[1] brain-a" in result.output
     assert "[2] brain-b" in result.output
@@ -145,16 +143,14 @@ def test_brain_all_on_fan_out(tmp_path, monkeypatch):
     assert "brain-b" in names
 
 
-def test_brain_all_on_neuron_rejected(tmp_path, monkeypatch):
-    """--brain all is only valid on fan-out commands; neuron rejects it."""
+def test_brain_all_on_wake_up_rejected(tmp_path, monkeypatch):
+    """--brain all is only valid on fan-out commands; wake-up rejects it."""
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
     create_test_brain(runner, "brain-a", tmp_path)
     create_test_brain(runner, "brain-b", tmp_path)
-    result = runner.invoke(
-        cli, ["neuron", "test.md", "--lobe", "projects", "--brain", "all"]
-    )
+    result = runner.invoke(cli, ["wake-up", "--brain", "all"])
     assert result.exit_code != 0
     assert "all" in result.output.lower()
 

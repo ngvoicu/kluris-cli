@@ -4,7 +4,8 @@ from kluris.core.agents import AGENT_REGISTRY, render_commands, render_skill
 
 
 def _render(skill_name="kluris", brain_name="test-brain", brain_path="/tmp/test-brain",
-            has_git=False, brain_description="Test brain"):
+            has_git=False, brain_description="Test brain", companions=None,
+            companion_home=None):
     """Convenience wrapper around render_skill with sensible defaults."""
     return render_skill(
         skill_name=skill_name,
@@ -12,11 +13,14 @@ def _render(skill_name="kluris", brain_name="test-brain", brain_path="/tmp/test-
         brain_path=brain_path,
         has_git=has_git,
         brain_description=brain_description,
+        companions=companions,
+        companion_home=companion_home,
     )
 
 
 def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="test-brain",
-             brain_path="/tmp/test-brain", has_git=False, brain_description="Test brain"):
+             brain_path="/tmp/test-brain", has_git=False, brain_description="Test brain",
+             companions=None, companion_home=None):
     """Convenience wrapper around render_commands with sensible defaults."""
     return render_commands(
         agent_name,
@@ -26,6 +30,8 @@ def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="tes
         brain_path=brain_path,
         has_git=has_git,
         brain_description=brain_description,
+        companions=companions,
+        companion_home=companion_home,
     )
 
 
@@ -115,7 +121,7 @@ def test_skill_bootstrap_lists_refresh_triggers():
     content = _render()
     lowered = content.lower()
     assert "re-run" in lowered or "refresh" in lowered
-    triggers = ["neuron", "lobe", "dream", "push", "remember", "learn"]
+    triggers = ["dream", "push", "remember", "learn"]
     hits = sum(1 for t in triggers if t in lowered)
     assert hits >= 2
 
@@ -161,7 +167,8 @@ def test_render_skill_substitutes_all_placeholders():
     content = _render(skill_name="kluris", brain_name="foo", brain_path="/tmp/foo",
                       has_git=True, brain_description="A test brain")
     placeholders = ["{skill_name}", "{brain_name}", "{brain_path}", "{git_label}",
-                    "{brain_description}", "{brain_flag_hint}", "{brain_flag_hint_inline}"]
+                    "{brain_description}", "{brain_flag_hint}", "{brain_flag_hint_inline}",
+                    "{specmint_block}"]
     for ph in placeholders:
         assert ph not in content, f"{ph} was not substituted"
 
@@ -238,7 +245,55 @@ def test_skill_remember_has_stop_gate():
 def test_skill_create_neuron_has_section_interview():
     c = _render()
     assert "Walk through the template section by section" in c
-    assert "Move to the NEXT section only after approval" in c
+
+
+def test_specmint_block_none():
+    content = _render(companions=[])
+    assert "## Spec-worthy work first" not in content
+    assert "{specmint_block}" not in content
+
+
+def test_specmint_block_core_only():
+    content = _render(
+        companions=["specmint-core"],
+        companion_home="/tmp/kluris-companions",
+    )
+    assert "## Spec-worthy work first" in content
+    assert "/tmp/kluris-companions/specmint-core/SKILL.md" in content
+    assert "/tmp/kluris-companions/specmint-tdd/SKILL.md" not in content
+
+
+def test_specmint_block_tdd_only():
+    content = _render(
+        companions=["specmint-tdd"],
+        companion_home="/tmp/kluris-companions",
+    )
+    assert "## Spec-worthy work first" in content
+    assert "/tmp/kluris-companions/specmint-tdd/SKILL.md" in content
+    assert "/tmp/kluris-companions/specmint-core/SKILL.md" not in content
+
+
+def test_specmint_block_both():
+    content = _render(
+        companions=["specmint-core", "specmint-tdd"],
+        companion_home="/tmp/kluris-companions",
+    )
+    assert "/tmp/kluris-companions/specmint-core/SKILL.md" in content
+    assert "/tmp/kluris-companions/specmint-tdd/SKILL.md" in content
+    assert "TDD-heavy work" in content
+
+
+def test_brain_vs_current_project_heading():
+    content = _render()
+    assert "## Brain vs current project" in content
+    assert "## You are the team's subject matter expert" not in content
+
+
+def test_when_not_to_check_block():
+    content = _render()
+    assert "When NOT to check the brain" in content
+    assert "typo" in content
+    assert "vendored" in content
 
 
 def test_skill_create_neuron_forbids_prefill():
@@ -246,7 +301,7 @@ def test_skill_create_neuron_forbids_prefill():
 
 
 def test_skill_learn_has_explicit_stop():
-    assert 'STOP. NEVER write until the human explicitly says yes' in _render()
+    assert "STOP. NEVER write until the human explicitly approves" in _render()
 
 
 def test_skill_cli_section_mentions_pull():
