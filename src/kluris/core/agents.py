@@ -267,6 +267,63 @@ record), match their shape instead of inventing a new one.
 Discuss the lobe name and purpose with the user, then create the directory only
 after approval. Remind the user to run `kluris dream{brain_flag_hint_inline}`.
 
+**Capture from session** -- "save this session to the brain",
+"learn from this session", "remember from this session",
+"capture what we learned here", "dump this conversation into the brain".
+
+Scan the conversation you're in, surface everything brain-worthy, then
+write the user-approved subset into the brain. Different from Learn
+from project (which reads code and docs) and Remember (a single fact
+dictated by the user): here the SOURCE is the session itself.
+
+1. **Scan the conversation.** Pull out items worth storing. Brain-worthy
+   signals:
+   - Decisions ("we're going with X because Y").
+   - Conventions or patterns the user confirmed ("from now on all new
+     migrations live in `/db/migrations/`").
+   - Non-obvious bug root causes plus the fix (the actual why, not just
+     the diff).
+   - Tradeoffs the user evaluated and resolved during the session.
+   - Corrections to prior brain content ("that neuron is wrong, it
+     actually works like this").
+   - Stakeholder / team facts surfaced in conversation (ownership,
+     deadlines, constraints).
+   - Domain terms used that aren't yet in `glossary.md`.
+   Skip: generic coding how-to, dead-end debugging steps, anything
+   already captured verbatim in the brain.
+2. **Classify each item.** For every candidate, decide:
+   - **Lobe:** existing lobe that matches, or propose a new one.
+   - **Neuron:** existing neuron to augment (show the exact section or
+     line you would edit), OR a new neuron (show target filename).
+   - **Glossary:** if it's a term, route to `glossary.md`.
+   - **Shape:** remember-style (a sentence appended to an existing
+     section) vs learn-style (a full new neuron or section).
+3. **Produce the capture plan** BEFORE writing anything. One compact
+   list:
+   - N items total, grouped by target lobe.
+   - For each item: the one-line content + target path +
+     action (`append`, `new neuron`, `new glossary entry`, `new lobe`).
+   - New-lobe proposals need explicit approval on the lobe itself
+     before the batch proceeds.
+4. **Walk each item under the approval protocol.** Show the full final
+   content per item, incorporate edits, then write. Do not batch-write.
+   Respect the write-order rule from Learn: if item B will list item A
+   in `related:`, write A first so the synapse isn't broken on arrival.
+5. **Hygiene pass at the end.** Same contract as Learn:
+   - Bidirectional synapses between anything you just wrote.
+   - Inline markdown links in prose for every neuron referenced.
+   - Add glossary terms used inline if they aren't defined yet.
+   - Run `kluris dream{brain_flag_hint_inline}` and fix anything it
+     flags before stopping.
+6. **If nothing is brain-worthy, say so.** Not every session produces
+   lessons. "Nothing I'd capture from this session -- it was standard
+   implementation work" is a correct answer.
+
+Do not invent facts. Only capture what actually appears in the
+conversation. If the user changed their mind mid-session, capture the
+final position and note "supersedes earlier discussion" in the approval
+preview so the context is honest.
+
 **Fix broken synapses** -- "fix the broken synapses", "repair the brain",
 "clean up broken links", "the brain has N broken, fix them".
 

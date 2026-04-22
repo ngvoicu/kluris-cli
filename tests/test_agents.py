@@ -35,6 +35,29 @@ def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="tes
     )
 
 
+def test_skill_has_capture_from_session_intent():
+    """'Capture from session' reads the conversation itself (not the
+    project code) and routes facts into existing or new lobes/neurons.
+    Distinct from Learn (reads project) and Remember (one user-dictated
+    fact)."""
+    body = _render()
+    assert "Capture from session" in body
+    # Trigger phrases users actually say.
+    assert "save this session to the brain" in body
+    assert "learn from this session" in body
+    assert "remember from this session" in body
+    # The source is explicitly the session, not the project.
+    assert "SOURCE is the session itself" in body
+    # Plan-then-walk workflow with approval protocol.
+    assert "capture plan" in body
+    assert "Walk each item under the approval protocol" in body
+    # Route to existing or new lobe / neuron / glossary.
+    assert "existing lobe that matches, or propose a new one" in body
+    assert "glossary.md" in body
+    # Hygiene pass must run kluris dream after the batch.
+    assert "Hygiene pass" in body
+
+
 def test_skill_has_review_intent():
     """Review is a distinct read-mostly intent so agents know what to do when
     the user says "review the brain" or "make the brain nice". Must categorise
