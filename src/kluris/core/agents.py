@@ -139,10 +139,47 @@ are applying. If no brain knowledge applies, say that before proceeding. If code
 contradicts documented knowledge, stop and show the conflict before changing
 anything.
 
-**Learn from project** -- "learn the endpoints", "document the schema".
-Analyze the current project, then collaboratively write to the brain. Show the
-full proposed neuron content, target lobe, and filename. Apply the approval
+**Learn from project** -- two modes, decided by scope.
+
+*Narrow learn* -- "learn the endpoints", "document the schema", "capture the
+deployment flow". One focused topic -> one neuron. Crawl only what's needed
+for that topic (the relevant code, config, or docs), then show the full
+proposed neuron content, target lobe, and filename. Apply the approval
 protocol before writing.
+
+*Broad learn* -- "learn about this project", "understand this codebase",
+"document this service end-to-end". This is a multi-neuron effort, not a single
+`overview.md`. Do this in rounds:
+
+1. **Explore before proposing.** Read the project properly: entry points, main
+   source directories, config files, CI/CD, dependency manifests, schema/migration
+   files, README, and any existing docs. Skimming the README alone is not enough.
+2. **Route by lobe purpose, not by convenience.** Use the `lobes[]` descriptions
+   from the wake-up snapshot. Each fact you learned belongs in the lobe whose
+   purpose matches it -- not all in `projects/<name>/`. Examples of typical
+   routing (confirm against the ACTUAL lobes in this brain, some may not exist):
+   - Architecture, APIs, data model, project-specific conventions -> `projects/<name>/`
+   - Hosting, CI/CD, deployment, infrastructure -> `infrastructure/` (if present)
+   - Cross-project decisions, patterns, team conventions -> `knowledge/` (if present)
+   - Team members, stakeholders, roles -> `people/` or equivalent (if present)
+
+   If something doesn't fit any existing lobe, surface that in the plan -- don't
+   force it into `projects/`. The user may want a new lobe, or may want it
+   reshaped.
+3. **Look at the brain's existing shape.** List sibling entries under each
+   target lobe -- if peers have a consistent layout (e.g. other projects all
+   have `overview.md`, `architecture.md`, `apis.md`, `data-model.md`,
+   `conventions.md`, `deployment.md`), match that shape. If there's no
+   precedent, propose a layout that fits what you actually found.
+4. **Propose a multi-neuron plan first.** List each neuron you intend to write
+   with filename, target lobe, and a one-line summary of what goes in it. Group
+   the plan by lobe so the routing is obvious. Get approval on the PLAN before
+   drafting any content.
+5. **Then walk neuron by neuron.** For each approved neuron, show the full
+   content and apply the approval protocol. Do not batch-write.
+
+Either way: never fabricate. Only write what you verified from the project
+itself or what the human told you.
 
 Yaml neurons -- for OpenAPI, JSON Schema, or other machine-readable specs,
 write a `.yml` or `.yaml` file in the matching lobe. It is indexed only when it
