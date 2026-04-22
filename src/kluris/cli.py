@@ -410,8 +410,8 @@ def _wizard_can_prompt(as_json: bool) -> bool:
 def _prompt_for_companions() -> list[str]:
     """Ask the interactive companion opt-in question."""
     console.print("  Install specmint companions for this brain?")
-    console.print("    [1] specmint-core (forge -> interview -> spec)")
-    console.print("    [2] specmint-tdd  (same, with strict red-green-refactor)")
+    console.print("    [1] specmint-core (spec-driven-development companion)")
+    console.print("    [2] specmint-tdd  (spec-driven-development with test-driven-development focus companion)")
     console.print("    [3] both")
     console.print("    [4] skip")
     choice = click.prompt(
