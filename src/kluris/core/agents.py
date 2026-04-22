@@ -177,6 +177,14 @@ protocol before writing.
    drafting any content.
 5. **Then walk neuron by neuron.** For each approved neuron, show the full
    content and apply the approval protocol. Do not batch-write.
+
+   **Forward references are forbidden.** Do not put a sibling's path in
+   `related:` if that sibling hasn't been written yet -- the target file
+   doesn't exist, so the synapse is broken on arrival. Either write the
+   neurons in dependency order (leaves first, hubs last), or add the
+   cross-links in a follow-up turn once both files exist. The same applies
+   to inline markdown links in the body -- link to a sibling only after it's
+   on disk.
 6. **Hygiene pass after the batch.**
    - Cross-link synapses: every new neuron should have `related:` entries
      pointing at its siblings in the batch AND at any existing neurons in the
@@ -242,9 +250,23 @@ after approval. Remind the user to run `kluris dream{brain_flag_hint_inline}`.
 For Learn, Remember, and Create flows:
 1. Show the FULL content you intend to write, not a summary.
 2. State the target lobe and neuron filename.
-3. Ask: "Is this correct? Want to change anything?"
-4. STOP. NEVER write until the human explicitly approves. Silence is not approval.
-5. After writing, remind the user to run `kluris dream{brain_flag_hint_inline}` and, if the brain uses git, `kluris push{brain_flag_hint_inline}`.
+3. **Verify every `related:` path before showing the preview.** For each
+   entry in `related:`, confirm the target file actually exists by running
+   `ls {brain_path}/<relative-path>` (resolve the `../` hops from the neuron's
+   target directory) or reading the file. If a path doesn't resolve, either
+   fix it or drop the entry. Do NOT rely on your memory of the brain --
+   `kluris search` tells you what exists, `ls` confirms the path. Invented
+   paths become `broken_synapses` in `kluris dream` and poison the graph.
+4. Ask: "Is this correct? Want to change anything?"
+5. STOP. NEVER write until the human explicitly approves. Silence is not approval.
+6. **Silent validation after writing.** Immediately after the write completes,
+   run `kluris dream{brain_flag_hint_inline} --json` via Bash and inspect the
+   result. If `broken_synapses`, `one_way_synapses`, or new `orphans`
+   reference the neuron you just wrote, surface them to the user in plain
+   language and propose fixes in the same turn -- don't wait for the user to
+   notice. If the output is clean, tell the user "dream is clean" and move
+   on. Then remind them to `kluris push{brain_flag_hint_inline}` if the
+   brain uses git.
 
 Other writing rules:
 - Never create `.md`, `.yml`, or `.yaml` neurons directly at the brain root.
