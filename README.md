@@ -207,9 +207,16 @@ target lobe, edit the content, add context the code doesn't show, or skip.
 ```text
 > /kluris remember we chose raw SQL over JPA for query complexity
 > /kluris remember all timestamps must be TIMESTAMPTZ
+> /kluris remember from this session
 > /kluris create a decision record about the auth architecture
 > /kluris create an incident report for the January outage
 ```
+
+`/kluris remember from this session` is the sweep variant — the agent
+replays the current chat, pulls out everything that belongs in the brain,
+and walks you through each proposed neuron one at a time (approve, edit,
+or skip). Use it at the end of a pairing session instead of re-typing every
+decision as its own `remember`.
 
 ### Using brain knowledge while coding
 
@@ -221,10 +228,29 @@ target lobe, edit the content, add context the code doesn't show, or skip.
 > /kluris what do we know about the auth flow?
 > /kluris implement the new endpoint following our conventions
 > /kluris fix the token refresh -- use brain knowledge
+> /kluris use brain knowledge and codebase and let's write a spec for OAuth sign-in
+> /kluris use brain knowledge and codebase and let's implement auth
 ```
 
 The agent reads the brain first, then works on the task. If your code
-contradicts a documented decision, it flags the conflict.
+contradicts a documented decision, it flags the conflict. Prefixing with
+*"use brain knowledge and codebase"* tells the agent to ground the work
+in **both** surfaces — the decisions and conventions in the brain **and**
+the actual current shape of the code — before writing a spec or changing
+a line. It's the right posture for anything non-trivial.
+
+### Reviewing the brain itself
+
+**Inside your AI coding agent:**
+
+```text
+> /kluris review this brain and create more synapses
+> /kluris review this brain for gaps and stale neurons
+```
+
+The agent reads across every neuron, spots connections you never wrote
+down, and proposes new synapses — one by one, with approve-all or
+one-by-one flow. Handy after a `learn` binge or a big merge.
 
 ### Maintaining the brain
 
@@ -432,8 +458,11 @@ Type these inside Claude Code, Cursor, Windsurf, GitHub Copilot, Codex, Gemini C
 |---------|---------------------|
 | `/kluris learn <topic>` | Analyzes your code and proposes neurons one at a time (you approve each) |
 | `/kluris remember <fact>` | Captures a decision as a neuron in the right lobe |
+| `/kluris remember from this session` | Sweeps the current chat and proposes neurons for everything worth keeping |
 | `/kluris search <term>` | Searches the brain for a topic |
 | `/kluris what do we know about ...` | Answers a question grounded in the brain |
+| `/kluris review this brain` | Audits the brain — proposes new synapses, flags gaps and stale neurons |
+| `/kluris use brain knowledge and codebase and let's ...` | Grounds spec-writing or implementation in **both** the brain and the actual code |
 | `/kluris implement <task>` | Implements a task following your brain's conventions |
 | `/kluris fix <bug>` | Fixes a bug using brain knowledge, flags any conflicts |
 | `/kluris create a decision` | Creates a decision-record neuron |
