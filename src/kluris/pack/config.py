@@ -31,7 +31,7 @@ class ConfigError(ValueError):
 
 # Optional vars with sane defaults — deployer can override.
 _DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
-_DEFAULT_MAX_AGENT_ROUNDS = 8
+_DEFAULT_MAX_AGENT_ROUNDS = 20
 _DEFAULT_LOBE_OVERVIEW_BUDGET = 4096
 _LOBE_OVERVIEW_BUDGET_MIN = 1024
 _LOBE_OVERVIEW_BUDGET_MAX = 16384
@@ -115,7 +115,10 @@ class Config(BaseModel):
     model: str = ""
     anthropic_version: str = _DEFAULT_ANTHROPIC_VERSION
 
-    # Tunables
+    # Tunables. ``max_agent_rounds=0`` is the "unlimited" sentinel —
+    # the loop runs until the model emits an end without any pending
+    # tool_uses. Useful for deep-research questions on a brain you
+    # trust to converge; risky against a sparse brain (cost runaway).
     max_agent_rounds: int = _DEFAULT_MAX_AGENT_ROUNDS
     lobe_overview_budget: int = _DEFAULT_LOBE_OVERVIEW_BUDGET
     max_multi_read_paths: int = _DEFAULT_MAX_MULTI_READ_PATHS

@@ -179,7 +179,11 @@ async def run_agent(
     rounds = 0
     cumulative_input = 0
     cumulative_output = 0
-    while rounds < config.max_agent_rounds:
+    # ``max_agent_rounds <= 0`` is the "unlimited" sentinel — keep
+    # looping until the provider emits an end with no pending
+    # tool_uses, regardless of round count.
+    unlimited = config.max_agent_rounds <= 0
+    while unlimited or rounds < config.max_agent_rounds:
         rounds += 1
         pending_tools: list[dict[str, Any]] = []
         round_text: list[str] = []

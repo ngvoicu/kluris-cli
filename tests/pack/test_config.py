@@ -142,9 +142,17 @@ def test_max_multi_read_paths_clamped():
 
 
 def test_max_agent_rounds_default_and_override():
-    assert Config.load_from_env(_API_KEY_ENV).max_agent_rounds == 8
+    assert Config.load_from_env(_API_KEY_ENV).max_agent_rounds == 20
     env = dict(_API_KEY_ENV, MAX_AGENT_ROUNDS="3")
     assert Config.load_from_env(env).max_agent_rounds == 3
+
+
+def test_max_agent_rounds_zero_is_unlimited_sentinel():
+    """``MAX_AGENT_ROUNDS=0`` means "unlimited" at the agent layer.
+    The Config just stores the integer; the loop checks ``<= 0``.
+    """
+    env = dict(_API_KEY_ENV, MAX_AGENT_ROUNDS="0")
+    assert Config.load_from_env(env).max_agent_rounds == 0
 
 
 def test_brain_and_data_dirs_overridable():

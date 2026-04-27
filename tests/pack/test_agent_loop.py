@@ -370,6 +370,67 @@ async def test_agent_max_rounds_cap_respected(fixture_brain, tmp_path):
     assert errors and "round" in errors[-1]["message"].lower()
 
 
+async def test_agent_max_rounds_zero_means_unlimited(fixture_brain, tmp_path):
+    """``MAX_AGENT_ROUNDS=0`` removes the round cap. The loop runs as
+    long as the model keeps emitting ``tool_use`` events; it only
+    exits when a round arrives without pending tools.
+    """
+    cfg = _config(
+        fixture_brain,
+        KLURIS_DATA_DIR=str(tmp_path / "data"),
+        MAX_AGENT_ROUNDS="0",
+    )
+    (tmp_path / "data").mkdir()
+    looper = [
+        {"kind": "tool_use", "name": "search", "id": "tu", "args": {"query": "x"}},
+        {"kind": "end"},
+    ]
+    final = [
+        {"kind": "token", "text": "Final answer."},
+        {"kind": "end"},
+    ]
+    # 50 looping rounds — way past the old default of 8 — followed by
+    # a clean final answer. Unlimited mode must run all 51 rounds.
+    provider = _ScriptedProvider([looper] * 50 + [final])
+    events = await _drain(run_agent(
+        config=cfg, provider=provider, history=[], user_message="x",
+    ))
+    errors = [e for e in events if e["kind"] == "error"]
+    assert provider.calls == 51, (
+        "unlimited mode must run every scripted round, not stop at any cap"
+    )
+    assert errors == [], (
+        "no round-cap error should fire when MAX_AGENT_ROUNDS=0"
+    )
+    tokens = [e for e in events if e["kind"] == "token"]
+    assert any("Final answer" in t["text"] for t in tokens)
+
+
+async def test_agent_max_rounds_negative_treated_as_unlimited(
+    fixture_brain, tmp_path,
+):
+    """Sanity: a negative ``MAX_AGENT_ROUNDS`` (typo / misconfig) is
+    also treated as the unlimited sentinel rather than crashing or
+    immediately bailing out.
+    """
+    cfg = _config(
+        fixture_brain,
+        KLURIS_DATA_DIR=str(tmp_path / "data"),
+        MAX_AGENT_ROUNDS="-1",
+    )
+    (tmp_path / "data").mkdir()
+    provider = _ScriptedProvider([
+        [{"kind": "token", "text": "ok"}, {"kind": "end"}],
+    ])
+    events = await _drain(run_agent(
+        config=cfg, provider=provider, history=[], user_message="x",
+    ))
+    errors = [e for e in events if e["kind"] == "error"]
+    assert errors == []
+    tokens = [e for e in events if e["kind"] == "token"]
+    assert tokens and tokens[0]["text"] == "ok"
+
+
 async def test_agent_context_limit_error_recoverable(fixture_brain, tmp_path):
     cfg = _config(fixture_brain, KLURIS_DATA_DIR=str(tmp_path / "data"))
     (tmp_path / "data").mkdir()
