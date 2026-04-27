@@ -320,6 +320,112 @@ async def test_openai_stream_yields_token_and_usage(api_env, respx_mock):
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_anthropic_stream_serializes_system_and_tool_messages(
+    api_env, respx_mock
+):
+    cfg = _build_config(api_env, shape="anthropic")
+    route = respx_mock.post("http://api.test/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_lines(iter([
+                "event: message_stop",
+                "data: " + json.dumps({"type": "message_stop"}),
+                "",
+            ])),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    messages = [
+        {"role": "system", "content": "SYSTEM PLAYBOOK"},
+        {"role": "user", "content": "how does auth work?"},
+        {
+            "role": "assistant",
+            "content": "I will check. ",
+            "tool_calls": [{
+                "id": "tu1",
+                "name": "search",
+                "args": {"query": "auth"},
+            }],
+        },
+        {"role": "tool", "tool_call_id": "tu1", "content": '{"ok": true}'},
+    ]
+
+    _events = [
+        e async for e in APIKeyProvider(cfg).complete_stream(messages=messages, tools=[])
+    ]
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["system"] == "SYSTEM PLAYBOOK"
+    assert all(m["role"] != "system" for m in sent["messages"])
+    assert sent["messages"][1] == {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "I will check. "},
+            {
+                "type": "tool_use",
+                "id": "tu1",
+                "name": "search",
+                "input": {"query": "auth"},
+            },
+        ],
+    }
+    assert sent["messages"][2] == {
+        "role": "user",
+        "content": [{
+            "type": "tool_result",
+            "tool_use_id": "tu1",
+            "content": '{"ok": true}',
+        }],
+    }
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_openai_stream_serializes_tool_messages(api_env, respx_mock):
+    cfg = _build_config(api_env, shape="openai")
+    route = respx_mock.post("http://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_lines(iter(["data: [DONE]", ""])),
+        )
+    )
+    messages = [
+        {"role": "system", "content": "SYSTEM PLAYBOOK"},
+        {"role": "user", "content": "how does auth work?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "tu1",
+                "name": "search",
+                "args": {"query": "auth"},
+            }],
+        },
+        {"role": "tool", "tool_call_id": "tu1", "content": '{"ok": true}'},
+    ]
+
+    _events = [
+        e async for e in APIKeyProvider(cfg).complete_stream(messages=messages, tools=[])
+    ]
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["messages"][2] == {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{
+            "id": "tu1",
+            "type": "function",
+            "function": {
+                "name": "search",
+                "arguments": json.dumps({"query": "auth"}),
+            },
+        }],
+    }
+    assert sent["messages"][3] == {
+        "role": "tool",
+        "tool_call_id": "tu1",
+        "content": '{"ok": true}',
+    }
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
 async def test_openai_stream_graceful_zero_usage_on_missing(api_env, respx_mock):
     """Some proxies never emit a usage chunk — provider must emit zero
     usage rather than crash.

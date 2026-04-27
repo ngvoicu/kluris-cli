@@ -346,8 +346,8 @@ def lobe_overview_tool(
     if not isinstance(lobe, str) or not lobe:
         raise NotFoundError("lobe must be a non-empty string")
 
-    lobe_dir = brain_path / lobe
-    if not lobe_dir.exists() or not lobe_dir.is_dir():
+    lobe_dir = resolve_in_brain(brain_path, lobe)
+    if not lobe_dir.is_dir():
         raise NotFoundError(f"lobe {lobe!r} not found")
 
     map_md = lobe_dir / "map.md"
@@ -358,7 +358,8 @@ def lobe_overview_tool(
         except Exception:
             map_body = ""
 
-    prefix = lobe.rstrip("/") + "/"
+    lobe_rel = _rel(brain_path, lobe_dir).rstrip("/")
+    prefix = lobe_rel + "/"
     neurons: list[dict[str, Any]] = []
     tags_seen: list[str] = []
     tag_set: set[str] = set()
@@ -398,7 +399,7 @@ def lobe_overview_tool(
 
     response: dict[str, Any] = {
         "ok": True,
-        "lobe": lobe.rstrip("/"),
+        "lobe": lobe_rel,
         "map_body": map_body,
         "neurons": neurons,
         "tag_union": tags_seen,

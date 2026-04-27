@@ -24,6 +24,7 @@ so the in-image ``recent`` tool's mtime fallback is meaningful.
 
 from __future__ import annotations
 
+from importlib import resources
 import os
 import shutil
 from datetime import datetime
@@ -33,7 +34,8 @@ from typing import Iterable
 import pathspec
 
 
-_PACKAGING_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "packaging"
+_SOURCE_PACKAGING_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "packaging"
+_TEMPLATE_PACKAGE = "kluris._packaging"
 _PACK_SRC = Path(__file__).resolve().parent.parent / "pack"
 _RUNTIME_SRC = (
     Path(__file__).resolve().parent.parent.parent / "kluris_runtime"
@@ -80,39 +82,25 @@ def stage_pack(
     _stamp_brain_mtimes(brain_path, output_dir / "brain")
 
     _render_template(
-        _PACKAGING_ROOT / "Dockerfile.template",
-        output_dir / "Dockerfile",
-        brain_name=brain_name,
+        "Dockerfile.template", output_dir / "Dockerfile", brain_name=brain_name,
     )
     _render_template(
-        _PACKAGING_ROOT / "docker-compose.yml.template",
+        "docker-compose.yml.template",
         output_dir / "docker-compose.yml",
         brain_name=brain_name,
     )
     _render_template(
-        _PACKAGING_ROOT / "dockerignore.template",
-        output_dir / ".dockerignore",
-        brain_name=brain_name,
+        "dockerignore.template", output_dir / ".dockerignore", brain_name=brain_name,
     )
     _render_template(
-        _PACKAGING_ROOT / "gitignore.template",
-        output_dir / ".gitignore",
-        brain_name=brain_name,
+        "gitignore.template", output_dir / ".gitignore", brain_name=brain_name,
+    )
+    _render_template("env.template", output_dir / ".env", brain_name=brain_name)
+    _render_template(
+        "env.example.template", output_dir / ".env.example", brain_name=brain_name,
     )
     _render_template(
-        _PACKAGING_ROOT / "env.template",
-        output_dir / ".env",
-        brain_name=brain_name,
-    )
-    _render_template(
-        _PACKAGING_ROOT / "env.example.template",
-        output_dir / ".env.example",
-        brain_name=brain_name,
-    )
-    _render_template(
-        _PACKAGING_ROOT / "README.template.md",
-        output_dir / "README.md",
-        brain_name=brain_name,
+        "README.template.md", output_dir / "README.md", brain_name=brain_name,
     )
 
     files = sorted(
@@ -209,7 +197,19 @@ def _stamp_brain_mtimes(brain_src: Path, brain_dest: Path) -> None:
             continue
 
 
-def _render_template(template_path: Path, output_path: Path, *, brain_name: str) -> None:
-    text = template_path.read_text(encoding="utf-8")
+def _read_template(name: str) -> str:
+    """Read a pack template from source checkout or installed package data."""
+    source_path = _SOURCE_PACKAGING_ROOT / name
+    if source_path.exists():
+        return source_path.read_text(encoding="utf-8")
+    return (
+        resources.files(_TEMPLATE_PACKAGE)
+        .joinpath(name)
+        .read_text(encoding="utf-8")
+    )
+
+
+def _render_template(name: str, output_path: Path, *, brain_name: str) -> None:
+    text = _read_template(name)
     text = text.replace("{brain_name}", brain_name)
     output_path.write_text(text, encoding="utf-8")

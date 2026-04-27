@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from ..config import Config
-from .apikey import _parse_openai_stream
+from .apikey import _messages_for_openai, _parse_openai_stream, _smoke_response_looks_valid
 from .base import (
     AuthError,
     ContextLimitError,
@@ -176,11 +176,7 @@ class OAuthProvider(LLMProvider):
         except ValueError as exc:
             raise RequestError(f"smoke-test response not JSON: {exc}") from exc
 
-        choices = data.get("choices") or []
-        if (
-            not choices
-            or not isinstance(choices[0].get("message", {}).get("tool_calls"), list)
-        ):
+        if not _smoke_response_looks_valid("openai", data):
             raise RequestError(
                 "smoke-test response missing tool-call shape; the configured "
                 "endpoint did not honor the ping tool schema"
@@ -196,7 +192,7 @@ class OAuthProvider(LLMProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
             "tools": tools,
-            "messages": messages,
+            "messages": _messages_for_openai(messages),
         }
         try:
             headers = await self._bearer_headers()

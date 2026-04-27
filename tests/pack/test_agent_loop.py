@@ -91,6 +91,142 @@ async def test_agent_dispatches_search_then_final_answer(fixture_brain, tmp_path
     assert provider.calls == 2
 
 
+async def test_agent_sends_system_prompt_to_provider_for_anthropic(
+    fixture_brain, tmp_path
+):
+    cfg = _config(fixture_brain, KLURIS_DATA_DIR=str(tmp_path / "data"))
+    (tmp_path / "data").mkdir()
+
+    class _CaptureProvider(LLMProvider):
+        model = "capture"
+
+        def __init__(self) -> None:
+            self.messages = None
+
+        async def smoke_test(self) -> None:  # pragma: no cover
+            return None
+
+        async def complete_stream(self, messages, tools):
+            self.messages = messages
+            yield {"kind": "end"}
+
+    provider = _CaptureProvider()
+    await _drain(run_agent(
+        config=cfg,
+        provider=provider,
+        history=[],
+        user_message="hi",
+        brain_name="Fixture Brain",
+    ))
+    assert provider.messages[0]["role"] == "system"
+    assert "Fixture Brain" in provider.messages[0]["content"]
+
+
+async def test_agent_uses_provider_neutral_tool_call_ids(fixture_brain, tmp_path):
+    cfg = _config(fixture_brain, KLURIS_DATA_DIR=str(tmp_path / "data"))
+    (tmp_path / "data").mkdir()
+
+    class _TwoRoundProvider(LLMProvider):
+        model = "capture"
+
+        def __init__(self) -> None:
+            self.second_round_messages = None
+            self.calls = 0
+
+        async def smoke_test(self) -> None:  # pragma: no cover
+            return None
+
+        async def complete_stream(self, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                yield {
+                    "kind": "tool_use",
+                    "name": "search",
+                    "id": "tu1",
+                    "args": {"query": "auth"},
+                }
+                yield {"kind": "end"}
+            else:
+                self.second_round_messages = messages
+                yield {"kind": "token", "text": "done"}
+                yield {"kind": "end"}
+
+    provider = _TwoRoundProvider()
+    await _drain(run_agent(
+        config=cfg,
+        provider=provider,
+        history=[],
+        user_message="how does auth work?",
+    ))
+    tool_messages = [
+        m for m in provider.second_round_messages
+        if m.get("role") in {"assistant", "tool"}
+    ]
+    assert tool_messages[-2]["tool_calls"][0] == {
+        "id": "tu1",
+        "name": "search",
+        "args": {"query": "auth"},
+    }
+    assert tool_messages[-1]["tool_call_id"] == "tu1"
+    assert "tool_use_id" not in tool_messages[-1]
+
+
+async def test_agent_groups_parallel_tool_calls_in_replay(fixture_brain, tmp_path):
+    cfg = _config(fixture_brain, KLURIS_DATA_DIR=str(tmp_path / "data"))
+    (tmp_path / "data").mkdir()
+
+    class _MultiToolProvider(LLMProvider):
+        model = "capture"
+
+        def __init__(self) -> None:
+            self.second_round_messages = None
+            self.calls = 0
+
+        async def smoke_test(self) -> None:  # pragma: no cover
+            return None
+
+        async def complete_stream(self, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                yield {"kind": "token", "text": "I will check. "}
+                yield {
+                    "kind": "tool_use",
+                    "name": "search",
+                    "id": "tu1",
+                    "args": {"query": "auth"},
+                }
+                yield {
+                    "kind": "tool_use",
+                    "name": "glossary",
+                    "id": "tu2",
+                    "args": {},
+                }
+                yield {"kind": "end"}
+            else:
+                self.second_round_messages = messages
+                yield {"kind": "token", "text": "done"}
+                yield {"kind": "end"}
+
+    provider = _MultiToolProvider()
+    await _drain(run_agent(
+        config=cfg,
+        provider=provider,
+        history=[],
+        user_message="how does auth work?",
+    ))
+
+    tool_messages = [
+        m for m in provider.second_round_messages
+        if m.get("role") in {"assistant", "tool"}
+    ]
+    assert tool_messages[-3]["content"] == "I will check. "
+    assert tool_messages[-3]["tool_calls"] == [
+        {"id": "tu1", "name": "search", "args": {"query": "auth"}},
+        {"id": "tu2", "name": "glossary", "args": {}},
+    ]
+    assert [m["tool_call_id"] for m in tool_messages[-2:]] == ["tu1", "tu2"]
+
+
 async def test_agent_dispatches_multi_read_in_one_call(fixture_brain, tmp_path):
     cfg = _config(fixture_brain, KLURIS_DATA_DIR=str(tmp_path / "data"))
     (tmp_path / "data").mkdir()

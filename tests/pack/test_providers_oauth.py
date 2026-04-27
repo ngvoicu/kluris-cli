@@ -10,7 +10,7 @@ import pytest
 import respx
 
 from kluris.pack.config import Config
-from kluris.pack.providers.base import AuthError
+from kluris.pack.providers.base import AuthError, RequestError
 from kluris.pack.providers.oauth import OAuthProvider
 
 pytestmark = pytest.mark.asyncio
@@ -217,3 +217,38 @@ async def test_smoke_uses_bearer_header(respx_mock):
     )
     await OAuthProvider(cfg).smoke_test()
     assert api_route.calls.last.request.headers.get("Authorization") == "Bearer tok-bearer"
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_rejects_empty_tool_calls(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"tool_calls": []}}]},
+        )
+    )
+    with pytest.raises(RequestError):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_rejects_wrong_tool_call_name(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    wrong = _smoke_response()
+    wrong["choices"][0]["message"]["tool_calls"][0]["function"]["name"] = "search"
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=wrong)
+    )
+    with pytest.raises(RequestError):
+        await OAuthProvider(cfg).smoke_test()

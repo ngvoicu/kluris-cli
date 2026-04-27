@@ -20,8 +20,7 @@ each tool call. The chat route in
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Callable
 
 from .config import Config
 from .providers.base import (
@@ -170,13 +169,10 @@ async def run_agent(
     tools = _tool_schemas(config)
 
     messages: list[dict[str, Any]] = []
-    if config.provider_shape != "anthropic":
-        # OpenAI-shape providers carry the system prompt as a first
-        # message. Anthropic carries it as a top-level ``system``
-        # field, which our provider classes pass via the request body
-        # builder rather than the messages list. Both paths see the
-        # full conversation history below.
-        messages.append({"role": "system", "content": system})
+    # The providers translate this generic system message into their
+    # native shape: OpenAI keeps role=system, Anthropic lifts it to the
+    # top-level `system` request field.
+    messages.append({"role": "system", "content": system})
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
@@ -186,10 +182,12 @@ async def run_agent(
     while rounds < config.max_agent_rounds:
         rounds += 1
         pending_tools: list[dict[str, Any]] = []
+        round_text: list[str] = []
         try:
             async for event in provider.complete_stream(messages, tools):
                 kind = event.get("kind")
                 if kind == "token":
+                    round_text.append(str(event.get("text", "")))
                     yield event
                 elif kind == "usage":
                     cumulative_input += int(event.get("input", 0))
@@ -230,11 +228,14 @@ async def run_agent(
             yield {"kind": "end"}
             return
 
-        # Append assistant tool-call request + tool results to the
+        # Append the assistant tool-call request + tool results to the
         # conversation, then re-enter the loop for the next turn.
+        assistant_tool_calls: list[dict[str, Any]] = []
+        tool_result_messages: list[dict[str, Any]] = []
         for call in pending_tools:
             name = call.get("name") or ""
             args = call.get("args") or {}
+            call_id = call.get("id") or f"tu_{rounds}_{name}"
             result = _dispatch_tool(config, name, args)
             summary = _summarize_tool_result(name, result)
             if trace_hook is not None:
@@ -245,20 +246,22 @@ async def run_agent(
                     "result_summary": summary,
                 })
             yield {"kind": "tool_result", "tool": name, "summary": summary}
-            messages.append({
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": call.get("id") or f"tu_{rounds}_{name}",
-                    "name": name,
-                    "args": args,
-                }],
+            assistant_tool_calls.append({
+                "id": call_id,
+                "name": name,
+                "args": args,
             })
-            messages.append({
+            tool_result_messages.append({
                 "role": "tool",
-                "tool_use_id": call.get("id") or f"tu_{rounds}_{name}",
+                "tool_call_id": call_id,
                 "content": json.dumps(result, ensure_ascii=False),
             })
+        messages.append({
+            "role": "assistant",
+            "content": "".join(round_text),
+            "tool_calls": assistant_tool_calls,
+        })
+        messages.extend(tool_result_messages)
 
     yield {
         "kind": "error",

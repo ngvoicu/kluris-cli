@@ -200,19 +200,21 @@ class APIKeyProvider(LLMProvider):
         tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if self.shape == "anthropic":
+            system, anthropic_messages = _messages_for_anthropic(messages)
             return {
                 "model": self.model,
                 "max_tokens": 4096,
                 "stream": True,
                 "tools": tools,
-                "messages": messages,
+                "messages": anthropic_messages,
+                **({"system": system} if system else {}),
             }
         return {
             "model": self.model,
             "stream": True,
             "stream_options": {"include_usage": True},
             "tools": tools,
-            "messages": messages,
+            "messages": _messages_for_openai(messages),
         }
 
 
@@ -252,6 +254,97 @@ def _smoke_response_looks_valid(shape: str, data: dict[str, Any]) -> bool:
         isinstance(first, dict)
         and first.get("function", {}).get("name") == "ping"
     )
+
+
+# --- Outbound message conversion ---------------------------------------------
+
+
+def _messages_for_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert the agent loop's generic tool-call messages to OpenAI shape."""
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "assistant" and msg.get("tool_calls"):
+            out.append({
+                "role": "assistant",
+                "content": msg.get("content", ""),
+                "tool_calls": [
+                    {
+                        "id": call.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": call.get("name", ""),
+                            "arguments": json.dumps(call.get("args", {})),
+                        },
+                    }
+                    for call in msg.get("tool_calls", [])
+                ],
+            })
+        elif role == "tool":
+            out.append({
+                "role": "tool",
+                "tool_call_id": msg.get("tool_call_id") or msg.get("tool_use_id"),
+                "content": msg.get("content", ""),
+            })
+        else:
+            out.append({
+                "role": role,
+                "content": msg.get("content", ""),
+            })
+    return out
+
+
+def _messages_for_anthropic(
+    messages: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, Any]]]:
+    """Convert generic messages to Anthropic Messages API shape.
+
+    The agent loop keeps one provider-neutral transcript. Anthropic wants
+    system text as a top-level field and tool results as user content
+    blocks, so the conversion happens immediately before the HTTP POST.
+    """
+    system_parts: list[str] = []
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "system":
+            content = msg.get("content", "")
+            if content:
+                system_parts.append(str(content))
+            continue
+        if role == "assistant" and msg.get("tool_calls"):
+            content_blocks: list[dict[str, Any]] = []
+            content = msg.get("content", "")
+            if content:
+                content_blocks.append({"type": "text", "text": str(content)})
+            content_blocks.extend(
+                {
+                    "type": "tool_use",
+                    "id": call.get("id", ""),
+                    "name": call.get("name", ""),
+                    "input": call.get("args", {}),
+                }
+                for call in msg.get("tool_calls", [])
+            )
+            out.append({
+                "role": "assistant",
+                "content": content_blocks,
+            })
+        elif role == "tool":
+            out.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id") or msg.get("tool_use_id"),
+                    "content": msg.get("content", ""),
+                }],
+            })
+        elif role in {"user", "assistant"}:
+            out.append({
+                "role": role,
+                "content": msg.get("content", ""),
+            })
+    return "\n\n".join(system_parts), out
 
 
 # --- Streaming parsers ----------------------------------------------------

@@ -314,6 +314,15 @@ def test_lobe_overview_missing_lobe_raises(fixture_brain):
         lobe_overview_tool(fixture_brain, "nope", budget=4096)
 
 
+def test_lobe_overview_rejects_path_escape(fixture_brain, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "map.md").write_text("# Outside\nsecret\n", encoding="utf-8")
+
+    with pytest.raises(SandboxError):
+        lobe_overview_tool(fixture_brain, "../outside", budget=4096)
+
+
 @pytest.mark.parametrize("budget", [1024, 4096, 8192])
 def test_lobe_overview_budget_enforced(fixture_brain, budget):
     out = lobe_overview_tool(fixture_brain, "knowledge", budget=budget)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from kluris.core import pack as pack_module
 from kluris.core.pack import stage_pack
 
 
@@ -40,6 +41,37 @@ def test_writes_expected_top_level_dirs(staged_brain):
     out, _ = staged_brain
     dirs = {p.name for p in out.iterdir() if p.is_dir()}
     assert {"app", "kluris_runtime", "brain"} <= dirs
+
+
+def test_pack_templates_fallback_to_package_resources(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        pack_module,
+        "_SOURCE_PACKAGING_ROOT",
+        tmp_path / "missing-source-packaging",
+    )
+
+    text = pack_module._read_template("Dockerfile.template")
+    assert "FROM python:3.12-slim" in text
+
+
+def test_packaged_templates_match_source_templates():
+    source_dir = Path(__file__).resolve().parent.parent.parent / "packaging"
+    packaged_dir = (
+        Path(__file__).resolve().parent.parent.parent
+        / "src"
+        / "kluris"
+        / "_packaging"
+    )
+    source_files = {p.name for p in source_dir.iterdir() if p.is_file()}
+    packaged_files = {
+        p.name for p in packaged_dir.iterdir()
+        if p.is_file() and p.name != "__init__.py"
+    }
+    assert packaged_files == source_files
+    for name in source_files:
+        assert (packaged_dir / name).read_text(encoding="utf-8") == (
+            source_dir / name
+        ).read_text(encoding="utf-8")
 
 
 def test_env_has_no_real_secrets(staged_brain):
