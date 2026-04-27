@@ -131,6 +131,17 @@ def create_app(
         )
         sys.stderr.flush()
 
+    if cfg.skip_boot_smoke and not skip_smoke_test:
+        sys.stderr.write(
+            "kluris-pack: WARNING — KLURIS_SKIP_BOOT_SMOKE=1 is set; "
+            "boot tool-capability smoke-test is being skipped. The "
+            "first chat request will be the first time the LLM "
+            "endpoint is exercised — misconfiguration won't surface "
+            "until then.\n"
+        )
+        sys.stderr.flush()
+        skip_smoke_test = True
+
     prov = provider or _provider_from_config(cfg)
 
     lifespan = None

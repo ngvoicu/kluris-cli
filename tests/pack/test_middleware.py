@@ -26,6 +26,33 @@ def test_create_app_runs_smoke_test_before_serving(
     assert stub_provider.smoke_calls == 1
 
 
+def test_kluris_skip_boot_smoke_env_skips_probe(
+    api_key_env, fixture_brain, tmp_path, stub_provider, capsys
+):
+    """``KLURIS_SKIP_BOOT_SMOKE=1`` must opt out of the boot probe AND
+    print a loud warning to stderr so it shows up in
+    ``docker compose logs``.
+    """
+    (tmp_path / "data").mkdir()
+    env = dict(
+        api_key_env,
+        KLURIS_BRAIN_DIR=str(fixture_brain),
+        KLURIS_DATA_DIR=str(tmp_path / "data"),
+        KLURIS_SKIP_BOOT_SMOKE="1",
+    )
+    cfg = Config.load_from_env(env)
+    create_app(
+        config=cfg,
+        provider=stub_provider,
+        allow_writable_brain=True,
+    )
+    assert stub_provider.smoke_calls == 0, (
+        "smoke test must NOT run when KLURIS_SKIP_BOOT_SMOKE=1"
+    )
+    err = capsys.readouterr().err
+    assert "KLURIS_SKIP_BOOT_SMOKE=1" in err
+
+
 def test_create_app_systemexits_on_smoke_test_failure(api_key_config: Config):
     """Smoke-test failure must exit non-zero with a redacted message."""
     from kluris.pack.providers.base import LLMProvider

@@ -142,8 +142,12 @@ async def test_smoke_raises_on_500(api_env, respx_mock):
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-async def test_smoke_raises_when_tool_call_missing(api_env, respx_mock):
-    """Endpoint returns 200 but ignores the ping tool — fail-fast."""
+async def test_smoke_passes_with_text_response_no_tool_call(api_env, respx_mock):
+    """Endpoint returns 200 with a structurally valid completion but no
+    forced tool_call — smoke test must PASS. Some real-world gateways
+    silently ignore ``tool_choice`` while still supporting tools at
+    chat time; failing the boot in those cases punishes deployers.
+    """
     cfg = _build_config(api_env, shape="anthropic")
     respx_mock.post("http://api.test/v1/messages").mock(
         return_value=httpx.Response(
@@ -151,8 +155,47 @@ async def test_smoke_raises_when_tool_call_missing(api_env, respx_mock):
             json={"id": "msg_x", "content": [{"type": "text", "text": "hi"}]},
         )
     )
+    # No exception expected — structural shape (non-empty content[])
+    # is sufficient for the boot probe.
+    await APIKeyProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_raises_when_response_lacks_completion_shape(
+    api_env, respx_mock,
+):
+    """A 200 response that's NOT a chat completion (HTML proxy error,
+    misrouted JSON, empty body) still fails fast.
+    """
+    cfg = _build_config(api_env, shape="anthropic")
+    respx_mock.post("http://api.test/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={"unexpected": "envelope", "content": []},  # empty content[]
+        )
+    )
     with pytest.raises(RequestError):
         await APIKeyProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_openai_smoke_passes_with_text_response_no_tool_call(
+    api_env, respx_mock,
+):
+    """OpenAI shape: same logic — non-empty ``choices[]`` is enough."""
+    cfg = _build_config(api_env, shape="openai")
+    respx_mock.post("http://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "cmpl-x",
+                "choices": [
+                    {"message": {"role": "assistant", "content": "hi"}}
+                ],
+            },
+        )
+    )
+    await APIKeyProvider(cfg).smoke_test()
 
 
 @pytest.mark.parametrize(

@@ -131,6 +131,13 @@ class Config(BaseModel):
     tls_ca_bundle: Path | None = None
     tls_insecure: bool = False
 
+    # Escape hatch: skip the boot tool-capability smoke-test entirely.
+    # Some endpoints don't even implement the chat-completions probe
+    # in a way the structural check survives (custom envelopes, batch-
+    # only proxies, etc.). Deployers who know their endpoint works
+    # can opt out at boot. Loud warning printed.
+    skip_boot_smoke: bool = False
+
     @property
     def auth_mode(self) -> str:
         """``"api_key"`` or ``"oauth"`` — whichever path is configured."""
@@ -291,6 +298,8 @@ class Config(BaseModel):
                 "exclusive — pick one (the bundle is the secure choice)"
             )
 
+        skip_boot_smoke = _read_bool(env, "KLURIS_SKIP_BOOT_SMOKE", False)
+
         return cls(
             **kwargs,
             max_agent_rounds=max_rounds,
@@ -300,4 +309,5 @@ class Config(BaseModel):
             data_dir=data_dir,
             tls_ca_bundle=ca_bundle,
             tls_insecure=tls_insecure,
+            skip_boot_smoke=skip_boot_smoke,
         )

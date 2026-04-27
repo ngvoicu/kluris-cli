@@ -226,37 +226,40 @@ class APIKeyProvider(LLMProvider):
 
 
 def _smoke_response_looks_valid(shape: str, data: dict[str, Any]) -> bool:
-    """Return True iff ``data`` carries a ``ping`` tool-call result.
+    """Return True iff ``data`` is structurally a chat completion.
 
-    Shape-specific:
+    The boot smoke-test answers a narrower question than originally
+    spec'd: "is the configured endpoint reachable, authenticated, and
+    speaking the right API contract?" — NOT "does it honor a forced
+    ``tool_choice``?"
 
-    - Anthropic: ``content`` array contains a ``{"type": "tool_use",
-      "name": "ping", ...}`` entry.
-    - OpenAI: ``choices[0].message.tool_calls`` non-empty with
-      ``function.name == "ping"``.
+    Some real-world gateways (Azure OpenAI passthrough, vendor proxies,
+    on-prem Bedrock fronts) silently ignore ``tool_choice`` even when
+    the underlying model supports tool-calling perfectly well at chat
+    time. Failing the boot in those cases punishes deployers for a
+    behavioral quirk that doesn't actually break the chat.
+
+    The check is therefore structural only:
+
+    - Anthropic: ``content`` is a non-empty list. (Either a ``text``
+      block or a ``tool_use`` block both count.)
+    - OpenAI: ``choices`` is a non-empty list. (Tool-calls or plain
+      content delta both count.)
+
+    Anything else (HTML error pages from a proxy, a JSON envelope that
+    doesn't match the API shape, an empty body) still fails fast.
+    Deployers who want to bypass even this can set
+    ``KLURIS_SKIP_BOOT_SMOKE=1`` and skip the smoke step entirely.
     """
     if shape == "anthropic":
         content = data.get("content")
-        if not isinstance(content, list):
-            return False
-        return any(
-            isinstance(c, dict)
-            and c.get("type") == "tool_use"
-            and c.get("name") == "ping"
-            for c in content
-        )
+        return isinstance(content, list) and len(content) > 0
 
     choices = data.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return False
-    message = choices[0].get("message", {})
-    tool_calls = message.get("tool_calls")
-    if not isinstance(tool_calls, list) or not tool_calls:
-        return False
-    first = tool_calls[0]
     return (
-        isinstance(first, dict)
-        and first.get("function", {}).get("name") == "ping"
+        isinstance(choices, list)
+        and len(choices) > 0
+        and isinstance(choices[0], dict)
     )
 
 

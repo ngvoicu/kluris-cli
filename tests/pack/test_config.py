@@ -262,6 +262,24 @@ def test_tls_ca_bundle_and_insecure_mutually_exclusive(tmp_path):
     assert "mutually exclusive" in msg
 
 
+def test_skip_boot_smoke_default_false():
+    cfg = Config.load_from_env(_API_KEY_ENV)
+    assert cfg.skip_boot_smoke is False
+
+
+def test_skip_boot_smoke_truthy():
+    env = dict(_API_KEY_ENV, KLURIS_SKIP_BOOT_SMOKE="1")
+    cfg = Config.load_from_env(env)
+    assert cfg.skip_boot_smoke is True
+
+
+def test_skip_boot_smoke_invalid_literal_errors():
+    env = dict(_API_KEY_ENV, KLURIS_SKIP_BOOT_SMOKE="maybe")
+    with pytest.raises(ConfigError) as exc:
+        Config.load_from_env(env)
+    assert "KLURIS_SKIP_BOOT_SMOKE" in str(exc.value)
+
+
 def test_no_ui_auth_env_vars_honored():
     """The Kluris app has no built-in UI auth. Setting common UI-auth
     env vars must not change Config behavior — they're simply ignored.

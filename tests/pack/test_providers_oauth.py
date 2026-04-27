@@ -220,7 +220,13 @@ async def test_smoke_uses_bearer_header(respx_mock):
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-async def test_smoke_rejects_empty_tool_calls(respx_mock):
+async def test_smoke_passes_on_empty_tool_calls(respx_mock):
+    """Some real-world gateways silently ignore ``tool_choice`` and
+    return an empty ``tool_calls`` array. The boot smoke-test no longer
+    rejects this — the structural shape (non-empty ``choices[]``) is
+    what we verify; the chat itself fails clearly later if tool-calling
+    is genuinely broken on this endpoint.
+    """
     cfg = _build_config()
     respx_mock.post(_TOKEN_URL).mock(
         return_value=httpx.Response(
@@ -233,12 +239,16 @@ async def test_smoke_rejects_empty_tool_calls(respx_mock):
             json={"choices": [{"message": {"tool_calls": []}}]},
         )
     )
-    with pytest.raises(RequestError):
-        await OAuthProvider(cfg).smoke_test()
+    # No exception expected.
+    await OAuthProvider(cfg).smoke_test()
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-async def test_smoke_rejects_wrong_tool_call_name(respx_mock):
+async def test_smoke_passes_on_wrong_tool_call_name(respx_mock):
+    """Same rationale: the boot probe doesn't enforce ``ping`` as the
+    forced tool name. As long as the response is structurally a chat
+    completion (non-empty ``choices[]``), boot succeeds.
+    """
     cfg = _build_config()
     respx_mock.post(_TOKEN_URL).mock(
         return_value=httpx.Response(
@@ -249,6 +259,26 @@ async def test_smoke_rejects_wrong_tool_call_name(respx_mock):
     wrong["choices"][0]["message"]["tool_calls"][0]["function"]["name"] = "search"
     respx_mock.post(_API_URL + "/v1/chat/completions").mock(
         return_value=httpx.Response(200, json=wrong)
+    )
+    await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_rejects_non_completion_response(respx_mock):
+    """A 200 that's not a chat-completion shape (HTML proxy error,
+    misrouted JSON) still fails fast.
+    """
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"unexpected": "envelope", "choices": []},  # empty choices[]
+        )
     )
     with pytest.raises(RequestError):
         await OAuthProvider(cfg).smoke_test()
