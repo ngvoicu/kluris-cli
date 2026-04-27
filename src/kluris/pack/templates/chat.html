@@ -1,34 +1,99 @@
 {% extends "base.html" %}
 {% block body %}
-<header class="chat-header">
-  <h1>{{ brain_name }}</h1>
-  <button id="new-conversation" type="button">New conversation</button>
-</header>
+<div class="app-shell">
 
-<main class="chat-main">
-  <div id="messages" class="messages">
-    {% for msg in history %}
-      <div class="msg msg-{{ msg.role }}">
-        <div class="msg-role">{{ msg.role }}</div>
-        <div class="msg-body">{{ msg.content }}</div>
+  <aside class="sidebar" id="sidebar">
+    <header class="sidebar-header">
+      <h1 class="sidebar-title">{{ brain_name }}</h1>
+      <button class="sidebar-collapse" id="sidebar-collapse"
+              type="button" aria-label="Collapse sidebar">&lsaquo;</button>
+    </header>
+
+    <div class="sidebar-search">
+      <input id="tree-filter" type="search"
+             placeholder="Filter lobes & neurons…"
+             aria-label="Filter the brain tree">
+    </div>
+
+    <nav class="sidebar-nav" id="sidebar-nav">
+      <section class="tree-section" data-section="lobes">
+        <h2 class="tree-section-title">Lobes</h2>
+        <ul class="tree" id="tree-lobes">
+          <li class="tree-empty">Loading…</li>
+        </ul>
+      </section>
+
+      <section class="tree-section" data-section="recent">
+        <h2 class="tree-section-title">Recently updated</h2>
+        <ul class="tree" id="tree-recent"></ul>
+      </section>
+
+      <section class="tree-section" data-section="glossary">
+        <h2 class="tree-section-title">
+          Glossary <span class="tree-count" id="glossary-count"></span>
+        </h2>
+        <ul class="tree" id="tree-glossary"></ul>
+      </section>
+    </nav>
+
+    <footer class="sidebar-footer">
+      <span class="sidebar-stats" id="sidebar-stats"></span>
+    </footer>
+  </aside>
+
+  <button class="sidebar-expand" id="sidebar-expand" type="button"
+          aria-label="Show sidebar" hidden>&rsaquo;</button>
+
+  <main class="main">
+    <header class="main-header">
+      <span class="main-title">Chat</span>
+      <button id="new-conversation" type="button"
+              class="ghost-btn">New conversation</button>
+    </header>
+
+    <div id="messages" class="messages">
+      {% for msg in history %}
+        <article class="msg msg-{{ msg.role }}">
+          <div class="msg-role">{{ msg.role }}</div>
+          <div class="msg-body">{{ msg.content }}</div>
+        </article>
+      {% endfor %}
+    </div>
+
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <textarea id="chat-input" rows="2" required
+                placeholder="Ask the brain anything…"></textarea>
+      <button type="submit" class="primary-btn">Send</button>
+    </form>
+
+    <footer class="main-footer">
+      <span id="usage-totals" data-input="0" data-output="0">
+        Tokens this session:
+        <strong id="usage-input">0</strong> in /
+        <strong id="usage-output">0</strong> out
+      </span>
+    </footer>
+  </main>
+
+  <div id="modal-backdrop" class="modal-backdrop" hidden></div>
+  <dialog id="modal" class="modal" aria-labelledby="modal-title">
+    <header class="modal-header">
+      <div>
+        <div class="modal-eyebrow" id="modal-eyebrow"></div>
+        <h2 class="modal-title" id="modal-title"></h2>
+        <div class="modal-meta" id="modal-meta"></div>
       </div>
-    {% endfor %}
-  </div>
-</main>
+      <button id="modal-close" class="ghost-btn"
+              type="button" aria-label="Close">&times;</button>
+    </header>
+    <div class="modal-tags" id="modal-tags"></div>
+    <div class="modal-body" id="modal-body"></div>
+  </dialog>
 
-<form id="chat-form" class="chat-form" autocomplete="off">
-  <textarea id="chat-input" placeholder="Ask the brain anything..." rows="2" required></textarea>
-  <button type="submit">Send</button>
-</form>
-
-<footer class="chat-footer">
-  <span id="usage-totals" data-input="0" data-output="0">
-    Tokens this session: <strong id="usage-input">0</strong> in /
-    <strong id="usage-output">0</strong> out
-  </span>
-</footer>
+</div>
 
 <script src="/static/sse.js"></script>
+<script src="/static/brain-explorer.js"></script>
 <script>
   (function () {
     const form = document.getElementById("chat-form");
@@ -40,7 +105,7 @@
     let totalIn = 0, totalOut = 0;
 
     function appendMessage(role, body) {
-      const div = document.createElement("div");
+      const div = document.createElement("article");
       div.className = "msg msg-" + role;
       div.innerHTML =
         '<div class="msg-role">' + role + "</div>" +
@@ -56,7 +121,9 @@
       div.className = "msg msg-tool";
       const summary = JSON.stringify(args || {});
       div.innerHTML =
-        '<details><summary>' + name + " — " + summary + "</summary>" +
+        '<details><summary><span class="tool-name">' + name +
+        '</span> <span class="tool-args">— ' + summary +
+        '</span></summary>' +
         '<div class="tool-result"></div></details>';
       messages.appendChild(div);
       return div;
@@ -102,6 +169,24 @@
       totalIn = 0; totalOut = 0;
       usageIn.textContent = "0"; usageOut.textContent = "0";
     });
+
+    // --- Sidebar collapse / expand --------------------------------
+    const shell = document.querySelector(".app-shell");
+    const collapseBtn = document.getElementById("sidebar-collapse");
+    const expandBtn = document.getElementById("sidebar-expand");
+    collapseBtn.addEventListener("click", () => {
+      shell.classList.add("sidebar-collapsed");
+      expandBtn.hidden = false;
+    });
+    expandBtn.addEventListener("click", () => {
+      shell.classList.remove("sidebar-collapsed");
+      expandBtn.hidden = true;
+    });
+
+    // Hand control of the brain tree + modal off to brain-explorer.js.
+    if (window.kluris && window.kluris.bootBrainExplorer) {
+      window.kluris.bootBrainExplorer();
+    }
   })();
 </script>
 {% endblock %}

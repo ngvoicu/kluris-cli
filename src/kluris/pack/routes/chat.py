@@ -25,6 +25,13 @@ from ..config import Config
 from ..history import SessionStore
 from ..providers.base import LLMProvider
 from ..streaming import encode_sse
+from ..tools.brain import (
+    NotFoundError,
+    SandboxError,
+    lobe_overview_tool,
+    read_neuron_tool,
+    wake_up_tool,
+)
 
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -164,6 +171,53 @@ def attach_chat_routes(app: FastAPI) -> None:
             httponly=True, samesite="lax",
         )
         return resp
+
+    # --- Brain explorer (read-only) -----------------------------------
+    #
+    # These endpoints back the left-sidebar brain tree and the
+    # click-to-expand neuron modal. They reuse the same tool
+    # dispatchers the LLM agent uses, so the UI sees exactly the
+    # same view of the brain the agent does.
+
+    @app.get("/api/brain/tree")
+    async def brain_tree():
+        cfg: Config = app.state.config
+        # wake_up_tool returns the discovered snapshot: lobes,
+        # recent neurons, glossary, brain.md body, deprecation
+        # diagnostics. The frontend builds the tree from this.
+        return JSONResponse(wake_up_tool(cfg.brain_dir))
+
+    @app.get("/api/brain/neuron")
+    async def brain_neuron(path: str):
+        cfg: Config = app.state.config
+        try:
+            return JSONResponse(read_neuron_tool(cfg.brain_dir, path))
+        except SandboxError as exc:
+            return JSONResponse(
+                {"ok": False, "error": f"sandbox: {exc}"},
+                status_code=400,
+            )
+        except NotFoundError as exc:
+            return JSONResponse(
+                {"ok": False, "error": f"not_found: {exc}"},
+                status_code=404,
+            )
+
+    @app.get("/api/brain/lobe")
+    async def brain_lobe(lobe: str):
+        cfg: Config = app.state.config
+        try:
+            # Use a generous budget here — the UI is a human reader,
+            # not an LLM context window. 64 KB lets the lobe map_body
+            # render verbatim without truncation hints.
+            return JSONResponse(
+                lobe_overview_tool(cfg.brain_dir, lobe, budget=65536),
+            )
+        except NotFoundError as exc:
+            return JSONResponse(
+                {"ok": False, "error": f"not_found: {exc}"},
+                status_code=404,
+            )
 
     @app.post("/chat/new")
     async def chat_new(request: Request):

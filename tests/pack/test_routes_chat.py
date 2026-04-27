@@ -117,6 +117,118 @@ def test_post_chat_empty_message_400(api_key_config: Config):
         assert resp.status_code == 400
 
 
+def test_brain_tree_endpoint_returns_lobes_and_glossary(api_key_config: Config):
+    """``GET /api/brain/tree`` must return the same wake_up payload
+    the LLM sees — lobes, recent, glossary, brain.md body. The
+    sidebar in the chat UI builds the tree from this.
+    """
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get("/api/brain/tree")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        lobe_names = {l["name"] for l in data["lobes"]}
+        # fixture brain has projects / knowledge / infrastructure
+        assert {"projects", "knowledge", "infrastructure"} <= lobe_names
+        # glossary terms come through
+        gloss_terms = {e["term"] for e in data["glossary"]}
+        assert "JWT" in gloss_terms
+        # brain.md body present
+        assert isinstance(data["brain_md"], str)
+
+
+def test_brain_neuron_endpoint_returns_frontmatter_and_body(
+    api_key_config: Config,
+):
+    """``GET /api/brain/neuron?path=…`` returns the neuron's
+    frontmatter, body, and ``deprecated`` flag — sandboxed under
+    the brain root.
+    """
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get(
+            "/api/brain/neuron",
+            params={"path": "knowledge/jwt.md"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert "JSON Web Tokens" in data["body"]
+        assert data["deprecated"] is False
+        assert isinstance(data["frontmatter"], dict)
+
+
+def test_brain_neuron_endpoint_404_on_missing_path(api_key_config: Config):
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get(
+            "/api/brain/neuron",
+            params={"path": "knowledge/does-not-exist.md"},
+        )
+        assert resp.status_code == 404
+        data = resp.json()
+        assert data["ok"] is False
+        assert "not_found" in data["error"]
+
+
+def test_brain_neuron_endpoint_400_on_path_traversal(api_key_config: Config):
+    """The sandbox rejects ``../`` traversal; the route maps that to
+    a 400 — the chat UI never sees host filesystem content.
+    """
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get(
+            "/api/brain/neuron",
+            params={"path": "../../etc/passwd"},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["ok"] is False
+        assert "sandbox" in data["error"]
+
+
+def test_brain_lobe_endpoint_returns_overview(api_key_config: Config):
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get("/api/brain/lobe", params={"lobe": "knowledge"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["lobe"] == "knowledge"
+        # map_body comes through verbatim (large budget set on the
+        # endpoint so the human reader doesn't get truncation).
+        assert isinstance(data["map_body"], str)
+        # at least the JWT neuron is reachable from the knowledge lobe
+        paths = {n["path"] for n in data["neurons"]}
+        assert "knowledge/jwt.md" in paths
+
+
+def test_brain_lobe_endpoint_404_on_missing_lobe(api_key_config: Config):
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        resp = client.get("/api/brain/lobe", params={"lobe": "does-not-exist"})
+        assert resp.status_code == 404
+        assert resp.json()["ok"] is False
+
+
+def test_brain_endpoints_dont_require_auth(api_key_config: Config):
+    """The brain explorer is intentionally unauthenticated — same
+    threat model as the chat UI. Public exposure is the deployer's
+    responsibility (reverse proxy / VPN / cloud IAM).
+    """
+    app = _build_app(api_key_config)
+    with TestClient(app) as client:
+        for path in ("/api/brain/tree",
+                     "/api/brain/neuron?path=knowledge/jwt.md",
+                     "/api/brain/lobe?lobe=knowledge"):
+            resp = client.get(path)
+            assert resp.status_code == 200, (
+                f"{path} should be reachable without auth, got {resp.status_code}"
+            )
+            assert "WWW-Authenticate" not in resp.headers
+
+
 def test_post_chat_new_rotates_cookie(api_key_config: Config):
     app = _build_app(api_key_config)
     with TestClient(app) as client:
