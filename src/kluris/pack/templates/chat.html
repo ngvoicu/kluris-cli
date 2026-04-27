@@ -53,7 +53,8 @@
 
     <div id="messages" class="messages">
       {% for msg in history %}
-        <article class="msg msg-{{ msg.role }}">
+        <article class="msg msg-{{ msg.role }}"
+                 {% if msg.role == 'assistant' %}data-markdown="1"{% endif %}>
           <div class="msg-role">{{ msg.role }}</div>
           <div class="msg-body">{{ msg.content }}</div>
         </article>
@@ -104,6 +105,30 @@
     const usageOut = document.getElementById("usage-output");
     let totalIn = 0, totalOut = 0;
 
+    // Render markdown if the brain-explorer module loaded; fall back
+    // to escaped plaintext otherwise so we never inject raw HTML.
+    function renderMd(text) {
+      if (window.kluris && window.kluris.renderMarkdown) {
+        return window.kluris.renderMarkdown(text);
+      }
+      const esc = (window.kluris && window.kluris.escapeHtml)
+        ? window.kluris.escapeHtml
+        : (s) => s
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return "<pre>" + esc(text) + "</pre>";
+    }
+
+    // Re-render every historical assistant body as markdown — server
+    // ships raw markdown text, but Jinja escaped it into the DOM as
+    // textContent; we now swap in the rendered HTML.
+    document
+      .querySelectorAll('article.msg[data-markdown="1"] .msg-body')
+      .forEach((body) => {
+        const raw = body.textContent;
+        body.innerHTML = renderMd(raw);
+        body.classList.add("md");
+      });
+
     function appendMessage(role, body) {
       const div = document.createElement("article");
       div.className = "msg msg-" + role;
@@ -136,13 +161,22 @@
       appendMessage("user", message);
       input.value = "";
       const assistantBody = appendMessage("assistant", "");
+      assistantBody.classList.add("md");
+      // Accumulate the raw markdown stream and re-render on each
+      // token. Re-rendering a few-KB string per chunk is cheap; it
+      // gives the user live formatted output as the model streams.
+      let assistantBuf = "";
       let lastToolCard = null;
+      function paintAssistant() {
+        assistantBody.innerHTML = renderMd(assistantBuf);
+      }
       kluris.streamChat({
         url: "/chat",
         body: {message: message},
         onEvent: (frame) => {
           if (frame.type === "token") {
-            assistantBody.textContent += frame.text;
+            assistantBuf += frame.text || "";
+            paintAssistant();
           } else if (frame.type === "tool") {
             lastToolCard = appendToolCard(frame.name, frame.args);
           } else if (frame.type === "tool_result") {
@@ -156,8 +190,12 @@
             usageIn.textContent = totalIn;
             usageOut.textContent = totalOut;
           } else if (frame.type === "error") {
-            assistantBody.textContent +=
-              "\n\n[error: " + frame.message + "]";
+            // Append an italicized error so it survives the markdown
+            // re-render as visible inline emphasis instead of getting
+            // wrapped in an unrendered code block.
+            assistantBuf +=
+              "\n\n*[error: " + frame.message + "]*";
+            paintAssistant();
           }
         },
       });

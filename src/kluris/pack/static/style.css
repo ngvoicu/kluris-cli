@@ -378,6 +378,53 @@ a { color: var(--accent); }
   font-size: 14px;
 }
 
+/* Assistant bodies that have been markdown-rendered drop the
+   pre-wrap whitespace so block elements own their own spacing. */
+.msg-body.md { white-space: normal; }
+.msg-body.md > :first-child { margin-top: 0; }
+.msg-body.md > :last-child { margin-bottom: 0; }
+.msg-body.md p { margin: 8px 0; }
+.msg-body.md h1 { font-size: 20px; margin: 16px 0 6px; font-weight: 600; }
+.msg-body.md h2 {
+  font-size: 16px;
+  margin: 18px 0 6px;
+  font-weight: 600;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.msg-body.md h3 { font-size: 13.5px; margin: 14px 0 4px; font-weight: 600; }
+.msg-body.md h4, .msg-body.md h5, .msg-body.md h6 {
+  font-size: 13px; margin: 12px 0 4px; font-weight: 600;
+}
+.msg-body.md ul, .msg-body.md ol { padding-left: 22px; margin: 6px 0; }
+.msg-body.md li { margin: 2px 0; }
+.msg-body.md hr {
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  margin: 12px 0;
+}
+.msg-body.md code {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, SF Mono, Menlo, monospace;
+  font-size: 12.5px;
+}
+.msg-body.md pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  margin: 8px 0;
+}
+.msg-body.md pre code { background: transparent; padding: 0; }
+.msg-body.md a { color: var(--accent); text-decoration: none; }
+.msg-body.md a:hover { text-decoration: underline; }
+.msg-body.md strong { font-weight: 600; color: var(--text); }
+.msg-body.md em { color: var(--text-muted); font-style: italic; }
+
 .chat-form {
   display: flex;
   gap: 10px;

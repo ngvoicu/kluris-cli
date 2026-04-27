@@ -511,5 +511,10 @@
 
   window.kluris = Object.assign(window.kluris || {}, {
     bootBrainExplorer: boot,
+    // Exposed so the chat code can render assistant-message bodies
+    // through the same Markdown subset used in the brain modal.
+    // Single source of truth for "what counts as markdown" in this UI.
+    renderMarkdown: renderMarkdown,
+    escapeHtml: escapeHtml,
   });
 })();
