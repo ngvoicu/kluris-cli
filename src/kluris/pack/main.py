@@ -122,6 +122,15 @@ def create_app(
         sys.stderr.write(f"kluris-pack: {exc}\n")
         raise SystemExit(3) from exc
 
+    if cfg.tls_insecure:
+        sys.stderr.write(
+            "kluris-pack: WARNING — KLURIS_TLS_INSECURE=1 is set; LLM "
+            "endpoint TLS certificates are NOT being verified. Use "
+            "KLURIS_CA_BUNDLE to trust a private root CA instead "
+            "wherever possible.\n"
+        )
+        sys.stderr.flush()
+
     prov = provider or _provider_from_config(cfg)
 
     lifespan = None

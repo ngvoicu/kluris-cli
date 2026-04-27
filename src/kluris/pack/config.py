@@ -73,6 +73,25 @@ def _read_int(env: dict, name: str, default: int) -> int:
         raise ConfigError(f"{name} must be an integer, got {raw!r}") from exc
 
 
+_TRUE_LITERALS = {"1", "true", "yes", "on"}
+_FALSE_LITERALS = {"0", "false", "no", "off", ""}
+
+
+def _read_bool(env: dict, name: str, default: bool) -> bool:
+    raw = env.get(name)
+    if raw is None:
+        return default
+    lowered = raw.strip().lower()
+    if lowered in _TRUE_LITERALS:
+        return True
+    if lowered in _FALSE_LITERALS:
+        return False
+    raise ConfigError(
+        f"{name} must be one of {sorted(_TRUE_LITERALS | {'0', 'false', 'no', 'off'})}, "
+        f"got {raw!r}"
+    )
+
+
 class Config(BaseModel):
     """Validated chat-server configuration.
 
@@ -105,10 +124,36 @@ class Config(BaseModel):
     brain_dir: Path = Field(default=Path("/app/brain"))
     data_dir: Path = Field(default=Path("/data"))
 
+    # TLS — for corporate gateways that present a self-signed or
+    # private-CA-signed cert. ``tls_ca_bundle`` is the secure option
+    # (point at the corporate root CA file). ``tls_insecure`` disables
+    # verification entirely; opt-in only, with a loud boot warning.
+    tls_ca_bundle: Path | None = None
+    tls_insecure: bool = False
+
     @property
     def auth_mode(self) -> str:
         """``"api_key"`` or ``"oauth"`` — whichever path is configured."""
         return "oauth" if self.oauth_token_url else "api_key"
+
+    @property
+    def httpx_verify(self) -> "bool | object":
+        """Return the ``verify`` argument every ``httpx.AsyncClient`` should use.
+
+        - Custom CA bundle path → an :class:`ssl.SSLContext` built
+          from the bundle (httpx 0.28+ deprecates ``verify=<str>``;
+          the SSLContext form is the long-term-supported API).
+        - ``KLURIS_TLS_INSECURE=1`` → ``False`` (escape hatch — TLS
+          verification disabled entirely).
+        - Neither set → ``True`` (system CA bundle, the default).
+        """
+        if self.tls_ca_bundle is not None:
+            import ssl
+
+            return ssl.create_default_context(cafile=str(self.tls_ca_bundle))
+        if self.tls_insecure:
+            return False
+        return True
 
     @property
     def api_url(self) -> str:
@@ -232,6 +277,20 @@ class Config(BaseModel):
         )
         brain_dir = Path(env.get("KLURIS_BRAIN_DIR", "/app/brain"))
         data_dir = Path(env.get("KLURIS_DATA_DIR", "/data"))
+
+        ca_bundle_raw = env.get("KLURIS_CA_BUNDLE")
+        ca_bundle = Path(ca_bundle_raw) if ca_bundle_raw else None
+        if ca_bundle is not None and not ca_bundle.exists():
+            raise ConfigError(
+                f"KLURIS_CA_BUNDLE points at a missing file: {ca_bundle}"
+            )
+        tls_insecure = _read_bool(env, "KLURIS_TLS_INSECURE", False)
+        if ca_bundle is not None and tls_insecure:
+            raise ConfigError(
+                "KLURIS_CA_BUNDLE and KLURIS_TLS_INSECURE are mutually "
+                "exclusive — pick one (the bundle is the secure choice)"
+            )
+
         return cls(
             **kwargs,
             max_agent_rounds=max_rounds,
@@ -239,4 +298,6 @@ class Config(BaseModel):
             max_multi_read_paths=max_multi,
             brain_dir=brain_dir,
             data_dir=data_dir,
+            tls_ca_bundle=ca_bundle,
+            tls_insecure=tls_insecure,
         )

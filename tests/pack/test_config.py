@@ -186,6 +186,82 @@ def test_logging_does_not_leak_secret(caplog):
         assert "sk-secret-xyz" not in record.getMessage()
 
 
+def test_tls_defaults_are_secure(api_env=None):
+    cfg = Config.load_from_env(_API_KEY_ENV)
+    assert cfg.tls_ca_bundle is None
+    assert cfg.tls_insecure is False
+    assert cfg.httpx_verify is True
+
+
+def test_tls_ca_bundle_override(tmp_path):
+    """Custom CA bundle → ``httpx_verify`` returns an
+    :class:`ssl.SSLContext` built from that bundle. The
+    ``str``-form ``verify`` argument is deprecated in httpx 0.28+.
+    """
+    import ssl
+
+    # Use a real (system-trusted) CA bundle so ``create_default_context``
+    # can actually load it. We're verifying the wiring, not the cert
+    # validation logic.
+    bundle = Path(ssl.get_default_verify_paths().cafile or "")
+    if not bundle or not bundle.exists():
+        pytest.skip("no system CA bundle available to use as a fixture")
+
+    env = dict(_API_KEY_ENV, KLURIS_CA_BUNDLE=str(bundle))
+    cfg = Config.load_from_env(env)
+    assert cfg.tls_ca_bundle == bundle
+    assert cfg.tls_insecure is False
+    verify = cfg.httpx_verify
+    assert isinstance(verify, ssl.SSLContext)
+
+
+def test_tls_ca_bundle_missing_path_errors(tmp_path):
+    env = dict(_API_KEY_ENV, KLURIS_CA_BUNDLE=str(tmp_path / "nope.pem"))
+    with pytest.raises(ConfigError) as exc:
+        Config.load_from_env(env)
+    assert "KLURIS_CA_BUNDLE" in str(exc.value)
+
+
+def test_tls_insecure_truthy_disables_verification():
+    env = dict(_API_KEY_ENV, KLURIS_TLS_INSECURE="1")
+    cfg = Config.load_from_env(env)
+    assert cfg.tls_insecure is True
+    assert cfg.httpx_verify is False
+
+
+@pytest.mark.parametrize("literal", ["true", "yes", "on", "TRUE"])
+def test_tls_insecure_other_truthy_literals(literal):
+    env = dict(_API_KEY_ENV, KLURIS_TLS_INSECURE=literal)
+    assert Config.load_from_env(env).tls_insecure is True
+
+
+@pytest.mark.parametrize("literal", ["0", "false", "no", "off", ""])
+def test_tls_insecure_falsy_literals(literal):
+    env = dict(_API_KEY_ENV, KLURIS_TLS_INSECURE=literal)
+    assert Config.load_from_env(env).tls_insecure is False
+
+
+def test_tls_insecure_invalid_literal_errors():
+    env = dict(_API_KEY_ENV, KLURIS_TLS_INSECURE="maybe")
+    with pytest.raises(ConfigError) as exc:
+        Config.load_from_env(env)
+    assert "KLURIS_TLS_INSECURE" in str(exc.value)
+
+
+def test_tls_ca_bundle_and_insecure_mutually_exclusive(tmp_path):
+    bundle = tmp_path / "corp.pem"
+    bundle.write_text("# x\n", encoding="utf-8")
+    env = dict(
+        _API_KEY_ENV,
+        KLURIS_CA_BUNDLE=str(bundle),
+        KLURIS_TLS_INSECURE="1",
+    )
+    with pytest.raises(ConfigError) as exc:
+        Config.load_from_env(env)
+    msg = str(exc.value).lower()
+    assert "mutually exclusive" in msg
+
+
 def test_no_ui_auth_env_vars_honored():
     """The Kluris app has no built-in UI auth. Setting common UI-auth
     env vars must not change Config behavior — they're simply ignored.

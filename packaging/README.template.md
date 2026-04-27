@@ -13,14 +13,35 @@ need to be supplied at deploy time.
 ## Local run
 
 ```bash
-cp .env.example .env       # then edit .env with your credentials
-docker compose up
+cp .env.example .env              # then edit .env with your credentials
+docker compose up --build         # build image + start container
 # open http://localhost:8765
 ```
 
-The chat is reachable as soon as `/healthz` returns 200. If it doesn't
-boot, run `docker compose logs` — the smoke-test prints a single
-redacted line naming the bad/missing env var.
+`--build` is recommended on first launch and any time the brain
+changes (the brain is baked into the image, so a brain edit needs a
+rebuild before it shows up). On subsequent launches with no changes,
+plain `docker compose up` is fine — Compose reuses the cached image.
+
+The chat is reachable as soon as `/healthz` returns 200. If it
+doesn't boot, run `docker compose logs` — the smoke-test prints a
+single redacted line naming the bad/missing env var.
+
+### Corporate / on-prem LLM gateway TLS
+
+If your gateway uses a self-signed cert or a certificate signed by a
+private internal CA, you have two options (both in `.env.example`):
+
+- `KLURIS_CA_BUNDLE=/data/corp-root-ca.pem` — point at a PEM bundle
+  that includes your private root CA. Mount the file as a volume in
+  `docker-compose.yml` if it lives outside the image:
+  ```yaml
+  volumes:
+    - kluris-data:/data
+    - /etc/corp/root-ca.pem:/data/corp-root-ca.pem:ro
+  ```
+- `KLURIS_TLS_INSECURE=1` — disables verification entirely. Opt-in
+  only — boot prints a loud warning. Prefer the bundle path.
 
 ## Push to a registry
 

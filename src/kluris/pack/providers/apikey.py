@@ -95,7 +95,9 @@ class APIKeyProvider(LLMProvider):
     async def smoke_test(self) -> None:  # noqa: D401  (interface)
         body = self._smoke_body()
         try:
-            async with httpx.AsyncClient(timeout=_SMOKE_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_SMOKE_TIMEOUT, verify=self._cfg.httpx_verify,
+            ) as client:
                 resp = await client.post(
                     self._endpoint(),
                     headers=self._headers(),
@@ -154,7 +156,9 @@ class APIKeyProvider(LLMProvider):
     ) -> AsyncIterator[dict[str, Any]]:
         body = self._stream_body(messages, tools)
         try:
-            async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_STREAM_TIMEOUT, verify=self._cfg.httpx_verify,
+            ) as client:
                 async with client.stream(
                     "POST",
                     self._endpoint(),

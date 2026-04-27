@@ -96,7 +96,9 @@ class OAuthProvider(LLMProvider):
         if self.scope:
             form["scope"] = self.scope
         try:
-            async with httpx.AsyncClient(timeout=_TOKEN_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_TOKEN_TIMEOUT, verify=self._cfg.httpx_verify,
+            ) as client:
                 resp = await client.post(self.token_url, data=form)
         except httpx.TimeoutException as exc:
             raise AuthError(f"oauth token timeout: {exc}") from exc
@@ -151,7 +153,9 @@ class OAuthProvider(LLMProvider):
         }
         try:
             headers = await self._bearer_headers()
-            async with httpx.AsyncClient(timeout=_SMOKE_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_SMOKE_TIMEOUT, verify=self._cfg.httpx_verify,
+            ) as client:
                 resp = await client.post(
                     self._api_endpoint(),
                     headers=headers,
@@ -196,7 +200,9 @@ class OAuthProvider(LLMProvider):
         }
         try:
             headers = await self._bearer_headers()
-            async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
+            async with httpx.AsyncClient(
+                timeout=_STREAM_TIMEOUT, verify=self._cfg.httpx_verify,
+            ) as client:
                 async with client.stream(
                     "POST",
                     self._api_endpoint(),

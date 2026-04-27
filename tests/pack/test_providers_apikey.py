@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Iterator
 
 import httpx
@@ -152,6 +153,78 @@ async def test_smoke_raises_when_tool_call_missing(api_env, respx_mock):
     )
     with pytest.raises(RequestError):
         await APIKeyProvider(cfg).smoke_test()
+
+
+@pytest.mark.parametrize(
+    "extra_env, expected_verify",
+    [
+        ({}, True),
+        ({"KLURIS_TLS_INSECURE": "1"}, False),
+    ],
+    ids=["default-system-CA", "tls-insecure"],
+)
+async def test_apikey_threads_verify_arg_to_httpx(
+    api_env, monkeypatch, extra_env, expected_verify,
+):
+    """Provider must pass ``cfg.httpx_verify`` as ``verify=`` to every
+    ``httpx.AsyncClient`` it constructs — corporate gateways with a
+    private CA depend on this for boot. Custom CA path is covered by
+    the dedicated Config test (``test_tls_ca_bundle_override``); here
+    we only verify the default + insecure paths thread correctly.
+    """
+    import httpx as _httpx
+
+    seen: list = []
+    real_init = _httpx.AsyncClient.__init__
+
+    def _record(self, *args, **kwargs):
+        seen.append(kwargs.get("verify"))
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(_httpx.AsyncClient, "__init__", _record)
+
+    cfg = _build_config(dict(api_env, **extra_env), shape="anthropic")
+    try:
+        await APIKeyProvider(cfg).smoke_test()
+    except Exception:
+        pass
+
+    assert seen, "provider must construct at least one AsyncClient"
+    assert all(v == expected_verify for v in seen), (
+        f"every AsyncClient must get verify={expected_verify!r}; got {seen}"
+    )
+
+
+async def test_apikey_threads_ca_bundle_path(api_env, monkeypatch):
+    """Custom CA bundle must reach httpx as an :class:`ssl.SSLContext`
+    (the str/path form is deprecated in httpx 0.28+).
+    """
+    import ssl
+
+    import httpx as _httpx
+
+    bundle = Path(ssl.get_default_verify_paths().cafile or "")
+    if not bundle or not bundle.exists():
+        pytest.skip("no system CA bundle available to use as a fixture")
+
+    seen: list = []
+    real_init = _httpx.AsyncClient.__init__
+
+    def _record(self, *args, **kwargs):
+        seen.append(kwargs.get("verify"))
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(_httpx.AsyncClient, "__init__", _record)
+
+    cfg = _build_config(
+        dict(api_env, KLURIS_CA_BUNDLE=str(bundle)),
+        shape="anthropic",
+    )
+    try:
+        await APIKeyProvider(cfg).smoke_test()
+    except Exception:
+        pass
+    assert seen and isinstance(seen[0], ssl.SSLContext)
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
