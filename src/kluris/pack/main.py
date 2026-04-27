@@ -9,9 +9,22 @@ Boot sequence:
    endpoint with a 5/15/5/5 ``httpx.Timeout``.
 4. Mount routes (``/healthz``, ``/`` chat UI, ``/chat``).
 
-Any failure in steps 1–3 calls :func:`sys.exit` with a redacted error
-message on stderr — Compose's ``restart: unless-stopped`` will keep
+Any failure in steps 1–3 raises :class:`SystemExit` with a redacted
+error message on stderr — Compose's ``restart: unless-stopped`` keeps
 cycling until the deployer fixes the env or rebuilds the image.
+
+Smoke-test scheduling. ``create_app()`` may be called two ways:
+
+- **Sync test path** (``create_app(...)`` from a non-async test): no
+  event loop is running, so the smoke test runs synchronously via
+  ``asyncio.run()`` and a failure surfaces as ``SystemExit`` directly
+  out of the factory.
+- **uvicorn ``--factory`` path** (production): uvicorn invokes the
+  factory from inside its own running event loop, which makes
+  ``asyncio.run()`` illegal. We detect the running loop and instead
+  attach a FastAPI lifespan that runs the smoke test on app startup,
+  inside the same loop. A failure raises out of the lifespan and
+  uvicorn terminates the process.
 """
 
 from __future__ import annotations
@@ -19,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -48,6 +62,30 @@ def _provider_from_config(config: Config) -> "LLMProvider":
     from .providers.apikey import APIKeyProvider
 
     return APIKeyProvider(config)
+
+
+def _loop_is_running() -> bool:
+    """Return True iff the calling thread already has a running loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _exit_with_smoke_failure(exc: BaseException) -> SystemExit:
+    """Format the boot smoke-test error and return a :class:`SystemExit`.
+
+    The provider modules already redact at their boundary; this
+    belt-and-suspenders pass strips bearer tokens / ``x-api-key``
+    fragments before they hit stderr, so a misbehaving provider can't
+    leak secrets through ``str(exc)``.
+    """
+    sys.stderr.write(
+        f"kluris-pack: smoke-test failed ({type(exc).__name__}): "
+        f"{_redact(str(exc))}\n"
+    )
+    return SystemExit(4)
 
 
 def create_app(
@@ -86,19 +124,48 @@ def create_app(
 
     prov = provider or _provider_from_config(cfg)
 
+    lifespan = None
     if not skip_smoke_test:
-        try:
-            asyncio.run(prov.smoke_test())
-        except Exception as exc:
-            # Redact: only the exception type + message, never the
-            # secret-bearing config repr or HTTP body.
-            sys.stderr.write(
-                f"kluris-pack: smoke-test failed ({type(exc).__name__}): "
-                f"{_redact(str(exc))}\n"
-            )
-            raise SystemExit(4) from exc
+        if _loop_is_running():
+            # uvicorn --factory: defer to lifespan so smoke runs inside
+            # the existing event loop. ``asyncio.run()`` would raise
+            # "cannot be called from a running event loop" here.
+            #
+            # We log the redacted error to stderr and re-raise the
+            # original exception. uvicorn's lifespan handler treats
+            # startup exceptions as ``lifespan.startup.failed`` and
+            # terminates the process with a non-zero exit code, which
+            # is what Compose ``restart: unless-stopped`` keys off.
+            # We do NOT raise ``SystemExit`` here — anyio's portal
+            # task-groups (used by Starlette's ``TestClient`` and some
+            # ASGI servers) wrap ``BaseException`` subclasses in a way
+            # that makes ``SystemExit`` invisible to the caller.
+            @asynccontextmanager
+            async def _lifespan(_app: FastAPI):
+                try:
+                    await prov.smoke_test()
+                except Exception as exc:
+                    sys.stderr.write(
+                        f"kluris-pack: smoke-test failed "
+                        f"({type(exc).__name__}): {_redact(str(exc))}\n"
+                    )
+                    sys.stderr.flush()
+                    raise
+                yield
 
-    app = FastAPI(title="kluris-pack", openapi_url=None, docs_url=None)
+            lifespan = _lifespan
+        else:
+            try:
+                asyncio.run(prov.smoke_test())
+            except Exception as exc:
+                raise _exit_with_smoke_failure(exc) from exc
+
+    app = FastAPI(
+        title="kluris-pack",
+        openapi_url=None,
+        docs_url=None,
+        lifespan=lifespan,
+    )
     app.state.config = cfg
     app.state.provider = prov
     _mount_minimal_routes(app)

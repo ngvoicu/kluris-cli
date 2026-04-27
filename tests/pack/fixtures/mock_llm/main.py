@@ -42,7 +42,10 @@ async def anthropic_messages(
         raise HTTPException(status_code=401, detail="missing x-api-key")
     body = await request.json()
     user = _user_message(body.get("messages", []))
-    if user == "ping" or body.get("max_tokens", 0) <= 4:
+    # Smoke test = the deterministic "ping" user message the providers
+    # send during boot. Don't gate on ``max_tokens`` — the real chat
+    # body omits it, which would silently route to the smoke branch.
+    if user == "ping":
         return JSONResponse({
             "id": "msg-mock",
             "content": [{
@@ -89,7 +92,9 @@ async def openai_chat(
     user = _user_message(body.get("messages", []))
     include_usage = (body.get("stream_options") or {}).get("include_usage", False)
 
-    if user == "ping" or body.get("max_tokens", 0) <= 4:
+    # See the Anthropic branch — gate on the literal "ping" user
+    # message only, never on ``max_tokens`` (real chat bodies omit it).
+    if user == "ping":
         return JSONResponse({
             "id": "cmpl-mock",
             "choices": [{"message": {

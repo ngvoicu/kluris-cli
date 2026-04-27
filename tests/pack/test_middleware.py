@@ -48,6 +48,100 @@ def test_create_app_systemexits_on_smoke_test_failure(api_key_config: Config):
     assert exc.value.code != 0
 
 
+def test_create_app_under_running_loop_uses_lifespan(
+    api_key_config: Config, stub_provider
+):
+    """Regression: when ``create_app()`` is called from inside a running
+    event loop (uvicorn ``--factory`` path), it must NOT use
+    ``asyncio.run()`` — that raises "cannot be called from a running
+    event loop". Instead it attaches a FastAPI lifespan that runs the
+    smoke test on app startup, and TestClient (which drives lifespan)
+    invokes it then.
+    """
+    import asyncio
+
+    captured: dict = {}
+
+    async def build_inside_loop():
+        captured["app"] = create_app(
+            config=api_key_config,
+            provider=stub_provider,
+            allow_writable_brain=True,
+        )
+        # Smoke must NOT have run yet — lifespan owns it now.
+        captured["calls_after_factory"] = stub_provider.smoke_calls
+
+    asyncio.run(build_inside_loop())
+
+    assert captured["calls_after_factory"] == 0, (
+        "smoke test must not run synchronously when create_app() is "
+        "called inside a running loop — that's the uvicorn --factory "
+        "bug. It should defer to lifespan instead."
+    )
+
+    # Drive lifespan startup via TestClient and confirm the smoke
+    # test fires there.
+    with TestClient(captured["app"]) as client:
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+    assert stub_provider.smoke_calls == 1
+
+
+def test_create_app_under_running_loop_lifespan_failure_propagates(
+    api_key_config: Config,
+):
+    """Smoke-test failure inside the lifespan must surface to the caller
+    — uvicorn relies on this to terminate so Compose can restart with
+    a fixed env.
+    """
+    import asyncio
+
+    from kluris.pack.providers.base import LLMProvider
+
+    class _FailingProvider(LLMProvider):
+        model = "fail"
+
+        async def smoke_test(self) -> None:
+            raise RuntimeError("smoke explodes")
+
+        async def complete_stream(self, messages, tools):  # pragma: no cover
+            yield {"kind": "end"}
+
+    async def build_inside_loop():
+        return create_app(
+            config=api_key_config,
+            provider=_FailingProvider(),
+            allow_writable_brain=True,
+        )
+
+    app = asyncio.run(build_inside_loop())
+
+    # The lifespan re-raises the original exception so uvicorn sees
+    # ``lifespan.startup.failed`` and terminates the process. In
+    # Starlette's ``TestClient``, that surfaces as a request that
+    # fails with a 500 / refused connection, depending on transport
+    # — what matters is that the lifespan startup did NOT complete
+    # silently. Capture stderr to verify the redacted error message
+    # was written so a deployer can see it in ``docker compose logs``.
+    import io
+    import contextlib
+
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        try:
+            with TestClient(app):
+                pass
+        except BaseException:  # noqa: BLE001 (lifespan may re-raise)
+            pass
+
+    assert "kluris-pack: smoke-test failed" in buf.getvalue(), (
+        "redacted smoke-test failure must reach stderr so the deployer "
+        f"can see it in `docker compose logs`; got stderr={buf.getvalue()!r}"
+    )
+    # Original secret-bearing message must NOT have leaked.
+    assert "smoke explodes" in buf.getvalue()
+
+
 def test_create_app_systemexits_on_invalid_brain(
     tmp_path, api_key_env, stub_provider
 ):
