@@ -53,8 +53,15 @@ def test_kluris_skip_boot_smoke_env_skips_probe(
     assert "KLURIS_SKIP_BOOT_SMOKE=1" in err
 
 
-def test_create_app_systemexits_on_smoke_test_failure(api_key_config: Config):
-    """Smoke-test failure must exit non-zero with a redacted message."""
+def test_create_app_degrades_on_smoke_test_failure(api_key_config: Config):
+    """Smoke-test failure must NOT kill the process — the app keeps
+    serving brain-only routes, with ``llm_ready=False`` so the chat
+    route returns 503 and the chat UI shows a "configure LLM" banner.
+    The redacted error must still reach stderr.
+    """
+    import contextlib
+    import io
+
     from kluris.pack.providers.base import LLMProvider
 
     class _FailingProvider(LLMProvider):
@@ -66,13 +73,20 @@ def test_create_app_systemexits_on_smoke_test_failure(api_key_config: Config):
         async def complete_stream(self, messages, tools):  # pragma: no cover
             yield {"kind": "end"}
 
-    with pytest.raises(SystemExit) as exc:
-        create_app(
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        app = create_app(
             config=api_key_config,
             provider=_FailingProvider(),
             allow_writable_brain=True,
         )
-    assert exc.value.code != 0
+
+    assert app.state.llm_ready is False
+    assert app.state.provider is None
+    assert "smoke-test failed" in buf.getvalue()
+    # The bearer/api-key redaction in main._redact must have stripped
+    # the secret before stderr.
+    assert "sk-secret" not in buf.getvalue()
 
 
 def test_create_app_under_running_loop_uses_lifespan(

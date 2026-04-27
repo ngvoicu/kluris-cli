@@ -313,6 +313,55 @@ a { color: var(--accent); }
   cursor: pointer;
 }
 .primary-btn:hover { filter: brightness(1.05); }
+.primary-btn[disabled],
+.primary-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  filter: none;
+}
+
+.chat-banner {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+}
+.chat-banner-warning { border-left: 3px solid var(--danger); }
+.chat-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.chat-banner p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.chat-banner code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, SF Mono, Menlo, monospace;
+  font-size: 12px;
+}
+.chat-banner-detail {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SF Mono, Menlo, monospace;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  overflow-x: auto;
+}
+
+.chat-form textarea[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 
 .messages {
   flex: 1;
@@ -574,8 +623,71 @@ a { color: var(--accent); }
   border-top: 1px solid var(--border-soft);
   margin: 16px 0;
 }
+.yaml-preview {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+.yaml-preview code {
+  background: transparent;
+  padding: 0;
+  font-family: ui-monospace, SF Mono, Menlo, monospace;
+  font-size: 12.5px;
+  white-space: pre;
+}
+.yaml-key { color: var(--accent); }
+.yaml-string { color: #a3e635; }
+.yaml-num { color: var(--warn); }
+.yaml-bool { color: #f472b6; }
+.yaml-comment { color: var(--text-dim); font-style: italic; }
 .modal-body a { color: var(--accent); text-decoration: none; }
 .modal-body a:hover { text-decoration: underline; }
+.modal-body blockquote {
+  margin: 10px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+  background: var(--panel-3);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.modal-body blockquote p { margin: 6px 0; }
+.modal-body table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.modal-body th,
+.modal-body td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.modal-body thead th {
+  background: var(--panel-3);
+  font-weight: 600;
+}
+.modal-body tbody tr:nth-child(even) td {
+  background: var(--panel-3);
+}
+.modal-body h4 { font-size: 13px; margin: 14px 0 4px; font-weight: 600; }
+.modal-body h5,
+.modal-body h6 { font-size: 12.5px; margin: 12px 0 4px; font-weight: 600; }
+.modal-header-text { flex: 1; min-width: 0; }
+.modal-back-btn {
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 12px;
+  align-self: flex-start;
+}
 .modal-error { color: var(--danger); }
 .modal-neuron-list {
   list-style: none;

@@ -280,16 +280,27 @@ def test_html_nav_buttons_omit_parent_prefix_when_same_folder(tmp_path):
 
 
 def test_html_modal_link_regex_matches_yaml(tmp_path):
-    """The modal's body-link regex must match .md, .yml, AND .yaml targets."""
+    """The modal's body-link rewire pass must match .md, .yml, AND .yaml targets.
+
+    After rendering markdown to HTML the modal walks every ``a.md-link``
+    and rewires the ones whose href ends in a neuron suffix into a
+    ``content-link`` (or ``content-link-broken`` if the target isn't in
+    the graph). The behavioral assertions:
+
+    - the suffix gate accepts .md, .yml, and .yaml
+    - the rewire strips both ``#anchor`` and ``?query`` before resolving
+    """
     brain = _make_brain_with_yaml_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
-    # The regex string in the JS source — the path portion accepts
-    # .md/.yml/.yaml and may be followed by an optional #anchor or ?query.
-    assert r"\.(md|yml|yaml)" in html
-    assert "(#[^)" in html  # anchor group present
-    assert "(\\?[^)" in html  # query group present
+    # Suffix gate in the rewire pass.
+    assert r"\.(md|ya?ml)$" in html
+    # Anchor + query stripped from the href before resolving the target.
+    assert "split('#')[0].split('?')[0]" in html
+    # The rewire pass walks ``a.md-link[data-md-link]`` produced by the
+    # markdown renderer.
+    assert "a.md-link[data-md-link]" in html
 
 
 def test_html_search_placeholder_mentions_yaml(tmp_path):

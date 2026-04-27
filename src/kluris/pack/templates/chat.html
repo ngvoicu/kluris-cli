@@ -52,6 +52,19 @@
     </header>
 
     <div id="messages" class="messages">
+      {% if not llm_ready %}
+        <div class="chat-banner chat-banner-warning" role="status">
+          <strong>LLM not configured</strong>
+          <p>
+            Set <code>KLURIS_API_KEY</code> (or the OAuth vars) in
+            <code>.env</code> and restart the container to enable chat.
+            The brain explorer in the sidebar remains fully available.
+          </p>
+          {% if llm_error %}
+            <pre class="chat-banner-detail">{{ llm_error }}</pre>
+          {% endif %}
+        </div>
+      {% endif %}
       {% for msg in history %}
         <article class="msg msg-{{ msg.role }}"
                  {% if msg.role == 'assistant' %}data-markdown="1"{% endif %}>
@@ -63,8 +76,10 @@
 
     <form id="chat-form" class="chat-form" autocomplete="off">
       <textarea id="chat-input" rows="2" required
-                placeholder="Ask the brain anything…"></textarea>
-      <button type="submit" class="primary-btn">Send</button>
+                placeholder="{% if llm_ready %}Ask the brain anything…{% else %}Configure LLM first to enable chat…{% endif %}"
+                {% if not llm_ready %}disabled aria-disabled="true"{% endif %}></textarea>
+      <button type="submit" class="primary-btn"
+              {% if not llm_ready %}disabled aria-disabled="true"{% endif %}>Send</button>
     </form>
 
     <footer class="main-footer">
@@ -79,7 +94,9 @@
   <div id="modal-backdrop" class="modal-backdrop" hidden></div>
   <dialog id="modal" class="modal" aria-labelledby="modal-title">
     <header class="modal-header">
-      <div>
+      <button id="modal-back" class="ghost-btn modal-back-btn"
+              type="button" aria-label="Back" hidden>&lsaquo;</button>
+      <div class="modal-header-text">
         <div class="modal-eyebrow" id="modal-eyebrow"></div>
         <h2 class="modal-title" id="modal-title"></h2>
         <div class="modal-meta" id="modal-meta"></div>

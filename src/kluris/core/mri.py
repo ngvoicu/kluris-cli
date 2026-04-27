@@ -1169,14 +1169,107 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     flex: 1;
     overflow: auto;
     margin: 0;
-    padding: 22px;
+    padding: 22px 28px;
     color: #eef4ff;
-    font-family: var(--mono);
-    font-size: 0.88rem;
-    line-height: 1.7;
-    white-space: pre-wrap;
-    word-break: break-word;
+    font-family: var(--sans);
+    font-size: 0.92rem;
+    line-height: 1.65;
   }}
+  .modal-content h1 {{ font-size: 1.45rem; margin: 18px 0 10px; }}
+  .modal-content h2 {{
+    font-size: 1.15rem;
+    margin: 22px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }}
+  .modal-content h3 {{ font-size: 1rem; margin: 18px 0 6px; }}
+  .modal-content h4 {{ font-size: 0.92rem; margin: 14px 0 4px; font-weight: 600; }}
+  .modal-content h5,
+  .modal-content h6 {{ font-size: 0.88rem; margin: 12px 0 4px; font-weight: 600; }}
+  .modal-content p {{ margin: 8px 0; }}
+  .modal-content ul,
+  .modal-content ol {{ padding-left: 24px; margin: 8px 0; }}
+  .modal-content li {{ margin: 3px 0; }}
+  .modal-content hr {{
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 18px 0;
+  }}
+  .modal-content code {{
+    background: rgba(123, 167, 255, 0.10);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }}
+  .modal-content pre {{
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    margin: 10px 0;
+  }}
+  .modal-content pre code {{
+    background: transparent;
+    padding: 0;
+    font-size: 0.82rem;
+  }}
+  .modal-content blockquote {{
+    margin: 10px 0;
+    padding: 4px 14px;
+    border-left: 3px solid var(--line);
+    background: rgba(123, 167, 255, 0.06);
+    border-radius: 0 10px 10px 0;
+    color: var(--muted);
+  }}
+  .modal-content blockquote p {{ margin: 6px 0; }}
+  .modal-content table {{
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.85rem;
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }}
+  .modal-content th,
+  .modal-content td {{
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }}
+  .modal-content thead th {{
+    background: rgba(123, 167, 255, 0.10);
+    font-weight: 600;
+  }}
+  .modal-content tbody tr:nth-child(even) td {{
+    background: rgba(123, 167, 255, 0.04);
+  }}
+  .modal-content a {{ color: var(--accent); }}
+  .yaml-preview {{
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 0;
+  }}
+  .yaml-preview code {{
+    background: transparent;
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    white-space: pre;
+  }}
+  .yaml-key {{ color: var(--accent); }}
+  .yaml-string {{ color: var(--success); }}
+  .yaml-num {{ color: var(--accent-3); }}
+  .yaml-bool {{ color: var(--accent-2); }}
+  .yaml-comment {{ color: var(--muted); font-style: italic; }}
   @media (max-width: 1200px) {{
     .shell {{ grid-template-columns: 300px minmax(0,1fr); }}
     .panel-right {{ display: none; }}
@@ -1266,7 +1359,7 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
     <nav class="modal-tree" id="modal-tree" aria-label="Brain files"></nav>
     <div class="modal-main">
       <div class="modal-nav" id="modal-nav"></div>
-      <pre class="modal-content" id="modal-content"></pre>
+      <div class="modal-content" id="modal-content"></div>
     </div>
   </div>
 </div>
@@ -1815,6 +1908,162 @@ function escapeHtml(value) {{
     .replaceAll('"', '&quot;');
 }}
 
+// ---- Markdown / YAML renderer ---------------------------------------
+// Mini line-based markdown subset (headings, lists, fenced code, tables,
+// blockquotes, inline code/bold/italic/links) and a regex YAML
+// highlighter. No external dependency — keeps the MRI a single file.
+
+function renderInline(text) {{
+  let html = escapeHtml(text);
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(
+    /\[([^\]]+)\]\(([^)\s]+)\)/g,
+    '<a class="md-link" href="#" data-md-link="$2">$1</a>'
+  );
+  return html;
+}}
+
+function _isTableRow(line) {{ return /^\s*\|.*\|\s*$/.test(line); }}
+function _isTableSeparator(line) {{
+  return /^\s*\|[\s:|\-]+\|\s*$/.test(line) && /-/.test(line);
+}}
+function _parseRow(line) {{
+  let row = line.trim();
+  if (row.startsWith('|')) row = row.slice(1);
+  if (row.endsWith('|')) row = row.slice(0, -1);
+  return row.split('|').map(c => c.trim());
+}}
+function _renderTable(headerLine, bodyLines) {{
+  const headers = _parseRow(headerLine);
+  let html = '<table><thead><tr>';
+  for (const h of headers) html += '<th>' + renderInline(h) + '</th>';
+  html += '</tr></thead><tbody>';
+  for (const row of bodyLines) {{
+    const cells = _parseRow(row);
+    html += '<tr>';
+    for (const c of cells) html += '<td>' + renderInline(c) + '</td>';
+    html += '</tr>';
+  }}
+  html += '</tbody></table>';
+  return html;
+}}
+
+function renderMarkdown(md) {{
+  const lines = (md || '').split(/\r?\n/);
+  const out = [];
+  let inCode = false;
+  let codeBuf = [];
+  let listType = null;
+  let inQuote = false;
+  function flushList() {{
+    if (listType) {{ out.push('</' + listType + '>'); listType = null; }}
+  }}
+  function flushQuote() {{
+    if (inQuote) {{ out.push('</blockquote>'); inQuote = false; }}
+  }}
+  let i = 0;
+  while (i < lines.length) {{
+    const raw = lines[i];
+    if (inCode) {{
+      if (/^```/.test(raw)) {{
+        out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
+        codeBuf = []; inCode = false;
+      }} else {{ codeBuf.push(raw); }}
+      i++; continue;
+    }}
+    if (/^```/.test(raw)) {{
+      flushList(); flushQuote(); inCode = true; i++; continue;
+    }}
+    if (
+      _isTableRow(raw) &&
+      i + 1 < lines.length &&
+      _isTableSeparator(lines[i + 1])
+    ) {{
+      flushList(); flushQuote();
+      const header = raw;
+      const body = [];
+      i += 2;
+      while (i < lines.length && _isTableRow(lines[i])) {{
+        body.push(lines[i]); i++;
+      }}
+      out.push(_renderTable(header, body));
+      continue;
+    }}
+    const h = /^(#{{1,6}})\s+(.*)$/.exec(raw);
+    if (h) {{
+      flushList(); flushQuote();
+      const level = h[1].length;
+      out.push('<h' + level + '>' + renderInline(h[2]) + '</h' + level + '>');
+      i++; continue;
+    }}
+    const ul = /^[-*]\s+(.*)$/.exec(raw);
+    const ol = /^\d+\.\s+(.*)$/.exec(raw);
+    if (ul) {{
+      flushQuote();
+      if (listType !== 'ul') {{ flushList(); out.push('<ul>'); listType = 'ul'; }}
+      out.push('<li>' + renderInline(ul[1]) + '</li>');
+      i++; continue;
+    }}
+    if (ol) {{
+      flushQuote();
+      if (listType !== 'ol') {{ flushList(); out.push('<ol>'); listType = 'ol'; }}
+      out.push('<li>' + renderInline(ol[1]) + '</li>');
+      i++; continue;
+    }}
+    const bq = /^>\s?(.*)$/.exec(raw);
+    if (bq) {{
+      flushList();
+      if (!inQuote) {{ out.push('<blockquote>'); inQuote = true; }}
+      out.push('<p>' + renderInline(bq[1]) + '</p>');
+      i++; continue;
+    }}
+    flushList(); flushQuote();
+    if (/^\s*$/.test(raw)) {{ out.push(''); i++; continue; }}
+    if (/^[-=]{{3,}}\s*$/.test(raw)) {{ out.push('<hr>'); i++; continue; }}
+    out.push('<p>' + renderInline(raw) + '</p>');
+    i++;
+  }}
+  flushList(); flushQuote();
+  if (inCode) {{
+    out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
+  }}
+  return out.join('\n');
+}}
+
+function _highlightYamlLine(escapedLine) {{
+  if (/^\s*#/.test(escapedLine)) {{
+    return '<span class="yaml-comment">' + escapedLine + '</span>';
+  }}
+  let html = escapedLine;
+  html = html.replace(/(\s)(#.*)$/, '$1<span class="yaml-comment">$2</span>');
+  html = html.replace(
+    /^(\s*-?\s*)('[^']*'|"[^"]*"|[\w./\-]+)(\s*:)/,
+    '$1<span class="yaml-key">$2</span>$3'
+  );
+  html = html.replace(
+    /(:\s|-\s)('[^']*'|"[^"]*")/g,
+    '$1<span class="yaml-string">$2</span>'
+  );
+  html = html.replace(
+    /(:\s|-\s)(true|false|null|yes|no)\b/g,
+    '$1<span class="yaml-bool">$2</span>'
+  );
+  html = html.replace(
+    /(:\s|-\s)(-?\d+(?:\.\d+)?)\b/g,
+    '$1<span class="yaml-num">$2</span>'
+  );
+  return html;
+}}
+function renderYaml(text) {{
+  const lines = (text || '').split(/\r?\n/);
+  const highlighted = lines
+    .map(l => _highlightYamlLine(escapeHtml(l)))
+    .join('\n');
+  return '<pre class="yaml-preview"><code>' + highlighted + '</code></pre>';
+}}
+
 function updateDetails() {{
   const node = nodes.find(item => item.id === selectedId);
   if (!node) {{
@@ -2033,30 +2282,29 @@ function openModal(node) {{
     : '';
   document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}}${{authoredSub}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
   renderFileTree(node.id);
-  // Render content with clickable markdown links
-  // Run regex on raw content BEFORE escaping, then escape text parts individually
-  // Prefer the untruncated body so the modal shows the full document; fall back to the preview.
+  // Render content. Markdown neurons go through the mini renderer
+  // (headings, lists, fenced code, tables, blockquotes, inline
+  // formatting); yaml neurons (notably ``openapi.yml``) get the
+  // syntax-highlighted code block. Inline `[text](path.md)` links
+  // produced by the markdown renderer are rewired in a second pass
+  // to navigate to other neurons in the same brain (or render as
+  // a visible "broken" marker if the target isn't in the graph).
   const raw = node.content_full || node.content_preview || 'No content.';
-  const nodePath = node.path.replace(/[^/]+$/, '');
-  // Match [text](path.md|.yml|.yaml[#anchor][?query]) markdown links —
-  // yaml neurons can be link targets from markdown body text too, and
-  // glossary links routinely carry a trailing #anchor (strip it before
-  // resolving so the target node is still found).
-  const linkRe = /\[([^\]]+)\]\(([^)\s]+?\.(md|yml|yaml))(#[^)\s]*)?(\?[^)\s]*)?\)/g;
-  let linkedContent = '';
-  let lastIdx = 0;
-  let m;
-  while ((m = linkRe.exec(raw)) !== null) {{
-    // Escape text before this match
-    linkedContent += escapeHtml(raw.slice(lastIdx, m.index));
-    const text = m[1] || '';
-    const pathPart = m[2] || '';
-    const anchor = m[4] || '';
-    const href = pathPart + anchor + (m[5] || '');
-    if (!pathPart || pathPart.startsWith('http')) {{
-      linkedContent += escapeHtml(m[0]);
-    }} else {{
-      const parts = (nodePath + pathPart).split('/');
+  const isYaml = node.file_type === 'yaml';
+  const modalContent = document.getElementById('modal-content');
+  modalContent.innerHTML = isYaml ? renderYaml(raw) : renderMarkdown(raw);
+
+  if (!isYaml) {{
+    const nodePath = node.path.replace(/[^/]+$/, '');
+    for (const a of modalContent.querySelectorAll('a.md-link[data-md-link]')) {{
+      const href = a.dataset.mdLink || '';
+      const noAnchor = href.split('#')[0].split('?')[0];
+      // Leave external links and non-neuron-shaped hrefs alone — the
+      // user can still click them; they just won't navigate within
+      // the MRI graph.
+      if (!noAnchor || /^https?:/.test(noAnchor)) continue;
+      if (!/\.(md|ya?ml)$/i.test(noAnchor)) continue;
+      const parts = (nodePath + noAnchor).split('/');
       const resolved = [];
       for (const p of parts) {{
         if (p === '..') resolved.pop();
@@ -2064,21 +2312,24 @@ function openModal(node) {{
       }}
       const resolvedPath = resolved.join('/');
       const target = nodes.find(n => n.path === resolvedPath);
+      a.classList.remove('md-link');
+      a.removeAttribute('href');
       if (target) {{
-        linkedContent += `<button type="button" class="content-link" data-modal-nav="${{target.id}}" title="${{escapeHtml(target.path + anchor)}}">${{escapeHtml(text)}}</button>`;
+        a.classList.add('content-link');
+        a.dataset.modalNav = String(target.id);
+        const anchor = href.includes('#') ? '#' + href.split('#')[1] : '';
+        a.title = target.path + anchor;
       }} else {{
-        linkedContent += `<span class="content-link-broken" title="broken link: ${{escapeHtml(href)}}">${{escapeHtml(text)}}</span>`;
+        a.classList.add('content-link-broken');
+        a.title = 'broken link: ' + href;
       }}
     }}
-    lastIdx = m.index + m[0].length;
-  }}
-  linkedContent += escapeHtml(raw.slice(lastIdx));
-  document.getElementById('modal-content').innerHTML = linkedContent;
-  for (const btn of document.getElementById('modal-content').querySelectorAll('[data-modal-nav]')) {{
-    btn.addEventListener('click', () => {{
-      const target = nodes.find(n => n.id === Number(btn.dataset.modalNav));
-      if (target) {{ selectNode(target.id, true); openModal(target); }}
-    }});
+    for (const btn of modalContent.querySelectorAll('[data-modal-nav]')) {{
+      btn.addEventListener('click', () => {{
+        const target = nodes.find(n => n.id === Number(btn.dataset.modalNav));
+        if (target) {{ selectNode(target.id, true); openModal(target); }}
+      }});
+    }}
   }}
   // Build nav buttons for connected nodes — show first N, expand on demand
   const navEl = document.getElementById('modal-nav');

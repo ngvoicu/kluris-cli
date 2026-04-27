@@ -102,6 +102,8 @@ def attach_chat_routes(app: FastAPI) -> None:
         html = template.render(
             brain_name=_brain_name(cfg),
             history=history,
+            llm_ready=getattr(app.state, "llm_ready", False),
+            llm_error=getattr(app.state, "llm_error", None),
         )
         resp = HTMLResponse(html)
         resp.set_cookie(
@@ -112,6 +114,19 @@ def attach_chat_routes(app: FastAPI) -> None:
 
     @app.post("/chat")
     async def chat_post(request: Request):
+        if not getattr(app.state, "llm_ready", False):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": (
+                        "LLM is not configured. Set KLURIS_API_KEY "
+                        "(or the OAuth vars) in .env and restart the "
+                        "container. The brain explorer in the sidebar "
+                        "remains available."
+                    ),
+                },
+                status_code=503,
+            )
         cfg: Config = app.state.config
         provider: LLMProvider = app.state.provider
         store = _store(app)

@@ -40,19 +40,60 @@
     return html;
   }
 
+  function _isTableRow(line) {
+    return /^\s*\|.*\|\s*$/.test(line);
+  }
+  function _isTableSeparator(line) {
+    // GFM separator: `| --- | :---: | ---: |` etc. Must contain a dash.
+    return /^\s*\|[\s:|\-]+\|\s*$/.test(line) && /-/.test(line);
+  }
+  function _parseRow(line) {
+    let row = line.trim();
+    if (row.startsWith("|")) row = row.slice(1);
+    if (row.endsWith("|")) row = row.slice(0, -1);
+    return row.split("|").map((c) => c.trim());
+  }
+  function _renderTable(headerLine, bodyLines) {
+    const headers = _parseRow(headerLine);
+    let html = "<table><thead><tr>";
+    for (const h of headers) {
+      html += "<th>" + renderInline(h) + "</th>";
+    }
+    html += "</tr></thead><tbody>";
+    for (const row of bodyLines) {
+      const cells = _parseRow(row);
+      html += "<tr>";
+      for (const c of cells) {
+        html += "<td>" + renderInline(c) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    return html;
+  }
+
   function renderMarkdown(md) {
     const lines = (md || "").split(/\r?\n/);
     const out = [];
     let inCode = false;
     let codeBuf = [];
     let listType = null; // "ul" | "ol" | null
+    let inQuote = false;
     function flushList() {
       if (listType) {
         out.push("</" + listType + ">");
         listType = null;
       }
     }
-    for (const raw of lines) {
+    function flushQuote() {
+      if (inQuote) {
+        out.push("</blockquote>");
+        inQuote = false;
+      }
+    }
+    let i = 0;
+    while (i < lines.length) {
+      const raw = lines[i];
       if (inCode) {
         if (/^```/.test(raw)) {
           out.push("<pre><code>" + escapeHtml(codeBuf.join("\n")) +
@@ -62,50 +103,123 @@
         } else {
           codeBuf.push(raw);
         }
-        continue;
+        i++; continue;
       }
       if (/^```/.test(raw)) {
-        flushList();
+        flushList(); flushQuote();
         inCode = true;
+        i++; continue;
+      }
+      // Table: header row immediately followed by a separator row.
+      if (
+        _isTableRow(raw) &&
+        i + 1 < lines.length &&
+        _isTableSeparator(lines[i + 1])
+      ) {
+        flushList(); flushQuote();
+        const header = raw;
+        const body = [];
+        i += 2;
+        while (i < lines.length && _isTableRow(lines[i])) {
+          body.push(lines[i]);
+          i++;
+        }
+        out.push(_renderTable(header, body));
         continue;
       }
-      const line = raw;
-      const h = /^(#{1,6})\s+(.*)$/.exec(line);
+      const h = /^(#{1,6})\s+(.*)$/.exec(raw);
       if (h) {
-        flushList();
+        flushList(); flushQuote();
         const level = h[1].length;
         out.push("<h" + level + ">" + renderInline(h[2]) + "</h" + level + ">");
-        continue;
+        i++; continue;
       }
-      const ul = /^[-*]\s+(.*)$/.exec(line);
-      const ol = /^\d+\.\s+(.*)$/.exec(line);
+      const ul = /^[-*]\s+(.*)$/.exec(raw);
+      const ol = /^\d+\.\s+(.*)$/.exec(raw);
       if (ul) {
+        flushQuote();
         if (listType !== "ul") { flushList(); out.push("<ul>"); listType = "ul"; }
         out.push("<li>" + renderInline(ul[1]) + "</li>");
-        continue;
+        i++; continue;
       }
       if (ol) {
+        flushQuote();
         if (listType !== "ol") { flushList(); out.push("<ol>"); listType = "ol"; }
         out.push("<li>" + renderInline(ol[1]) + "</li>");
-        continue;
+        i++; continue;
       }
-      flushList();
-      if (/^\s*$/.test(line)) {
+      const bq = /^>\s?(.*)$/.exec(raw);
+      if (bq) {
+        flushList();
+        if (!inQuote) { out.push("<blockquote>"); inQuote = true; }
+        out.push("<p>" + renderInline(bq[1]) + "</p>");
+        i++; continue;
+      }
+      flushList(); flushQuote();
+      if (/^\s*$/.test(raw)) {
         out.push("");
-        continue;
+        i++; continue;
       }
-      if (/^[-=]{3,}\s*$/.test(line)) {
+      if (/^[-=]{3,}\s*$/.test(raw)) {
         out.push("<hr>");
-        continue;
+        i++; continue;
       }
-      out.push("<p>" + renderInline(line) + "</p>");
+      out.push("<p>" + renderInline(raw) + "</p>");
+      i++;
     }
-    flushList();
+    flushList(); flushQuote();
     if (inCode) {
       out.push("<pre><code>" + escapeHtml(codeBuf.join("\n")) +
                "</code></pre>");
     }
     return out.join("\n");
+  }
+
+  // ---- YAML preview ------------------------------------------------
+  // Tiny line-based highlighter for ``.yml`` / ``.yaml`` neurons
+  // (notably the OpenAPI specs in ``projects/*/openapi.yml``). Not a
+  // YAML parser — regex-based coloring of keys, strings, numbers,
+  // booleans, and comments. Pulling in a real highlighter would
+  // outweigh the value here.
+  function _highlightYamlLine(escapedLine) {
+    if (/^\s*#/.test(escapedLine)) {
+      return '<span class="yaml-comment">' + escapedLine + "</span>";
+    }
+    let html = escapedLine;
+    // Trailing inline comment.
+    html = html.replace(
+      /(\s)(#.*)$/,
+      '$1<span class="yaml-comment">$2</span>',
+    );
+    // Key at start of line. Allow simple slug, slash, dot, or quoted.
+    html = html.replace(
+      /^(\s*-?\s*)('[^']*'|"[^"]*"|[\w./\-]+)(\s*:)/,
+      '$1<span class="yaml-key">$2</span>$3',
+    );
+    // Quoted strings (after the key has already been wrapped, so the
+    // span attribute quotes are safe — they don't match `'` / `"`
+    // inside a value position).
+    html = html.replace(
+      /(:\s|-\s)('[^']*'|"[^"]*")/g,
+      '$1<span class="yaml-string">$2</span>',
+    );
+    // Booleans / null / numbers after `: ` or `- `.
+    html = html.replace(
+      /(:\s|-\s)(true|false|null|yes|no)\b/g,
+      '$1<span class="yaml-bool">$2</span>',
+    );
+    html = html.replace(
+      /(:\s|-\s)(-?\d+(?:\.\d+)?)\b/g,
+      '$1<span class="yaml-num">$2</span>',
+    );
+    return html;
+  }
+  function renderYaml(text) {
+    const lines = (text || "").split(/\r?\n/);
+    const highlighted = lines
+      .map((l) => _highlightYamlLine(escapeHtml(l)))
+      .join("\n");
+    return '<pre class="yaml-preview"><code>' + highlighted + "</code></pre>";
   }
 
   // ---- Tree rendering ----------------------------------------------
@@ -241,6 +355,32 @@
 
   const modal = $("modal");
   const backdrop = $("modal-backdrop");
+
+  // Navigation stack inside the modal. Each entry is one of:
+  //   {kind: "neuron", arg: "domain/foo.md"}
+  //   {kind: "lobe",   arg: "projects"}
+  //   {kind: "glossary", term, def}
+  // Entries are pushed by the show* functions and consumed by the
+  // back button. Closing the modal clears the stack so re-opening
+  // starts fresh.
+  const modalHistory = [];
+  function pushHistory(entry) {
+    modalHistory.push(entry);
+    refreshBackButton();
+  }
+  function refreshBackButton() {
+    const btn = $("modal-back");
+    if (btn) btn.hidden = modalHistory.length <= 1;
+  }
+  function modalBack() {
+    if (modalHistory.length < 2) return;
+    modalHistory.pop();              // current view
+    const prev = modalHistory.pop(); // will be re-pushed by show*
+    if (prev.kind === "neuron")        showNeuron(prev.arg);
+    else if (prev.kind === "lobe")     showLobe(prev.arg);
+    else if (prev.kind === "glossary") showGlossary(prev.term, prev.def);
+  }
+
   function openModal({eyebrow, title, meta, tags, bodyHtml}) {
     $("modal-eyebrow").textContent = eyebrow || "";
     $("modal-title").textContent = title || "";
@@ -266,6 +406,8 @@
   }
   function closeModal() {
     backdrop.hidden = true;
+    modalHistory.length = 0;
+    refreshBackButton();
     if (typeof modal.close === "function") {
       modal.close();
     } else {
@@ -274,6 +416,7 @@
   }
 
   $("modal-close").addEventListener("click", closeModal);
+  $("modal-back").addEventListener("click", modalBack);
   backdrop.addEventListener("click", closeModal);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && modal.hasAttribute("open")) {
@@ -326,6 +469,7 @@
   }
 
   async function showNeuron(path) {
+    pushHistory({kind: "neuron", arg: path});
     try {
       const resp = await fetch("/api/brain/neuron?path=" +
                                 encodeURIComponent(path));
@@ -336,6 +480,9 @@
         // we can still surface the lobe contents via lobe_overview.
         const lobeMatch = /^(.+?)\/map\.md$/.exec(path);
         if (resp.status === 404 && lobeMatch) {
+          // Don't keep the failed neuron entry in the back stack —
+          // the lobe view replaces it as the visible modal.
+          modalHistory.pop();
           await showLobe(lobeMatch[1]);
           return;
         }
@@ -357,15 +504,27 @@
       const updated = meta.updated || "";
       const created = meta.created || "";
       const tags = Array.isArray(meta.tags) ? meta.tags : [];
-      const bodyHtml = renderMarkdown(data.body || "");
+      const isYaml = /\.(ya?ml)$/i.test(data.path || path);
+      const bodyHtml = isYaml
+        ? renderYaml(data.body || "")
+        : renderMarkdown(data.body || "");
       const eyebrow =
         (data.deprecated ? "DEPRECATED · " : "") + (data.path || path);
-      const titleLine = (data.body || "").split(/\r?\n/).find(
-        (l) => /^#\s+/.test(l)
-      );
-      const title = titleLine
-        ? titleLine.replace(/^#\s+/, "").trim()
-        : path.split("/").slice(-1)[0];
+      let title;
+      if (isYaml) {
+        // YAML neurons don't carry a body H1; prefer the frontmatter
+        // ``title`` (set by the brain author), fall back to filename.
+        title = (typeof meta.title === "string" && meta.title.trim())
+          ? meta.title.trim()
+          : (data.path || path).split("/").slice(-1)[0];
+      } else {
+        const titleLine = (data.body || "").split(/\r?\n/).find(
+          (l) => /^#\s+/.test(l)
+        );
+        title = titleLine
+          ? titleLine.replace(/^#\s+/, "").trim()
+          : path.split("/").slice(-1)[0];
+      }
       openModal({
         eyebrow: eyebrow,
         title: title,
@@ -387,11 +546,7 @@
   }
 
   async function showLobe(name) {
-    // A lobe modal isn't itself a neuron, so reset the relative-link
-    // base. The neuron-link cards inside the lobe already use full
-    // brain-relative paths in their ``data-path`` attribute, so they
-    // don't need a base.
-    currentNeuronPath = null;
+    pushHistory({kind: "lobe", arg: name});
     try {
       const resp = await fetch("/api/brain/lobe?lobe=" +
                                 encodeURIComponent(name));
@@ -411,6 +566,12 @@
         return;
       }
       const data = await resp.json();
+      // Anchor relative markdown links in ``map_body`` to the lobe
+      // directory by pretending the modal is showing the lobe's
+      // ``map.md``. Without this, ``[evaluation-cycle](./evaluation-cycle.md)``
+      // inside ``domain/map.md`` would resolve to the brain root.
+      const lobeRel = (data.lobe || name).replace(/\/+$/, "");
+      currentNeuronPath = lobeRel + "/map.md";
       const tagUnion = Array.isArray(data.tag_union) ? data.tag_union : [];
       const neurons = Array.isArray(data.neurons) ? data.neurons : [];
       let bodyHtml = renderMarkdown(data.map_body || "");
@@ -460,6 +621,7 @@
   }
 
   function showGlossary(term, definition) {
+    pushHistory({kind: "glossary", term: term, def: definition});
     openModal({
       eyebrow: "GLOSSARY",
       title: term,

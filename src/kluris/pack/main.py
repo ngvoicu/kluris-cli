@@ -3,36 +3,40 @@
 Boot sequence:
 
 1. Read config from environment via :class:`Config.load_from_env`.
+   On :class:`ConfigError` the app starts in BRAIN-ONLY mode with a
+   minimal config: chat is disabled, the brain explorer routes still
+   serve. Deployer fixes ``.env`` and restarts.
 2. Verify the bundled brain is read-only (only inside the Docker
-   image; tests pass ``allow_writable=True`` via the factory).
+   image; tests pass ``allow_writable=True`` via the factory). This
+   step is a hard fail — without a brain there's nothing to serve.
 3. Run a tool-capability smoke-test against the configured LLM
-   endpoint with a 5/15/5/5 ``httpx.Timeout``.
-4. Mount routes (``/healthz``, ``/`` chat UI, ``/chat``).
-
-Any failure in steps 1–3 raises :class:`SystemExit` with a redacted
-error message on stderr — Compose's ``restart: unless-stopped`` keeps
-cycling until the deployer fixes the env or rebuilds the image.
+   endpoint with a 5/15/5/5 ``httpx.Timeout``. A failure flips
+   ``app.state.llm_ready`` to False (chat disabled) but the process
+   keeps serving brain-only routes.
+4. Mount routes (``/healthz``, ``/`` chat UI, ``/chat``,
+   ``/api/brain/*``).
 
 Smoke-test scheduling. ``create_app()`` may be called two ways:
 
 - **Sync test path** (``create_app(...)`` from a non-async test): no
   event loop is running, so the smoke test runs synchronously via
-  ``asyncio.run()`` and a failure surfaces as ``SystemExit`` directly
-  out of the factory.
+  ``asyncio.run()`` inside the factory.
 - **uvicorn ``--factory`` path** (production): uvicorn invokes the
   factory from inside its own running event loop, which makes
   ``asyncio.run()`` illegal. We detect the running loop and instead
   attach a FastAPI lifespan that runs the smoke test on app startup,
-  inside the same loop. A failure raises out of the lifespan and
-  uvicorn terminates the process.
+  inside the same loop. A failure flips ``llm_ready`` rather than
+  killing the process.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -46,6 +50,22 @@ if TYPE_CHECKING:  # pragma: no cover
     from .providers.base import LLMProvider
 
 logger = logging.getLogger("kluris.pack")
+
+
+def _minimal_config_from_env() -> Config:
+    """Config with only the fields the brain-only routes need.
+
+    Used as a fallback when LLM auth isn't configured. The brain
+    explorer routes need ``brain_dir``; the session store needs
+    ``data_dir``. Every LLM-related field stays at its model default
+    (``None`` / ``""``), and ``app.state.llm_ready`` is set to False
+    so the chat route refuses requests.
+    """
+    env = dict(os.environ)
+    return Config(
+        brain_dir=Path(env.get("KLURIS_BRAIN_DIR", "/app/brain")),
+        data_dir=Path(env.get("KLURIS_DATA_DIR", "/data")),
+    )
 
 
 def _provider_from_config(config: Config) -> "LLMProvider":
@@ -73,21 +93,6 @@ def _loop_is_running() -> bool:
     return True
 
 
-def _exit_with_smoke_failure(exc: BaseException) -> SystemExit:
-    """Format the boot smoke-test error and return a :class:`SystemExit`.
-
-    The provider modules already redact at their boundary; this
-    belt-and-suspenders pass strips bearer tokens / ``x-api-key``
-    fragments before they hit stderr, so a misbehaving provider can't
-    leak secrets through ``str(exc)``.
-    """
-    sys.stderr.write(
-        f"kluris-pack: smoke-test failed ({type(exc).__name__}): "
-        f"{_redact(str(exc))}\n"
-    )
-    return SystemExit(4)
-
-
 def create_app(
     *,
     config: Config | None = None,
@@ -110,11 +115,20 @@ def create_app(
     """
     install_redacting_filter()
 
+    llm_error: str | None = None
+
     try:
         cfg = config or Config.load_from_env()
     except ConfigError as exc:
         sys.stderr.write(f"kluris-pack: {exc}\n")
-        raise SystemExit(2) from exc
+        sys.stderr.write(
+            "kluris-pack: starting in BRAIN-ONLY mode — chat is "
+            "disabled until LLM auth is configured. Brain explorer "
+            "remains available.\n"
+        )
+        sys.stderr.flush()
+        llm_error = str(exc)
+        cfg = _minimal_config_from_env()
 
     try:
         assert_brain_read_only(cfg.brain_dir, allow_writable=allow_writable_brain)
@@ -147,35 +161,42 @@ def create_app(
         sys.stderr.flush()
         skip_smoke_test = True
 
-    prov = provider or _provider_from_config(cfg)
+    prov: "LLMProvider | None" = None
+    if llm_error is None:
+        try:
+            prov = provider or _provider_from_config(cfg)
+        except Exception as exc:  # pragma: no cover (provider ctors are simple)
+            sys.stderr.write(
+                f"kluris-pack: provider construction failed "
+                f"({type(exc).__name__}): {_redact(str(exc))}; "
+                f"chat disabled, brain explorer remains available.\n"
+            )
+            sys.stderr.flush()
+            llm_error = f"{type(exc).__name__}: {_redact(str(exc))}"
 
     lifespan = None
-    if not skip_smoke_test:
+    if prov is not None and not skip_smoke_test:
         if _loop_is_running():
             # uvicorn --factory: defer to lifespan so smoke runs inside
-            # the existing event loop. ``asyncio.run()`` would raise
-            # "cannot be called from a running event loop" here.
-            #
-            # We log the redacted error to stderr and re-raise the
-            # original exception. uvicorn's lifespan handler treats
-            # startup exceptions as ``lifespan.startup.failed`` and
-            # terminates the process with a non-zero exit code, which
-            # is what Compose ``restart: unless-stopped`` keys off.
-            # We do NOT raise ``SystemExit`` here — anyio's portal
-            # task-groups (used by Starlette's ``TestClient`` and some
-            # ASGI servers) wrap ``BaseException`` subclasses in a way
-            # that makes ``SystemExit`` invisible to the caller.
+            # the existing event loop. A failure no longer kills the
+            # process — we mark ``llm_ready=False`` and keep serving
+            # the brain-only routes. The deployer fixes ``.env`` and
+            # restarts.
             @asynccontextmanager
             async def _lifespan(_app: FastAPI):
                 try:
                     await prov.smoke_test()
                 except Exception as exc:
+                    err = f"{type(exc).__name__}: {_redact(str(exc))}"
                     sys.stderr.write(
-                        f"kluris-pack: smoke-test failed "
-                        f"({type(exc).__name__}): {_redact(str(exc))}\n"
+                        f"kluris-pack: smoke-test failed ({err}); "
+                        f"chat disabled, brain explorer remains "
+                        f"available.\n"
                     )
                     sys.stderr.flush()
-                    raise
+                    _app.state.llm_ready = False
+                    _app.state.llm_error = err
+                    _app.state.provider = None
                 yield
 
             lifespan = _lifespan
@@ -183,7 +204,14 @@ def create_app(
             try:
                 asyncio.run(prov.smoke_test())
             except Exception as exc:
-                raise _exit_with_smoke_failure(exc) from exc
+                err = f"{type(exc).__name__}: {_redact(str(exc))}"
+                sys.stderr.write(
+                    f"kluris-pack: smoke-test failed ({err}); "
+                    f"chat disabled, brain explorer remains available.\n"
+                )
+                sys.stderr.flush()
+                llm_error = err
+                prov = None
 
     app = FastAPI(
         title="kluris-pack",
@@ -193,6 +221,8 @@ def create_app(
     )
     app.state.config = cfg
     app.state.provider = prov
+    app.state.llm_ready = prov is not None and llm_error is None
+    app.state.llm_error = llm_error
     _mount_minimal_routes(app)
     return app
 
