@@ -212,6 +212,8 @@ def build_graph(brain_path: Path) -> dict:
             "updated": str(meta.get("updated", "")),
             "parent": str(meta.get("parent", "")),
             "related": related if isinstance(related, list) else [],
+            "status": str(meta.get("status", "")),
+            "replaced_by": str(meta.get("replaced_by", "")),
         })
 
     # Create edges from frontmatter and inline links
@@ -255,6 +257,21 @@ def build_graph(brain_path: Path) -> dict:
                         "type": "related",
                     })
 
+        # replaced_by edge — deprecation pointer (treated like a special
+        # synapse so the graph data layer keeps it alongside parent/related).
+        replaced_by = meta.get("replaced_by")
+        if replaced_by:
+            try:
+                rb_resolved = (f.parent / replaced_by).resolve().relative_to(brain_path.resolve()).as_posix()
+            except (ValueError, OSError):
+                rb_resolved = ""
+            if rb_resolved in node_ids:
+                edges.append({
+                    "source": source_id,
+                    "target": node_ids[rb_resolved],
+                    "type": "replaced_by",
+                })
+
         # Inline link edges
         for match in LINK_PATTERN.finditer(content):
             target = match.group(2)
@@ -279,7 +296,7 @@ def build_graph(brain_path: Path) -> dict:
                 continue
 
     neighbors: dict[int, set[int]] = {node["id"]: set() for node in nodes}
-    edge_counts = {"parent": 0, "related": 0, "inline": 0}
+    edge_counts = {"parent": 0, "related": 0, "inline": 0, "replaced_by": 0}
     for edge in edges:
         neighbors[edge["source"]].add(edge["target"])
         neighbors[edge["target"]].add(edge["source"])
@@ -292,12 +309,38 @@ def build_graph(brain_path: Path) -> dict:
 
 
 def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
-    """Generate a standalone HTML visualization of the brain graph."""
+    """Generate a standalone HTML visualization of the brain graph.
+
+    The MRI opens with a brain-architecture view (Level 1: lobes + cross-lobe
+    synapses). Click a lobe to drill into sublobes (Level 2), click a sublobe
+    to see neurons (Level 3). Toggle Expert mode for the legacy force graph.
+    """
     graph = build_graph(brain_path)
     brain_name = brain_path.name
     graph_json = json.dumps(graph, indent=2)
 
-    html = f"""\
+    html = _render_mri_html(brain_name, graph, graph_json)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
+
+    return {"nodes": len(graph["nodes"]), "edges": len(graph["edges"])}
+
+
+def _render_mri_html(brain_name: str, graph: dict, graph_json: str) -> str:
+    """Build the standalone MRI HTML string.
+
+    Pulled out of :func:`generate_mri_html` so the f-string does not have to
+    interleave with the orchestration code; the function body is one big
+    template literal with `{...}` Python interpolations only at the brain
+    name and the JSON-encoded graph data.
+    """
+    neuron_count = sum(1 for n in graph["nodes"] if n["type"] == "neuron")
+    edge_count = len(graph["edges"])
+    # Lobe count: distinct lobe keys excluding the synthetic "root" bucket.
+    lobe_count = len({n["lobe"] for n in graph["nodes"] if n["lobe"] and n["lobe"] != "root"})
+
+    return f"""\
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -305,1812 +348,2506 @@ def generate_mri_html(brain_path: Path, output_path: Path) -> dict:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{brain_name} Brain MRI</title>
 <style>
-  :root {{
-    --bg: #0a0f1a;
-    --panel: rgba(10, 16, 30, 0.92);
-    --panel-strong: rgba(12, 21, 44, 0.96);
-    --line: rgba(123, 167, 255, 0.18);
-    --text: #e9f1ff;
-    --muted: #8ba7d1;
-    --accent: #7bf7ff;
-    --accent-2: #ff8bd8;
-    --accent-3: #f8c76d;
-    --success: #7df7b4;
-    --shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
-    --radius: 22px;
-    --mono: "SFMono-Regular", "SF Mono", "Monaco", "Cascadia Code", monospace;
-    --sans: "Avenir Next", "Segoe UI", sans-serif;
-  }}
-  * {{ box-sizing: border-box; }}
-  html, body {{ height: 100%; }}
-  body {{
-    margin: 0;
-    font-family: var(--sans);
-    color: var(--text);
-    background:
-      radial-gradient(circle at 20% 20%, rgba(123, 247, 255, 0.20), transparent 28%),
-      radial-gradient(circle at 78% 12%, rgba(255, 139, 216, 0.18), transparent 24%),
-      radial-gradient(circle at 68% 74%, rgba(248, 199, 109, 0.16), transparent 26%),
-      linear-gradient(145deg, #050913 0%, #06111f 38%, #0a1731 100%);
-    overflow: hidden;
-  }}
-  body::before {{
-    content: "";
-    position: fixed;
-    inset: 0;
-    background:
-      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-    background-size: 36px 36px;
-    mask-image: radial-gradient(circle at center, black 35%, transparent 88%);
-    pointer-events: none;
-  }}
-  .shell {{
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(320px, 400px);
-    height: 100vh;
-    gap: 18px;
-    padding: 18px;
-  }}
-  .shell.left-collapsed {{
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
-  }}
-  .shell.right-collapsed {{
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-  }}
-  .shell.left-collapsed.right-collapsed {{
-    grid-template-columns: minmax(0, 1fr);
-  }}
-  .shell.left-collapsed .panel-left,
-  .shell.right-collapsed .panel-right {{
-    display: none;
-  }}
-  .panel-collapse-btn {{
-    appearance: none;
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    width: 24px;
-    height: 24px;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(8,15,32,0.70);
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.85rem;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-  }}
-  .panel-collapse-btn:hover {{
-    color: var(--text);
-    border-color: rgba(123,247,255,0.40);
-    background: rgba(123,247,255,0.12);
-  }}
-  .panel-expand-btn {{
-    appearance: none;
-    position: fixed;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 22px;
-    height: 56px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(12,21,44,0.88);
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.9rem;
-    line-height: 1;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 25;
-    backdrop-filter: blur(10px);
-    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-  }}
-  .panel-expand-btn:hover {{
-    color: var(--text);
-    border-color: rgba(123,247,255,0.45);
-    background: rgba(123,247,255,0.16);
-  }}
-  .panel-expand-btn.panel-expand-left {{
-    left: 0;
-    border-radius: 0 12px 12px 0;
-    border-left: none;
-  }}
-  .panel-expand-btn.panel-expand-right {{
-    right: 0;
-    border-radius: 12px 0 0 12px;
-    border-right: none;
-  }}
-  .panel-expand-btn.visible {{
-    display: flex;
-  }}
-  .panel {{
-    position: relative;
-    z-index: 5;
-    background: var(--panel);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(18px);
-    overflow: hidden;
-  }}
-  .panel::after {{
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    pointer-events: none;
-  }}
-  .panel-inner {{
-    position: relative;
-    padding: 18px 18px 20px;
-    height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    min-width: 0;
-  }}
-  .eyebrow {{
-    margin: 0 0 10px;
-    font-size: 11px;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }}
-  h1, h2, h3, p {{ margin: 0; }}
-  h1 {{
-    font-size: clamp(1.5rem, 2.6vw, 2.2rem);
-    line-height: 1.04;
-    letter-spacing: -0.04em;
-    text-transform: uppercase;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }}
-  .subhead {{
-    margin-top: 12px;
-    font-size: 0.96rem;
-    line-height: 1.5;
-    color: var(--muted);
-  }}
-  .stats {{
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 18px;
-  }}
-  .stat {{
-    padding: 12px 14px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-  }}
-  .stat-label {{
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--muted);
-  }}
-  .stat-value {{
-    margin-top: 8px;
-    font-size: 1.2rem;
-    font-weight: 700;
-  }}
-  .search-wrap {{
-    margin-top: 18px;
-    padding: 14px;
-    border-radius: 18px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06);
-  }}
-  .search-wrap label {{
-    display: block;
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--muted);
-    margin-bottom: 10px;
-  }}
-  .search-row {{
-    display: flex;
-    gap: 10px;
-  }}
-  #search-input {{
-    width: 100%;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px;
-    background: rgba(6, 12, 27, 0.82);
-    color: var(--text);
-    padding: 12px 14px;
-    outline: none;
-    font: inherit;
-  }}
-  #search-input:focus {{
-    border-color: rgba(123, 247, 255, 0.55);
-    box-shadow: 0 0 0 3px rgba(123, 247, 255, 0.12);
-  }}
-  .button {{
-    appearance: none;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(180deg, rgba(123,247,255,0.16), rgba(123,247,255,0.06));
-    color: var(--text);
-    border-radius: 14px;
-    padding: 0 14px;
-    font: inherit;
-    cursor: pointer;
-    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
-  }}
-  .button:hover {{ transform: translateY(-1px); border-color: rgba(123,247,255,0.32); }}
-  .results {{
-    margin-top: 16px;
-    display: grid;
-    gap: 10px;
-  }}
-  .result-card, .connection-card {{
-    width: 100%;
-    text-align: left;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
-    border-radius: 16px;
-    padding: 12px 14px;
-    cursor: pointer;
-  }}
-  .result-card:hover, .connection-card:hover {{
-    border-color: rgba(123,247,255,0.35);
-    background: rgba(123,247,255,0.08);
-  }}
-  .connection-card {{
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }}
-  .connection-card-body {{
-    flex: 1;
-    min-width: 0;
-  }}
-  .connection-expand {{
-    align-self: flex-start;
-    flex-shrink: 0;
-    font-size: 0.7rem;
-    padding: 2px 8px;
-  }}
-  .result-title {{
-    font-weight: 700;
-    font-size: 0.98rem;
-  }}
-  .result-meta {{
-    margin-top: 4px;
-    color: var(--muted);
-    font-size: 0.84rem;
-  }}
-  .result-path {{
-    margin-top: 8px;
-    color: var(--accent);
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    word-break: break-all;
-  }}
-  .lobes-list {{
-    margin-top: 4px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }}
-  .lobe-group {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    min-width: 0;
-  }}
-  .lobe-card-wrap {{
-    position: relative;
-    min-width: 0;
-  }}
-  .lobe-card-wrap.has-caret .lobe-card {{
-    padding-right: 40px;
-  }}
-  .lobe-caret {{
-    appearance: none;
-    position: absolute;
-    top: 50%;
-    right: 8px;
-    transform: translateY(-50%);
-    width: 24px;
-    height: 24px;
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 8px;
-    background: rgba(8,15,32,0.7);
-    color: var(--muted);
-    font-size: 0.78rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2;
-    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-  }}
-  .lobe-caret:hover {{
-    color: var(--text);
-    border-color: rgba(123,247,255,0.45);
-    background: rgba(123,247,255,0.14);
-  }}
-  .sublobes-list {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    margin-left: 14px;
-    padding-left: 10px;
-    border-left: 1px dashed rgba(255,255,255,0.10);
-    min-width: 0;
-  }}
-  .sublobe-group {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    min-width: 0;
-  }}
-  .sublobe-card-wrap {{
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    min-width: 0;
-  }}
-  .sublobe-card-wrap.has-caret > button.sublobe-card {{
-    padding-right: 30px;
-  }}
-  .sublobe-card-wrap > .lobe-caret {{
-    position: absolute;
-    top: 50%;
-    right: 6px;
-    transform: translateY(-50%);
-  }}
-  .sublobe-card {{
-    appearance: none;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-    text-align: left;
-    padding: 7px 10px;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-  }}
-  .sublobe-card:hover {{
-    border-color: rgba(123,247,255,0.30);
-    background: rgba(123,247,255,0.06);
-    transform: translateX(2px);
-  }}
-  .sublobe-card.dimmed {{
-    opacity: 0.42;
-    background: rgba(255,255,255,0.02);
-    transform: none;
-  }}
-  .sublobe-card.dimmed:hover {{
-    opacity: 0.75;
-  }}
-  .sublobe-card[disabled] {{
-    cursor: default;
-    opacity: 0.55;
-    transform: none;
-  }}
-  .sublobe-tick {{
-    width: 3px;
-    height: 22px;
-    border-radius: 999px;
-    flex-shrink: 0;
-  }}
-  .sublobe-name {{
-    font-weight: 600;
-    font-size: 0.70rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }}
-  .lobe-card {{
-    appearance: none;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-    text-align: left;
-    padding: 9px 11px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.07);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-  }}
-  .lobe-card:hover {{
-    border-color: rgba(123,247,255,0.35);
-    background: rgba(123,247,255,0.08);
-    transform: translateY(-1px);
-  }}
-  .lobe-card.dimmed {{
-    opacity: 0.42;
-    background: rgba(255,255,255,0.02);
-  }}
-  .lobe-card.dimmed:hover {{
-    opacity: 0.75;
-  }}
-  .lobe-card[disabled] {{
-    cursor: default;
-    opacity: 0.55;
-    transform: none;
-  }}
-  .lobe-swatch {{
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }}
-  .lobe-body {{
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    flex: 1;
-  }}
-  .lobe-name {{
-    font-weight: 700;
-    font-size: 0.78rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }}
-  .lobe-meta {{
-    color: var(--muted);
-    font-size: 0.70rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }}
-  .stage {{
-    position: relative;
-    border-radius: 28px;
-    overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: var(--shadow);
-    background:
-      radial-gradient(circle at 50% 45%, rgba(123,247,255,0.08), transparent 34%),
-      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05), transparent 68%);
-  }}
-  canvas {{
-    display: block;
-    width: 100%;
-    height: 100%;
-    cursor: grab;
-  }}
-  canvas.dragging {{ cursor: grabbing; }}
-  .stage-hud {{
-    position: absolute;
-    top: 16px;
-    left: 16px;
-    right: 16px;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    pointer-events: none;
-  }}
-  .stage-tools {{
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
-  }}
-  .stage-pill {{
-    pointer-events: auto;
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(8,15,32,0.72);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: var(--muted);
-    font-size: 0.84rem;
-    backdrop-filter: blur(10px);
-  }}
-  .stage-mode-switch {{
-    pointer-events: auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px;
-    border-radius: 999px;
-    background: rgba(8,15,32,0.72);
-    border: 1px solid rgba(255,255,255,0.08);
-    backdrop-filter: blur(10px);
-  }}
-  .mode-button {{
-    appearance: none;
-    min-width: 78px;
-    height: 30px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.78rem;
-    cursor: pointer;
-    transition: background 160ms ease, color 160ms ease;
-  }}
-  .mode-button:hover {{
-    color: var(--text);
-  }}
-  .mode-button.active {{
-    color: #06111f;
-    background: var(--accent);
-    font-weight: 700;
-  }}
-  .details-card {{
-    margin-top: 18px;
-    padding: 18px;
-    border-radius: 20px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-    border: 1px solid rgba(255,255,255,0.08);
-  }}
-  .details-empty {{
-    margin-top: 18px;
-    padding: 18px;
-    border-radius: 20px;
-    border: 1px dashed rgba(255,255,255,0.12);
-    color: var(--muted);
-    line-height: 1.6;
-  }}
-  .details-title {{
-    font-size: 1.35rem;
-    line-height: 1.05;
-  }}
-  .details-subtitle {{
-    margin-top: 4px;
-    color: var(--muted);
-    font-size: 0.85rem;
-    font-style: italic;
-    line-height: 1.2;
-  }}
-  .details-path {{
-    margin-top: 10px;
-    color: var(--accent);
-    font-family: var(--mono);
-    font-size: 0.82rem;
-    word-break: break-all;
-  }}
-  .meta-grid {{
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 16px;
-  }}
-  .meta-card {{
-    padding: 12px;
-    border-radius: 16px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06);
-  }}
-  .meta-card .label {{
-    display: block;
-    margin-bottom: 6px;
-    color: var(--muted);
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-  }}
-  .meta-card .value {{
-    font-size: 0.95rem;
-    line-height: 1.45;
-    word-break: break-word;
-  }}
-  .tag-row {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 14px;
-  }}
-  .tag {{
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.06);
-    color: var(--text);
-    font-size: 0.8rem;
-    border: 1px solid rgba(255,255,255,0.08);
-  }}
-  .details-copy {{
-    margin-top: 14px;
-    line-height: 1.7;
-    color: #d7e3fb;
-  }}
-  .content-preview {{
-    margin-top: 14px;
-    padding: 16px;
-    border-radius: 18px;
-    background: rgba(6, 12, 27, 0.86);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: #eef4ff;
-    font-family: var(--mono);
-    font-size: 0.82rem;
-    line-height: 1.65;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }}
-  .content-preview-note {{
-    margin-top: 10px;
-    color: var(--muted);
-    font-size: 0.82rem;
-  }}
-  .section-title {{
-    margin-top: 20px;
-    margin-bottom: 10px;
-    font-size: 0.76rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }}
-  .legend {{
-    display: grid;
-    gap: 10px;
-    margin-top: 18px;
-    padding-top: 18px;
-    border-top: 1px solid rgba(255,255,255,0.08);
-  }}
-  .legend-item {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: var(--muted);
-    font-size: 0.86rem;
-  }}
-  .legend-swatch {{
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    display: inline-block;
-    box-shadow: 0 0 18px rgba(255,255,255,0.18);
-  }}
-  .legend-line {{
-    width: 26px;
-    height: 2px;
-    display: inline-block;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.5);
-  }}
-  .legend-line.related {{ background: linear-gradient(90deg, var(--accent), rgba(123,247,255,0.18)); }}
-  .legend-line.parent {{ background: linear-gradient(90deg, var(--accent-3), rgba(248,199,109,0.18)); }}
-  .legend-line.inline {{ background: linear-gradient(90deg, var(--accent-2), rgba(255,139,216,0.18)); }}
-  .breadcrumbs {{
-    margin-top: 8px;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px;
-    font-family: var(--mono);
-    font-size: 0.82rem;
-  }}
-  .breadcrumb-link {{
-    appearance: none;
-    background: none;
-    border: none;
-    color: var(--accent);
-    font: inherit;
-    cursor: pointer;
-    padding: 2px 0;
-  }}
-  .breadcrumb-link:hover {{ text-decoration: underline; }}
-  .breadcrumb-current {{ color: var(--text); padding: 2px 0; }}
-  .breadcrumb-sep {{ color: var(--muted); padding: 0 4px; }}
-  .expand-btn {{
-    appearance: none;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: var(--muted);
-    border-radius: 8px;
-    padding: 4px 8px;
-    font-size: 0.76rem;
-    cursor: pointer;
-    margin-left: 8px;
-  }}
-  .expand-btn:hover {{ color: var(--text); border-color: rgba(123,247,255,0.4); }}
-  .modal-overlay {{
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(6px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }}
-  .modal-box {{
-    width: 90vw;
-    max-height: 90vh;
-    background: var(--panel-strong);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: var(--radius);
-    box-shadow: 0 40px 100px rgba(0,0,0,0.6);
-    display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
-    overflow: hidden;
-  }}
-  .modal-header {{
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 18px 22px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-  }}
-  .modal-tree {{
-    grid-row: 2;
-    grid-column: 1;
-    overflow: auto;
-    border-right: 1px solid rgba(255,255,255,0.08);
-    padding: 14px 12px;
-    background: rgba(0,0,0,0.18);
-    font-family: var(--mono);
-    font-size: 0.82rem;
-  }}
-  .panel-tree {{
-    display: block;
-    margin: 4px 0 0;
-    font-family: var(--mono);
-    font-size: 0.82rem;
-  }}
-  .modal-tree-folder {{
-    margin: 2px 0;
-  }}
-  .modal-tree-folder-label {{
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 6px;
-    color: var(--muted);
-    cursor: pointer;
-    border-radius: 4px;
-    user-select: none;
-  }}
-  .modal-tree-folder-label:hover {{
-    background: rgba(255,255,255,0.06);
-    color: var(--text);
-  }}
-  .modal-tree-folder-label .caret {{
-    display: inline-block;
-    width: 10px;
-    text-align: center;
-    color: var(--muted);
-    transition: transform 0.1s;
-  }}
-  .modal-tree-folder.collapsed > .modal-tree-children {{ display: none; }}
-  .modal-tree-folder.collapsed > .modal-tree-folder-label .caret {{
-    transform: rotate(-90deg);
-  }}
-  .modal-tree-children {{
-    margin-left: 14px;
-    border-left: 1px solid rgba(255,255,255,0.06);
-    padding-left: 6px;
-  }}
-  .modal-tree-file {{
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 6px;
-    color: var(--text);
-    cursor: pointer;
-    border-radius: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }}
-  .modal-tree-file:hover {{
-    background: rgba(123,247,255,0.08);
-    color: var(--accent);
-  }}
-  .modal-tree-file.active {{
-    background: rgba(123,247,255,0.18);
-    color: var(--accent);
-  }}
-  .modal-tree-file .icon,
-  .modal-tree-folder-label .icon {{
-    opacity: 0.6;
-    flex-shrink: 0;
-  }}
-  .modal-title {{
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text);
-  }}
-  .modal-close {{
-    appearance: none;
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 1.6rem;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-  }}
-  .modal-close:hover {{ color: var(--text); }}
-  .modal-main {{
-    grid-row: 2;
-    grid-column: 2;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }}
-  .modal-nav {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 12px 22px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-  }}
-  .modal-nav:empty {{ display: none; }}
-  .modal-nav-toggle {{
-    appearance: none;
-    background: rgba(123,247,255,0.04);
-    border: 1px dashed rgba(123,247,255,0.25);
-    color: var(--accent);
-    border-radius: 999px;
-    padding: 5px 12px;
-    font-size: 0.78rem;
-    font-family: var(--mono);
-    font-weight: 600;
-    cursor: pointer;
-    flex-shrink: 0;
-  }}
-  .modal-nav-toggle:hover {{ background: rgba(123,247,255,0.10); border-color: rgba(123,247,255,0.50); }}
-  .modal-nav-btn {{
-    appearance: none;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: var(--accent);
-    border-radius: 999px;
-    padding: 5px 12px;
-    font-size: 0.78rem;
-    font-family: var(--mono);
-    cursor: pointer;
-  }}
-  .modal-nav-btn:hover {{ background: rgba(123,247,255,0.12); border-color: rgba(123,247,255,0.4); }}
-  .content-link {{
-    appearance: none;
-    background: none;
-    border: none;
-    color: var(--accent);
-    font: inherit;
-    cursor: pointer;
-    padding: 0;
-    text-decoration: underline;
-    text-decoration-color: rgba(123,247,255,0.3);
-    text-underline-offset: 2px;
-  }}
-  .content-link:hover {{ text-decoration-color: var(--accent); }}
-  .content-link-broken {{
-    color: #ff8a8a;
-    text-decoration: line-through;
-    text-decoration-color: rgba(255, 138, 138, 0.55);
-    cursor: help;
-  }}
-  .modal-content {{
-    flex: 1;
-    overflow: auto;
-    margin: 0;
-    padding: 22px 28px;
-    color: #eef4ff;
-    font-family: var(--sans);
-    font-size: 0.92rem;
-    line-height: 1.65;
-  }}
-  .modal-content h1 {{ font-size: 1.45rem; margin: 18px 0 10px; }}
-  .modal-content h2 {{
-    font-size: 1.15rem;
-    margin: 22px 0 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--line);
-  }}
-  .modal-content h3 {{ font-size: 1rem; margin: 18px 0 6px; }}
-  .modal-content h4 {{ font-size: 0.92rem; margin: 14px 0 4px; font-weight: 600; }}
-  .modal-content h5,
-  .modal-content h6 {{ font-size: 0.88rem; margin: 12px 0 4px; font-weight: 600; }}
-  .modal-content p {{ margin: 8px 0; }}
-  .modal-content ul,
-  .modal-content ol {{ padding-left: 24px; margin: 8px 0; }}
-  .modal-content li {{ margin: 3px 0; }}
-  .modal-content hr {{
-    border: 0;
-    border-top: 1px solid var(--line);
-    margin: 18px 0;
-  }}
-  .modal-content code {{
-    background: rgba(123, 167, 255, 0.10);
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 0.85rem;
-  }}
-  .modal-content pre {{
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 12px 14px;
-    overflow-x: auto;
-    font-size: 0.82rem;
-    margin: 10px 0;
-  }}
-  .modal-content pre code {{
-    background: transparent;
-    padding: 0;
-    font-size: 0.82rem;
-  }}
-  .modal-content blockquote {{
-    margin: 10px 0;
-    padding: 4px 14px;
-    border-left: 3px solid var(--line);
-    background: rgba(123, 167, 255, 0.06);
-    border-radius: 0 10px 10px 0;
-    color: var(--muted);
-  }}
-  .modal-content blockquote p {{ margin: 6px 0; }}
-  .modal-content table {{
-    border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 0.85rem;
-    display: block;
-    overflow-x: auto;
-    max-width: 100%;
-  }}
-  .modal-content th,
-  .modal-content td {{
-    border: 1px solid var(--line);
-    padding: 6px 10px;
-    text-align: left;
-    vertical-align: top;
-  }}
-  .modal-content thead th {{
-    background: rgba(123, 167, 255, 0.10);
-    font-weight: 600;
-  }}
-  .modal-content tbody tr:nth-child(even) td {{
-    background: rgba(123, 167, 255, 0.04);
-  }}
-  .modal-content a {{ color: var(--accent); }}
-  .yaml-preview {{
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 14px 16px;
-    overflow-x: auto;
-    font-size: 0.82rem;
-    line-height: 1.55;
-    margin: 0;
-  }}
-  .yaml-preview code {{
-    background: transparent;
-    padding: 0;
-    font-family: var(--mono);
-    font-size: 0.82rem;
-    white-space: pre;
-  }}
-  .yaml-key {{ color: var(--accent); }}
-  .yaml-string {{ color: var(--success); }}
-  .yaml-num {{ color: var(--accent-3); }}
-  .yaml-bool {{ color: var(--accent-2); }}
-  .yaml-comment {{ color: var(--muted); font-style: italic; }}
-  @media (max-width: 1200px) {{
-    .shell {{ grid-template-columns: 300px minmax(0,1fr); }}
-    .panel-right {{ display: none; }}
-  }}
-  @media (max-width: 860px) {{
-    .shell {{
-      grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(320px, 50vh) auto;
-      height: auto;
-      min-height: 100vh;
-    }}
-    .stage {{ min-height: 52vh; }}
-    .panel-right {{ display: block; }}
-  }}
+{_MRI_CSS}
 </style>
 </head>
 <body>
-<div class="shell">
-  <aside class="panel panel-left">
-    <button type="button" class="panel-collapse-btn" id="collapse-left" title="Collapse left panel" aria-label="Collapse left panel">&lsaquo;</button>
-    <div class="panel-inner">
-      <p class="eyebrow">Brain MRI</p>
-      <h1>{brain_name}</h1>
+<div class="app">
+  <header class="mri-header">
+    <div class="header-left">
+      <h1 class="brain-title">{brain_name}</h1>
       <div class="stats">
-        <div class="stat">
-          <div class="stat-label">Neurons</div>
-          <div class="stat-value" id="stat-nodes">{sum(1 for n in graph["nodes"] if n["type"] == "neuron")}</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Links</div>
-          <div class="stat-value" id="stat-edges">{len(graph["edges"])}</div>
-        </div>
+        <span><span class="num" id="stat-lobes">{lobe_count}</span> lobes</span>
+        <span class="dot">·</span>
+        <span><span class="num" id="stat-neurons">{neuron_count}</span> neurons</span>
+        <span class="dot">·</span>
+        <span><span class="num" id="stat-synapses">{edge_count}</span> synapses</span>
       </div>
-      <div class="section-title">Files</div>
-      <nav class="panel-tree" id="panel-tree" aria-label="Brain files"></nav>
     </div>
-  </aside>
 
-  <main class="stage">
-    <div class="stage-hud">
-      <div class="stage-tools">
-        <div class="stage-pill">Drag, pan, scroll to zoom, <strong>/</strong> to search</div>
-        <div class="stage-mode-switch" aria-label="Stage mode">
-          <button class="mode-button active" type="button" data-stage-mode="overview" aria-pressed="true">Overview</button>
-          <button class="mode-button" type="button" data-stage-mode="detail" aria-pressed="false">Neurons</button>
-        </div>
+    <nav class="breadcrumb" id="breadcrumb" aria-label="Brain navigation">
+      <span class="crumb active" data-level="brain">{brain_name}</span>
+    </nav>
+
+    <div class="header-right">
+      <div class="mode-switch" aria-label="Stage mode">
+        <button class="mode-button active" type="button" data-stage-mode="brain">Brain</button>
+        <button class="mode-button" type="button" data-stage-mode="lobe" disabled>Lobe</button>
+        <button class="mode-button" type="button" data-stage-mode="sublobe" disabled>Sublobe</button>
+        <button class="mode-button" type="button" data-stage-mode="force">Expert</button>
       </div>
-      <div class="stage-pill" id="stage-focus"></div>
+      <button class="icon-button" id="btn-fit" type="button" title="Fit to view" aria-label="Fit to view">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg>
+      </button>
+      <button class="icon-button" id="btn-reset" type="button" title="Reset view" aria-label="Reset view">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
     </div>
-    <canvas id="mri-canvas"></canvas>
-  </main>
+  </header>
 
-  <aside class="panel panel-right">
-    <button type="button" class="panel-collapse-btn" id="collapse-right" title="Collapse right panel" aria-label="Collapse right panel">&rsaquo;</button>
-    <div class="panel-inner">
-      <div class="search-wrap">
-        <label for="search-input">Search the brain</label>
-        <div class="search-row">
-          <input id="search-input" type="search" placeholder="Name, path, lobe, tag, or yaml" autocomplete="off">
-          <button class="button" id="reset-view" type="button">Reset</button>
-        </div>
+  <div class="body">
+    <aside class="panel panel-left" id="panel-left">
+      <div class="panel-header">
+        <h3>Files</h3>
+        <button type="button" class="panel-collapse-btn" id="collapse-left" title="Collapse left panel" aria-label="Collapse left panel">&lsaquo;</button>
       </div>
-      <div class="section-title">Lobes</div>
-      <div class="lobes-list" id="lobes-list"></div>
-      <div class="section-title">Results</div>
-      <div id="result-count" class="subhead"></div>
+      <div class="panel-body">
+        <nav class="panel-tree" id="panel-tree" aria-label="Brain files"></nav>
+      </div>
+    </aside>
+
+    <main class="stage" id="stage">
+      <div class="stage-hud">
+        <div class="hud-pill" id="hud-action">Click a lobe to drill in · scroll to zoom · drag to pan</div>
+        <div class="hud-pill" id="hud-keys">Press <kbd>/</kbd> to search · <kbd>E</kbd> for Expert</div>
+      </div>
+      <canvas id="mri-canvas"></canvas>
+    </main>
+
+    <aside class="panel panel-right" id="panel-right">
+      <div class="panel-header">
+        <h3>Find</h3>
+        <button type="button" class="panel-collapse-btn" id="collapse-right" title="Collapse right panel" aria-label="Collapse right panel">&rsaquo;</button>
+      </div>
+      <label class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="search-input" type="search" placeholder="Search neurons, path, lobe, tag, or yaml" autocomplete="off">
+        <kbd>/</kbd>
+      </label>
+
+      <div class="panel-section-header">
+        <h3>Lobes</h3>
+      </div>
+      <div class="lobe-filter" id="lobes-list"></div>
+
+      <div class="panel-section-header" style="padding-top:18px">
+        <h3>Recent</h3>
+      </div>
+      <div class="recent-list" id="recent-list"></div>
+
+      <div class="panel-section-header" style="padding-top:18px">
+        <h3>Results</h3>
+      </div>
+      <div id="result-count" class="result-count"></div>
       <div class="results" id="search-results"></div>
-    </div>
-  </aside>
+    </aside>
+  </div>
+
+  <button type="button" class="panel-expand-btn panel-expand-left" id="expand-left" title="Show left panel" aria-label="Show left panel">&rsaquo;</button>
+  <button type="button" class="panel-expand-btn panel-expand-right" id="expand-right" title="Show right panel" aria-label="Show right panel">&lsaquo;</button>
 </div>
-<button type="button" class="panel-expand-btn panel-expand-left" id="expand-left" title="Show left panel" aria-label="Show left panel">&rsaquo;</button>
-<button type="button" class="panel-expand-btn panel-expand-right" id="expand-right" title="Show right panel" aria-label="Show right panel">&lsaquo;</button>
+
 <div id="content-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
-      <div style="display:flex;align-items:center;gap:8px">
-        <button type="button" class="expand-btn" id="modal-back" title="Back">&larr;</button>
-        <button type="button" class="expand-btn" id="modal-forward" title="Forward">&rarr;</button>
+      <div class="modal-header-title">
+        <button type="button" class="modal-icon-btn" id="modal-back" title="Back">&larr;</button>
+        <button type="button" class="modal-icon-btn" id="modal-forward" title="Forward">&rarr;</button>
+        <span class="kicker" id="modal-kicker">NEURON</span>
         <div class="modal-title" id="modal-title"></div>
       </div>
       <button type="button" class="modal-close" id="modal-close">&times;</button>
     </div>
     <nav class="modal-tree" id="modal-tree" aria-label="Brain files"></nav>
     <div class="modal-main">
+      <div class="modal-stats" id="modal-stats"></div>
       <div class="modal-nav" id="modal-nav"></div>
       <div class="modal-content" id="modal-content"></div>
     </div>
   </div>
 </div>
+
 <script>
 const graph = {graph_json};
-const EDGE_COLORS = {{
-  parent: 'rgba(248, 199, 109, 0.42)',
-  related: 'rgba(123, 247, 255, 0.44)',
-  inline: 'rgba(255, 139, 216, 0.34)',
-}};
+const BRAIN_NAME = {json.dumps(brain_name)};
+{_MRI_JS}
+</script>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# Inline CSS — flat, calm, C4-aligned. No glassmorphic blur, no big radial
+# gradients. The mockup files in `.specs/mri-c4-redesign/` are the visual
+# contract; this stylesheet ports them onto the live MRI shell.
+# ---------------------------------------------------------------------------
+
+_MRI_CSS = """\
+:root {
+  --bg: #0a0f1a;
+  --bg-deeper: #060a14;
+  --panel: rgba(10, 16, 30, 0.92);
+  --panel-strong: rgba(12, 21, 44, 0.96);
+  --line: rgba(123, 167, 255, 0.18);
+  --line-strong: rgba(123, 167, 255, 0.32);
+  --text: #e9f1ff;
+  --muted: #8ba7d1;
+  --muted-faint: rgba(139, 167, 209, 0.55);
+  --accent: #7bf7ff;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  --radius: 16px;
+  --mono: "SFMono-Regular", "SF Mono", "Monaco", "Cascadia Code", monospace;
+  --sans: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-deeper);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+/* ===== Header bar ===== */
+.mri-header {
+  display: grid;
+  grid-template-columns: minmax(280px, auto) 1fr minmax(280px, auto);
+  gap: 24px;
+  align-items: center;
+  padding: 14px 22px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.brain-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+.stats {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+.stats .num { color: var(--text); font-weight: 600; }
+.stats .dot { color: var(--line-strong); }
+
+.breadcrumb {
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(8, 15, 32, 0.60);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  flex-wrap: wrap;
+}
+.breadcrumb .crumb {
+  cursor: pointer;
+  transition: color 160ms ease;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.breadcrumb .crumb:hover { color: var(--text); }
+.breadcrumb .crumb.active { color: var(--text); font-weight: 600; cursor: default; }
+.breadcrumb .sep { color: var(--line-strong); }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+  flex-wrap: wrap;
+}
+
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(8, 15, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.mode-button {
+  appearance: none;
+  min-width: 64px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.mode-button:hover:not([disabled]) { color: var(--text); }
+.mode-button.active {
+  color: #06111f;
+  background: var(--accent);
+}
+.mode-button[disabled] { opacity: 0.30; cursor: not-allowed; }
+
+.icon-button {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 15, 32, 0.45);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.icon-button:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* ===== Body shell ===== */
+.body {
+  display: grid;
+  grid-template-columns: 280px 1fr 320px;
+  gap: 0;
+  min-height: 0;
+  position: relative;
+}
+.body.left-collapsed { grid-template-columns: 0 1fr 320px; }
+.body.right-collapsed { grid-template-columns: 280px 1fr 0; }
+.body.left-collapsed.right-collapsed { grid-template-columns: 0 1fr 0; }
+.body.left-collapsed .panel-left,
+.body.right-collapsed .panel-right { display: none; }
+
+.panel {
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.panel.panel-right {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 10px;
+}
+.panel-header h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px 6px;
+}
+.panel-section-header h3 {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel-collapse-btn {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.panel-collapse-btn:hover { color: var(--text); background: rgba(123, 167, 255, 0.08); }
+
+.panel-expand-btn {
+  appearance: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 56px;
+  border: 1px solid var(--line);
+  background: rgba(12, 21, 44, 0.88);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  backdrop-filter: blur(8px);
+}
+.panel-expand-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.panel-expand-btn.panel-expand-left {
+  left: 0;
+  border-radius: 0 8px 8px 0;
+  border-left: none;
+}
+.panel-expand-btn.panel-expand-right {
+  right: 0;
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+}
+.panel-expand-btn.visible { display: flex; }
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 14px 18px;
+}
+
+/* ===== Left panel — file tree ===== */
+.panel-tree {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+}
+.tree-node {
+  padding: 4px 8px 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 1px 0;
+  min-width: 0;
+}
+.tree-node:hover { background: rgba(123, 167, 255, 0.06); }
+.tree-node.selected { background: rgba(123, 247, 255, 0.10); }
+.tree-node .chev { color: var(--muted); width: 10px; flex-shrink: 0; font-family: var(--mono); font-size: 0.7rem; }
+.tree-node .icon { width: 14px; flex-shrink: 0; opacity: 0.65; }
+.tree-node .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-node .count {
+  color: var(--muted-faint);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  flex-shrink: 0;
+}
+.tree-children { padding-left: 14px; }
+
+/* ===== Stage / canvas ===== */
+.stage {
+  position: relative;
+  background: var(--bg);
+  background-image: radial-gradient(rgba(123, 167, 255, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: 0 0;
+  overflow: hidden;
+  min-width: 0;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+canvas.dragging { cursor: grabbing; }
+.stage-hud {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: none;
+}
+.hud-pill {
+  pointer-events: auto;
+  padding: 8px 12px;
+  background: rgba(8, 15, 32, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  backdrop-filter: blur(8px);
+}
+.hud-pill kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: rgba(123, 167, 255, 0.12);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+/* ===== Right panel ===== */
+.search {
+  margin: 0 18px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: rgba(8, 15, 32, 0.60);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+}
+.search svg { flex-shrink: 0; opacity: 0.55; }
+#search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+#search-input::placeholder { color: var(--muted-faint); }
+.search kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(123, 167, 255, 0.10);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+
+.lobe-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 8px;
+}
+.lobe-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  width: 100%;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.lobe-row:hover {
+  background: rgba(123, 167, 255, 0.05);
+  border-color: var(--line);
+}
+.lobe-row.dimmed { opacity: 0.45; }
+.lobe-row .swatch {
+  width: 4px;
+  height: 22px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: var(--bar, var(--accent));
+}
+.lobe-row .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.lobe-row .count {
+  color: var(--muted-faint);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.lobe-row .vis {
+  color: var(--muted);
+  font-size: 0.78rem;
+  width: 14px;
+  text-align: center;
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 14px 8px;
+}
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  width: 100%;
+  border: 0;
+}
+.recent-row:hover { background: rgba(123, 167, 255, 0.06); }
+.recent-row .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.recent-row .ago {
+  color: var(--muted-faint);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  flex-shrink: 0;
+}
+
+.result-count {
+  padding: 0 18px 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-family: var(--mono);
+}
+.results {
+  padding: 0 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.result-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: rgba(8, 15, 32, 0.45);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.result-card:hover {
+  border-color: var(--line-strong);
+  background: rgba(123, 247, 255, 0.06);
+}
+.result-card .result-title {
+  font-weight: 600;
+  font-size: 0.84rem;
+}
+.result-card .result-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-family: var(--mono);
+}
+.result-card .result-path {
+  margin-top: 4px;
+  color: var(--muted-faint);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  word-break: break-all;
+}
+
+/* ===== Modal — flat C4 box style ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-box {
+  width: 92vw;
+  max-height: 92vh;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+.modal-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.modal-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.modal-icon-btn {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.modal-icon-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.modal-header .kicker {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.modal-close {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+.modal-tree {
+  grid-row: 2;
+  grid-column: 1;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  padding: 12px 10px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.modal-main {
+  grid-row: 2;
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.modal-stats {
+  padding: 10px 22px 4px;
+  color: var(--muted-faint);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+}
+.modal-stats .num { color: var(--text); font-weight: 600; }
+.modal-stats .dot { color: var(--line-strong); margin: 0 6px; }
+.modal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-nav:empty { display: none; }
+.modal-nav-toggle {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-family: var(--mono);
+  font-weight: 600;
+  cursor: pointer;
+}
+.modal-nav-toggle:hover { background: rgba(123, 247, 255, 0.06); border-color: var(--line-strong); }
+.modal-nav-btn {
+  appearance: none;
+  background: rgba(8, 15, 32, 0.60);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.modal-nav-btn:hover { background: rgba(123, 247, 255, 0.08); border-color: var(--line-strong); }
+.modal-content {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 16px 22px 24px;
+  color: #eef4ff;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+.modal-content h1 { font-size: 1.3rem; margin: 14px 0 8px; }
+.modal-content h2 {
+  font-size: 1.05rem;
+  margin: 18px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-content h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+.modal-content p { margin: 8px 0; }
+.modal-content ul,
+.modal-content ol { padding-left: 22px; margin: 8px 0; }
+.modal-content li { margin: 3px 0; }
+.modal-content hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.modal-content code {
+  background: rgba(123, 167, 255, 0.10);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+.modal-content pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  margin: 10px 0;
+}
+.modal-content pre code { background: transparent; padding: 0; font-size: 0.78rem; }
+.modal-content blockquote {
+  margin: 10px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--line);
+  background: rgba(123, 167, 255, 0.04);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+}
+.modal-content blockquote p { margin: 6px 0; }
+.modal-content table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.82rem;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.modal-content th,
+.modal-content td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.modal-content thead th { background: rgba(123, 167, 255, 0.08); font-weight: 600; }
+.modal-content tbody tr:nth-child(even) td { background: rgba(123, 167, 255, 0.03); }
+.modal-content a { color: var(--accent); }
+.modal-tree-folder { margin: 2px 0; }
+.modal-tree-folder-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.modal-tree-folder-label:hover { background: rgba(123, 167, 255, 0.06); color: var(--text); }
+.modal-tree-folder-label .caret {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+}
+.modal-tree-folder.collapsed > .modal-tree-children { display: none; }
+.modal-tree-folder.collapsed > .modal-tree-folder-label .caret { transform: rotate(-90deg); }
+.modal-tree-children { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 6px; }
+.modal-tree-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modal-tree-file:hover { background: rgba(123, 247, 255, 0.06); color: var(--accent); }
+.modal-tree-file.active { background: rgba(123, 247, 255, 0.12); color: var(--accent); }
+.yaml-preview {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  margin: 0;
+}
+.yaml-preview code {
+  background: transparent;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre;
+}
+.yaml-key { color: var(--accent); }
+.yaml-string { color: #7df7b4; }
+.yaml-num { color: #f8c76d; }
+.yaml-bool { color: #ff8bd8; }
+.yaml-comment { color: var(--muted); font-style: italic; }
+.content-link {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: rgba(123, 247, 255, 0.3);
+  text-underline-offset: 2px;
+}
+.content-link:hover { text-decoration-color: var(--accent); }
+.content-link-broken {
+  color: #ff8a8a;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 138, 138, 0.55);
+  cursor: help;
+}
+
+/* Responsive: collapse the right panel on narrow screens */
+@media (max-width: 1100px) {
+  .body { grid-template-columns: 240px 1fr 0; }
+  .body .panel-right { display: none; }
+}
+@media (max-width: 720px) {
+  .body { grid-template-columns: 0 1fr 0; }
+  .body .panel-left { display: none; }
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Inline JS — canvas C4 levels, edge aggregation, breadcrumb navigation,
+# legacy force graph (Expert mode), modal renderer.
+#
+# Caveat: this whole string is consumed as the body of an f-string in
+# `_render_mri_html`. Inside this constant we are NOT in an f-string, so
+# `{` / `}` and `\n` / `\\n` follow normal Python rules — `\\n` is a real
+# backslash-n in the emitted JS, and a single `\n` becomes a real newline
+# in Python. JS string literals that need an actual `\n` use `\\n`.
+# ---------------------------------------------------------------------------
+
+_MRI_JS = r"""
+// ============================================================
+// Constants & module state
+// ============================================================
+const FORCE_PAIRWISE_LIMIT = 180;
+const DETAIL_EDGE_LIMIT = 700;
+
+// Lobe palette — first 3 anchored to mockup colors so the demo brain
+// (projects/infrastructure/knowledge) renders identically to the static HTML.
+const lobePalette = ['#7bf7ff', '#ff8bd8', '#f8c76d', '#7df7b4', '#9ea9ff', '#ffa06f', '#b8f0c1', '#f2a8ff'];
+const uniqueLobes = [...new Set(graph.nodes.map(n => n.lobe))]
+  .filter(l => l && l !== 'root')
+  .sort((a, b) => a.localeCompare(b));
+
+function lobeColor(lobe) {
+  const idx = uniqueLobes.indexOf(lobe);
+  return lobePalette[(idx >= 0 ? idx : 0) % lobePalette.length];
+}
+
 const canvas = document.getElementById('mri-canvas');
 const ctx = canvas.getContext('2d');
 const searchInput = document.getElementById('search-input');
 const resultsEl = document.getElementById('search-results');
 const resultCountEl = document.getElementById('result-count');
-const stageFocus = document.getElementById('stage-focus');
 const lobesListEl = document.getElementById('lobes-list');
+const recentListEl = document.getElementById('recent-list');
+const breadcrumbEl = document.getElementById('breadcrumb');
+const stage = document.getElementById('stage');
 const modeButtons = [...document.querySelectorAll('[data-stage-mode]')];
+
 const neighbors = new Map();
 for (const node of graph.nodes) neighbors.set(node.id, new Set());
-for (const edge of graph.edges) {{
+for (const edge of graph.edges) {
   neighbors.get(edge.source)?.add(edge.target);
   neighbors.get(edge.target)?.add(edge.source);
-}}
+}
 
 let W = 0;
 let H = 0;
-const camera = {{ x: 0, y: 0, scale: 1 }};
-const FORCE_PAIRWISE_LIMIT = 180;
-const DETAIL_EDGE_LIMIT = 700;
-let stageMode = 'overview';
-let overviewItems = [];
-let hoveredOverviewLobe = null;
-let pendingOverviewLobe = null;
+const camera = { x: 0, y: 0, scale: 1 };
+
+// Stage modes: 'brain' | 'lobe' | 'sublobe' | 'force'.
+//   - 'brain'   = Level 1 (lobes + cross-lobe synapse edges, no physics)
+//   - 'lobe'    = Level 2 (sublobes inside one lobe + outbound stubs)
+//   - 'sublobe' = Level 3 (neurons inside one sublobe, layered DAG)
+//   - 'force'   = legacy force-directed graph (Expert mode) with perf caps
+let stageMode = 'brain';
+let activeLobe = null;        // selected lobe key when in 'lobe' or 'sublobe' mode
+let activeSublobe = null;     // selected sublobe key when in 'sublobe' mode
 let needsDraw = true;
-let pointer = {{ x: 0, y: 0 }};
+let pointer = { x: 0, y: 0 };
 let selectedId = null;
 let hoveredId = null;
 let draggingNodeId = null;
 let isPanning = false;
 let dragMoved = false;
-let dragOffset = {{ x: 0, y: 0 }};
-let lastPointer = {{ x: 0, y: 0 }};
-// Multi-select visibility: each lobe and sub-lobe can be independently
-// hidden from the canvas. Click a lobe / sub-lobe card to toggle it.
-// Default (empty sets) means "show everything".
+let dragOffset = { x: 0, y: 0 };
+let lastPointer = { x: 0, y: 0 };
+
+// L1/L2/L3 layout state — populated by layoutBrainMap / layoutLobeMap /
+// layoutSublobeMap on every stage transition or filter change. Boxes are
+// {key, title, kicker, lobe, color, x, y, w, h, ...}; aggregateEdges
+// produces the edges between L1/L2 boxes.
+let brainBoxes = [];
+let lobeBoxes = [];
+let sublobeBoxes = [];
+let brainEdges = [];   // aggregate edges at L1 (cross-lobe)
+let lobeEdges = [];    // aggregate edges at L2 (cross-sublobe within active lobe)
+let lobeOutbound = []; // outbound stubs at the L2 lobe boundary
+let sublobeOutbound = []; // outbound stubs at the L3 sublobe boundary
+let sublobeNeuronEdges = []; // {source, target, type, sx, sy, tx, ty, points}
+let highlightedEdge = null;  // {a, b} keys of the lobe pair to flash
+let highlightedEdgeUntil = 0;
+
+// Multi-select visibility toggles for lobes (right-sidebar filter).
 const hiddenLobes = new Set();
-const hiddenSublobes = new Set();
-const expandedLobes = new Set();
-const expandedSublobes = new Set();
 
-function requestDraw() {{
-  needsDraw = true;
-}}
+function requestDraw() { needsDraw = true; }
 
-// --- Color system: two-tier palette ---
-const lobePalette = ['#7bf7ff','#ff8bd8','#f8c76d','#7df7b4','#9ea9ff','#ffa06f','#b8f0c1','#f2a8ff'];
-const uniqueLobes = [...new Set(graph.nodes.map(n => n.lobe))];
-const lobeAnchors = new Map();
+// ============================================================
+// Aggregate edges helper — used by L1 (level='brain') and L2 (level='lobe')
+// ============================================================
+//
+// Returns a Map<"a||b", {a, b, forward, reverse}> where:
+//   - keys are the two participating lobe / sublobe keys joined sorted by
+//     localeCompare (so the iteration order is stable across calls);
+//   - forward = edges from the first key (lexicographic) to the second;
+//   - reverse = edges in the opposite direction.
+//
+// Self-edges (within the same lobe at L1, or same sublobe at L2) are dropped
+// — they are not "cross-boundary." `parent:` edges are always excluded
+// because they're structural (a neuron's parent must live in the same lobe
+// in a well-formed brain), not synapses.
+function aggregateEdges(g, level) {
+  const result = new Map();
+  const keyOf = (node) => {
+    if (level === 'brain') return node.lobe;
+    if (level === 'lobe') return node.sublobe;
+    return null;
+  };
+  const nodeMap = new Map(g.nodes.map(n => [n.id, n]));
+  for (const edge of g.edges) {
+    if (edge.type === 'parent') continue;
+    const src = nodeMap.get(edge.source);
+    const tgt = nodeMap.get(edge.target);
+    if (!src || !tgt) continue;
+    const sk = keyOf(src);
+    const tk = keyOf(tgt);
+    if (!sk || !tk) continue;
+    if (sk === tk) continue;
+    const [a, b] = sk.localeCompare(tk) <= 0 ? [sk, tk] : [tk, sk];
+    const cellKey = a + '||' + b;
+    if (!result.has(cellKey)) {
+      result.set(cellKey, { a, b, forward: 0, reverse: 0 });
+    }
+    const cell = result.get(cellKey);
+    if (sk === a) cell.forward += 1;
+    else cell.reverse += 1;
+  }
+  return result;
+}
 
-function hexToRgb(hex) {{
-  const r = parseInt(hex.slice(1,3), 16);
-  const g = parseInt(hex.slice(3,5), 16);
-  const b = parseInt(hex.slice(5,7), 16);
-  return [r, g, b];
-}}
+// ============================================================
+// Lobe / sublobe metadata derived from the graph
+// ============================================================
+function lobeTitle(lobeKey) {
+  const mapNode = graph.nodes.find(n => n.type === 'map' && n.lobe === lobeKey && n.sublobe === lobeKey);
+  return mapNode?.title || lobeKey;
+}
+function sublobeTitle(sublobeKey) {
+  const mapNode = graph.nodes.find(n => n.type === 'map' && n.sublobe === sublobeKey);
+  return mapNode?.title || sublobeKey.split('/').pop() || sublobeKey;
+}
+function lobeDescription(lobeKey) {
+  const mapNode = graph.nodes.find(n => n.type === 'map' && n.lobe === lobeKey && n.sublobe === lobeKey);
+  if (!mapNode) return '';
+  return (mapNode.excerpt || mapNode.content_preview || '').split('\n')[0].trim();
+}
+function sublobeDescription(sublobeKey) {
+  const mapNode = graph.nodes.find(n => n.type === 'map' && n.sublobe === sublobeKey);
+  if (!mapNode) return '';
+  return (mapNode.excerpt || mapNode.content_preview || '').split('\n')[0].trim();
+}
+function lobeStats(lobeKey) {
+  let neurons = 0;
+  const subs = new Set();
+  for (const n of graph.nodes) {
+    if (n.lobe !== lobeKey) continue;
+    if (n.type === 'neuron') neurons += 1;
+    if (n.sublobe && n.sublobe !== n.lobe) subs.add(n.sublobe);
+  }
+  return { neurons, sublobes: subs.size };
+}
+function sublobeStats(sublobeKey) {
+  let neurons = 0;
+  for (const n of graph.nodes) {
+    if (n.sublobe === sublobeKey && n.type === 'neuron') neurons += 1;
+  }
+  return { neurons };
+}
 
-function lobeColor(lobe) {{
-  const idx = uniqueLobes.indexOf(lobe);
-  return lobePalette[(idx >= 0 ? idx : 0) % lobePalette.length];
-}}
+// ============================================================
+// Shared layout primitives (used at L1 and L2)
+// ============================================================
+//
+// items must be [{key, ...payload}]. Returns the same array enriched with
+// {x, y, w, h}. Three regimes per the spec:
+//   - 1..4 items: single horizontal row, equal spacing
+//   - 5..6 items: 2-row / 2-col grid (3 cols if landscape, 2 cols if portrait)
+//   - 7+ items: radial orbit (alphabetical clockwise from 12 o'clock)
+function layoutGrid(items, viewport, opts) {
+  const n = items.length;
+  if (n === 0) return [];
+  const W_ = viewport.width;
+  const H_ = viewport.height;
+  const boxW = (opts && opts.width) || 240;
+  const boxH = (opts && opts.height) || 140;
+  if (n <= 4) {
+    const cellW = Math.min(W_ / Math.max(1, n), 320);
+    const y = H_ / 2;
+    return items.map((item, i) => ({
+      ...item,
+      x: W_ / 2 - ((n - 1) * cellW) / 2 + i * cellW,
+      y,
+      w: boxW,
+      h: boxH,
+    }));
+  }
+  if (n <= 6) {
+    const cols = W_ > H_ ? 3 : 2;
+    const rows = Math.ceil(n / cols);
+    const cellW = Math.min(W_ / cols, 320);
+    const cellH = Math.min(H_ / rows, 220);
+    return items.map((item, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      return {
+        ...item,
+        x: W_ / 2 - ((cols - 1) * cellW) / 2 + col * cellW,
+        y: H_ / 2 - ((rows - 1) * cellH) / 2 + row * cellH,
+        w: boxW,
+        h: boxH,
+      };
+    });
+  }
+  const radius = Math.min(W_, H_) * 0.34;
+  return items.map((item, i) => {
+    const angle = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    return {
+      ...item,
+      x: W_ / 2 + Math.cos(angle) * radius,
+      y: H_ / 2 + Math.sin(angle) * radius,
+      w: 220,
+      h: 130,
+    };
+  });
+}
 
-function desaturate(hex, amount) {{
-  const [r, g, b] = hexToRgb(hex);
-  const gray = (r + g + b) / 3;
-  const nr = Math.round(r + (gray - r) * amount);
-  const ng = Math.round(g + (gray - g) * amount);
-  const nb = Math.round(b + (gray - b) * amount);
-  return `rgb(${{nr}},${{ng}},${{nb}})`;
-}}
+function layoutBrainMap(lobes, viewport) {
+  return layoutGrid(lobes, viewport, { width: 260, height: 140 });
+}
+function layoutLobeMap(sublobes, viewport) {
+  return layoutGrid(sublobes, viewport, { width: 240, height: 130 });
+}
 
-function rgbaFromHex(hex, alpha) {{
-  const [r, g, b] = hexToRgb(hex);
-  return `rgba(${{r}},${{g}},${{b}},${{alpha}})`;
-}}
+// Layered DAG layout for L3.
+// Rank 0 = the sublobe's map.md (the index). Rank 1+ = parent: descendants.
+// Within a rank, sort by tags[0] then by filename so the layout is
+// deterministic across runs.
+function layoutSublobeMap(lobeKey, sublobeKey, neuronsForLevel, viewport) {
+  if (!neuronsForLevel.length) return [];
+  const idMap = new Map(neuronsForLevel.map(n => [n.id, n]));
+  // Find the index node (map.md for this sublobe), if any.
+  const indexNode = neuronsForLevel.find(n => n.type === 'map');
+  const ranks = new Map();
+  const queue = [];
+  if (indexNode) {
+    ranks.set(indexNode.id, 0);
+    queue.push(indexNode.id);
+  }
+  // BFS via parent edges among neurons in this sublobe.
+  // graph.edges is the global edge list; we filter to {parent} and
+  // both endpoints in this sublobe.
+  const parentEdges = graph.edges.filter(e =>
+    e.type === 'parent' && idMap.has(e.source) && idMap.has(e.target)
+  );
+  while (queue.length) {
+    const pid = queue.shift();
+    const r = ranks.get(pid);
+    for (const e of parentEdges) {
+      if (e.target === pid && !ranks.has(e.source)) {
+        ranks.set(e.source, r + 1);
+        queue.push(e.source);
+      }
+    }
+  }
+  // Unranked nodes get rank 1 (orphan neurons sitting under the sublobe).
+  for (const n of neuronsForLevel) {
+    if (!ranks.has(n.id)) ranks.set(n.id, indexNode ? 1 : 0);
+  }
+  // Group by rank, sort each rank.
+  const byRank = new Map();
+  for (const n of neuronsForLevel) {
+    const r = ranks.get(n.id);
+    if (!byRank.has(r)) byRank.set(r, []);
+    byRank.get(r).push(n);
+  }
+  const tagFor = (node) => (node.tags && node.tags[0]) || '';
+  for (const list of byRank.values()) {
+    list.sort((a, b) => {
+      const ta = tagFor(a);
+      const tb = tagFor(b);
+      if (ta !== tb) return ta.localeCompare(tb);
+      return (a.file_name || a.path || '').localeCompare(b.file_name || b.path || '');
+    });
+  }
+  const rankKeys = [...byRank.keys()].sort((a, b) => a - b);
+  const boxW = 220;
+  const boxH = 110;
+  const colGap = 28;
+  const rowGap = 70;
+  const out = [];
+  rankKeys.forEach((r, rowIdx) => {
+    const list = byRank.get(r);
+    const totalW = list.length * boxW + (list.length - 1) * colGap;
+    const startX = viewport.width / 2 - totalW / 2 + boxW / 2;
+    const y = 90 + rowIdx * (boxH + rowGap);
+    list.forEach((n, colIdx) => {
+      out.push({
+        ...n,
+        rank: r,
+        x: startX + colIdx * (boxW + colGap),
+        y: y + boxH / 2,
+        w: boxW,
+        h: boxH,
+        kicker: r === 0 && n.type === 'map' ? 'INDEX' : 'NEURON',
+        color: lobeColor(lobeKey),
+        deprecated: n.status === 'deprecated',
+      });
+    });
+  });
+  return out;
+}
 
-// --- Tree reconstruction ---
-function buildTree() {{
-  const parentEdges = graph.edges.filter(e => e.type === 'parent');
-  const depthMap = new Map();
-  const treeParent = new Map();
-  // brain.md is depth 0
-  for (const n of graph.nodes) {{
-    if (n.type === 'brain') depthMap.set(n.id, 0);
-  }}
-  // BFS from brain to assign depths
-  let frontier = [...depthMap.keys()];
-  while (frontier.length) {{
-    const next = [];
-    for (const pid of frontier) {{
-      for (const e of parentEdges) {{
-        if (e.target === pid && !depthMap.has(e.source)) {{
-          depthMap.set(e.source, depthMap.get(pid) + 1);
-          treeParent.set(e.source, pid);
-          next.push(e.source);
-        }}
-      }}
-    }}
-    frontier = next;
-  }}
-  // Assign remaining (unlinked) nodes
-  for (const n of graph.nodes) {{
-    if (!depthMap.has(n.id)) {{
-      depthMap.set(n.id, n.type === 'map' ? 1 : 2);
-    }}
-  }}
-  return {{ depthMap, treeParent }};
-}}
+// ============================================================
+// C4 box renderer — shared across all three levels
+// ============================================================
+//
+// item: {x, y, w, h, kicker, title, desc, statsLine, color, deprecated, dim}
+function drawC4Box(item, opts) {
+  opts = opts || {};
+  const { x, y, w, h } = item;
+  const left = x - w / 2;
+  const top = y - h / 2;
+  ctx.save();
+  if (item.dim) ctx.globalAlpha = 0.30;
+  // Body
+  ctx.fillStyle = 'rgba(12, 21, 44, 0.96)';
+  ctx.beginPath();
+  ctx.roundRect(left, top, w, h, 14);
+  ctx.fill();
+  // Border
+  ctx.lineWidth = opts.hover ? 1.6 : 1.0;
+  ctx.strokeStyle = opts.hover
+    ? 'rgba(123, 167, 255, 0.42)'
+    : 'rgba(123, 167, 255, 0.20)';
+  ctx.stroke();
+  // Color bar (4px) at the left edge, inset 14px top/bottom.
+  ctx.beginPath();
+  if (item.deprecated) {
+    // Dotted-stripe pattern for deprecated neurons
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = 4;
+    ctx.moveTo(left + 2, top + 14);
+    ctx.lineTo(left + 2, top + h - 14);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else {
+    ctx.fillStyle = item.color;
+    ctx.roundRect(left, top + 14, 4, h - 28, [0, 4, 4, 0]);
+    ctx.fill();
+  }
+  // Kicker
+  ctx.fillStyle = '#8ba7d1';
+  ctx.font = 'bold 10px "SFMono-Regular", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(String(item.kicker || '').toUpperCase(), left + 14, top + 22);
+  // Title
+  ctx.fillStyle = '#e9f1ff';
+  ctx.font = 'bold 15px "Avenir Next", "Segoe UI", sans-serif';
+  const titleStr = String(item.title || '');
+  const titleMax = w - 24;
+  ctx.fillText(_truncate(titleStr, titleMax, '15px "Avenir Next", "Segoe UI", sans-serif'),
+    left + 14, top + 44);
+  // Separator
+  ctx.strokeStyle = 'rgba(123, 167, 255, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left + 14, top + 54);
+  ctx.lineTo(left + w - 14, top + 54);
+  ctx.stroke();
+  // Description (1 line, truncated)
+  if (item.desc) {
+    ctx.fillStyle = '#8ba7d1';
+    ctx.font = '11px "Avenir Next", "Segoe UI", sans-serif';
+    ctx.fillText(_truncate(item.desc, w - 24, '11px "Avenir Next", "Segoe UI", sans-serif'),
+      left + 14, top + 70);
+  }
+  // Stats line (mono, muted)
+  if (item.statsLine) {
+    ctx.fillStyle = 'rgba(139, 167, 209, 0.65)';
+    ctx.font = '10px "SFMono-Regular", monospace';
+    ctx.fillText(_truncate(item.statsLine, w - 24, '10px "SFMono-Regular", monospace'),
+      left + 14, top + h - 14);
+  }
+  // Tag chips (L3 only)
+  if (item.tagChips && item.tagChips.length) {
+    let tx = left + 14;
+    const ty = top + h - 30;
+    ctx.font = 'bold 9px "SFMono-Regular", monospace';
+    for (const chip of item.tagChips.slice(0, 2)) {
+      const padX = 6;
+      const m = ctx.measureText(chip);
+      const cw = m.width + padX * 2;
+      const ch = 14;
+      ctx.fillStyle = 'rgba(123, 167, 255, 0.10)';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, cw, ch, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(123, 167, 255, 0.18)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#8ba7d1';
+      ctx.fillText(chip, tx + padX, ty + 10);
+      tx += cw + 4;
+      if (tx > left + w - 14) break;
+    }
+  }
+  // Search dim halo (yellow)
+  if (item.matchHalo) {
+    ctx.strokeStyle = 'rgba(255, 220, 100, 0.78)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.roundRect(left - 2, top - 2, w + 4, h + 4, 16);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
-const {{ depthMap, treeParent }} = buildTree();
+function _truncate(s, maxPx, font) {
+  ctx.save();
+  ctx.font = font;
+  if (ctx.measureText(s).width <= maxPx) {
+    ctx.restore();
+    return s;
+  }
+  let lo = 0, hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const cand = s.slice(0, mid) + '…';
+    if (ctx.measureText(cand).width <= maxPx) lo = mid + 1;
+    else hi = mid;
+  }
+  ctx.restore();
+  return s.slice(0, Math.max(0, lo - 1)) + '…';
+}
 
-function colorForNode(node) {{
-  if (node.type === 'brain') return '#ffffff';
-  if (node.type === 'glossary') return '#ffc6f4';
-  if (node.type === 'index') return '#ffd28e';
-  if (node.type === 'map') return lobeColor(node.lobe);
-  // Yaml neurons get a distinct periwinkle so they read as "structured spec"
-  // at a glance — independent of lobe color.
-  if (node.file_type === 'yaml') return '#9ea9ff';
-  // markdown neuron: desaturated lobe color
-  return desaturate(lobeColor(node.lobe), 0.3);
-}}
+// ============================================================
+// Aggregate edge renderer (L1 + L2)
+// ============================================================
+//
+// `cell` is {a, b, forward, reverse} from aggregateEdges.
+// `boxByKey` is Map<key, box> that gives the participants their geometry.
+function drawAggregateEdge(cell, boxByKey, opts) {
+  opts = opts || {};
+  const ba = boxByKey.get(cell.a);
+  const bb = boxByKey.get(cell.b);
+  if (!ba || !bb) return;
+  const dim = opts.dim || false;
+  const total = cell.forward + cell.reverse;
+  const thickness = Math.max(1, Math.min(6, Math.log2(total + 1) * 1.4));
+  // Orthogonal route with rounded mid-corner.
+  const sx = ba.x;
+  const sy = ba.y;
+  const tx = bb.x;
+  const ty = bb.y;
+  const midY = (sy + ty) / 2;
+  ctx.save();
+  ctx.globalAlpha = dim ? 0.18 : 0.78;
+  ctx.strokeStyle = opts.highlight ? '#ffdc64' : 'rgba(139, 167, 209, 0.78)';
+  ctx.lineWidth = opts.highlight ? thickness + 1 : thickness;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, midY);
+  ctx.lineTo(tx, midY);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  ctx.restore();
+  // Edge label pill
+  const symmetric = cell.forward === cell.reverse;
+  const label = symmetric
+    ? '↔ ' + total
+    : '→ ' + cell.forward + ' / ← ' + cell.reverse;
+  const pillX = (sx + tx) / 2;
+  const pillY = midY;
+  ctx.save();
+  ctx.font = 'bold 10px "SFMono-Regular", monospace';
+  const m = ctx.measureText(label);
+  const padX = 8;
+  const padY = 4;
+  const pillW = m.width + padX * 2;
+  const pillH = 18;
+  const pillLeft = pillX - pillW / 2;
+  const pillTop = pillY - pillH / 2;
+  ctx.fillStyle = 'rgba(8, 15, 32, 0.92)';
+  ctx.beginPath();
+  ctx.roundRect(pillLeft, pillTop, pillW, pillH, 6);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(123, 167, 255, 0.30)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#e9f1ff';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, pillX, pillY + 3);
+  ctx.restore();
+  // Stash midpoint on cell for edge hit testing.
+  cell._midX = pillX;
+  cell._midY = pillY;
+  cell._w = pillW;
+  cell._h = pillH;
+}
 
-function nodeRadius(node) {{
-  if (node.type === 'brain') return 22;
-  if (node.type === 'glossary') return 13;
-  if (node.type === 'index') return 11;
-  if (node.type === 'map') {{
-    const depth = depthMap.get(node.id) || 1;
-    return depth <= 1 ? 30 : 22; // visual radius for hit-testing
-  }}
-  return Math.max(6, 5 + Math.min(node.degree || 0, 6) * 0.6);
-}}
+// ============================================================
+// L1 — Brain Map
+// ============================================================
+function buildBrainBoxes() {
+  const items = uniqueLobes.map(lobeKey => {
+    const stats = lobeStats(lobeKey);
+    return {
+      key: lobeKey,
+      kicker: 'LOBE',
+      title: lobeTitle(lobeKey),
+      desc: lobeDescription(lobeKey),
+      color: lobeColor(lobeKey),
+      lobe: lobeKey,
+      statsLine: stats.neurons + ' neurons · ' + stats.sublobes + ' sublobes',
+    };
+  });
+  const rect = stage.getBoundingClientRect();
+  const viewport = { width: rect.width || 900, height: rect.height || 600 };
+  return layoutBrainMap(items, viewport);
+}
 
-function resize() {{
-  const rect = canvas.parentElement.getBoundingClientRect();
+function buildBrainEdges() {
+  // aggregateEdges returns Map; spread to a stable array (its iteration
+  // order is already stable because we sort uniqueLobes when we build it).
+  const cells = aggregateEdges(graph, 'brain');
+  return [...cells.values()];
+}
+
+function drawBrainMap() {
+  brainBoxes = buildBrainBoxes();
+  brainEdges = buildBrainEdges();
+  const boxByKey = new Map(brainBoxes.map(b => [b.key, b]));
+  const query = searchInput.value.trim().toLowerCase();
+  const dimNonMatch = (key) => {
+    if (!query) return false;
+    const t = (lobeTitle(key) || '').toLowerCase();
+    return !t.includes(query) && !key.toLowerCase().includes(query);
+  };
+  const flashActive = highlightedEdge && performance.now() < highlightedEdgeUntil;
+  const flashKeys = flashActive
+    ? new Set([highlightedEdge.a, highlightedEdge.b])
+    : null;
+  // Pass 1: edges (behind the boxes)
+  for (const cell of brainEdges) {
+    const dim = (flashActive && !flashKeys.has(cell.a) && !flashKeys.has(cell.b))
+      || (query && dimNonMatch(cell.a) && dimNonMatch(cell.b));
+    drawAggregateEdge(cell, boxByKey, {
+      dim,
+      highlight: flashActive && flashKeys.has(cell.a) && flashKeys.has(cell.b),
+    });
+  }
+  // Pass 2: boxes
+  for (const box of brainBoxes) {
+    const filteredOut = hiddenLobes.has(box.key);
+    const dim = filteredOut
+      || (flashActive && !flashKeys.has(box.key))
+      || dimNonMatch(box.key);
+    drawC4Box({
+      ...box,
+      dim,
+      matchHalo: query && !filteredOut && !dim
+        && (lobeTitle(box.key) || '').toLowerCase().includes(query),
+    }, { hover: hoveredId === '__lobe__' + box.key });
+  }
+}
+
+function hitTestBrainMap(worldX, worldY) {
+  // Boxes
+  for (const box of brainBoxes) {
+    if (worldX >= box.x - box.w / 2 && worldX <= box.x + box.w / 2 &&
+        worldY >= box.y - box.h / 2 && worldY <= box.y + box.h / 2) {
+      return { kind: 'lobe', key: box.key };
+    }
+  }
+  // Edge label pills
+  for (const cell of brainEdges) {
+    if (cell._midX == null) continue;
+    if (Math.abs(worldX - cell._midX) <= cell._w / 2 &&
+        Math.abs(worldY - cell._midY) <= cell._h / 2) {
+      return { kind: 'edge', a: cell.a, b: cell.b };
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// L2 — Lobe Map
+// ============================================================
+function buildLobeBoxes(lobeKey) {
+  // Find sublobes (depth-2 keys, e.g. "projects/foo") under this lobe.
+  const subs = new Map();
+  for (const n of graph.nodes) {
+    if (n.lobe !== lobeKey) continue;
+    if (!n.sublobe || n.sublobe === n.lobe) continue;
+    const parts = n.sublobe.split('/');
+    if (parts.length < 2) continue;
+    const key = parts.slice(0, 2).join('/');
+    if (!subs.has(key)) subs.set(key, { key, neurons: 0 });
+    if (n.type === 'neuron') subs.get(key).neurons += 1;
+  }
+  const items = [...subs.values()]
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map(info => ({
+      key: info.key,
+      kicker: 'SUBLOBE',
+      title: sublobeTitle(info.key),
+      desc: sublobeDescription(info.key),
+      color: lobeColor(lobeKey),
+      lobe: lobeKey,
+      sublobe: info.key,
+      statsLine: info.neurons + ' neurons',
+    }));
+  if (!items.length) {
+    // Empty lobe placeholder — single card prompting the user to drop directly to L3.
+    items.push({
+      key: lobeKey + '/__empty__',
+      kicker: 'EMPTY',
+      title: 'No sublobes',
+      desc: 'Click ▶ to view neurons inside ' + lobeTitle(lobeKey),
+      color: lobeColor(lobeKey),
+      lobe: lobeKey,
+      sublobe: lobeKey,
+      statsLine: 'click to view neurons',
+      empty: true,
+    });
+  }
+  const rect = stage.getBoundingClientRect();
+  const viewport = { width: rect.width || 900, height: rect.height || 600 };
+  return layoutLobeMap(items, viewport);
+}
+
+function buildLobeEdges(lobeKey) {
+  // Filter graph to nodes within this lobe, then run aggregateEdges at
+  // sublobe granularity. We do this by building a temporary graph view.
+  const memberIds = new Set();
+  for (const n of graph.nodes) {
+    if (n.lobe === lobeKey) memberIds.add(n.id);
+  }
+  const view = {
+    nodes: graph.nodes.filter(n => memberIds.has(n.id)),
+    edges: graph.edges.filter(e => memberIds.has(e.source) && memberIds.has(e.target)),
+  };
+  return [...aggregateEdges(view, 'lobe').values()];
+}
+
+function buildLobeOutbound(lobeKey) {
+  // For each non-parent edge with source in lobeKey and target outside (or vice versa),
+  // count by direction grouped by the other lobe.
+  const groups = new Map(); // otherLobe -> {forward, reverse}
+  const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
+  for (const e of graph.edges) {
+    if (e.type === 'parent') continue;
+    const s = nodeMap.get(e.source);
+    const t = nodeMap.get(e.target);
+    if (!s || !t) continue;
+    if (s.lobe === t.lobe) continue;
+    if (s.lobe !== lobeKey && t.lobe !== lobeKey) continue;
+    const other = s.lobe === lobeKey ? t.lobe : s.lobe;
+    if (!groups.has(other)) groups.set(other, { other, forward: 0, reverse: 0 });
+    if (s.lobe === lobeKey) groups.get(other).forward += 1;
+    else groups.get(other).reverse += 1;
+  }
+  return [...groups.values()].sort((a, b) =>
+    (b.forward + b.reverse) - (a.forward + a.reverse));
+}
+
+function drawLobeMap(lobeKey) {
+  lobeBoxes = buildLobeBoxes(lobeKey);
+  lobeEdges = buildLobeEdges(lobeKey);
+  lobeOutbound = buildLobeOutbound(lobeKey);
+  const boxByKey = new Map(lobeBoxes.map(b => [b.key, b]));
+  // Lobe frame — draw an outer rounded-rect that contains all sublobes,
+  // with the lobe color as a dotted bar on the left.
+  if (lobeBoxes.length) {
+    const minX = Math.min(...lobeBoxes.map(b => b.x - b.w / 2));
+    const maxX = Math.max(...lobeBoxes.map(b => b.x + b.w / 2));
+    const minY = Math.min(...lobeBoxes.map(b => b.y - b.h / 2));
+    const maxY = Math.max(...lobeBoxes.map(b => b.y + b.h / 2));
+    const pad = 40;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(123, 167, 255, 0.18)';
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(minX - pad, minY - pad - 28, maxX - minX + pad * 2, maxY - minY + pad * 2 + 28, 18);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Frame title
+    ctx.font = 'bold 10px "SFMono-Regular", monospace';
+    ctx.fillStyle = '#8ba7d1';
+    ctx.fillText('LOBE · ' + lobeTitle(lobeKey).toUpperCase(), minX - pad + 14, minY - pad - 12);
+    ctx.restore();
+  }
+  const query = searchInput.value.trim().toLowerCase();
+  const matchSublobe = (key) => {
+    if (!query) return false;
+    return (sublobeTitle(key) || '').toLowerCase().includes(query)
+      || key.toLowerCase().includes(query);
+  };
+  // Aggregate edges between sublobes
+  for (const cell of lobeEdges) {
+    const dim = query && !matchSublobe(cell.a) && !matchSublobe(cell.b);
+    drawAggregateEdge(cell, boxByKey, { dim });
+  }
+  // Sublobe boxes
+  for (const box of lobeBoxes) {
+    const matches = matchSublobe(box.key);
+    drawC4Box({
+      ...box,
+      dim: query && !matches,
+      matchHalo: query && matches,
+    }, { hover: hoveredId === '__sublobe__' + box.key });
+  }
+  // Outbound stubs at the bottom of the lobe frame
+  if (lobeBoxes.length && lobeOutbound.length) {
+    const maxY = Math.max(...lobeBoxes.map(b => b.y + b.h / 2));
+    let stubY = maxY + 70;
+    let stubX = stage.getBoundingClientRect().width / 2 - (lobeOutbound.length * 130) / 2;
+    ctx.save();
+    ctx.font = 'bold 10px "SFMono-Regular", monospace';
+    for (const stub of lobeOutbound) {
+      const f = stub.forward;
+      const r = stub.reverse;
+      const label = (f && r) ? '→ ' + stub.other + ' (' + f + ') ← (' + r + ')'
+        : (f ? '→ ' + stub.other + ' (' + f + ')' : '← ' + stub.other + ' (' + r + ')');
+      const m = ctx.measureText(label);
+      const w = m.width + 16;
+      const h = 22;
+      ctx.fillStyle = 'rgba(8, 15, 32, 0.78)';
+      ctx.beginPath();
+      ctx.roundRect(stubX, stubY - h / 2, w, h, 6);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(123, 167, 255, 0.30)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#e9f1ff';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, stubX + 8, stubY + 3);
+      stub._x = stubX;
+      stub._y = stubY - h / 2;
+      stub._w = w;
+      stub._h = h;
+      stubX += w + 12;
+    }
+    ctx.restore();
+  }
+}
+
+function hitTestLobeMap(worldX, worldY) {
+  for (const box of lobeBoxes) {
+    if (worldX >= box.x - box.w / 2 && worldX <= box.x + box.w / 2 &&
+        worldY >= box.y - box.h / 2 && worldY <= box.y + box.h / 2) {
+      return { kind: 'sublobe', key: box.key, empty: !!box.empty, lobe: box.lobe };
+    }
+  }
+  for (const cell of lobeEdges) {
+    if (cell._midX == null) continue;
+    if (Math.abs(worldX - cell._midX) <= cell._w / 2 &&
+        Math.abs(worldY - cell._midY) <= cell._h / 2) {
+      return { kind: 'edge', a: cell.a, b: cell.b };
+    }
+  }
+  for (const stub of lobeOutbound) {
+    if (stub._x == null) continue;
+    if (worldX >= stub._x && worldX <= stub._x + stub._w &&
+        worldY >= stub._y && worldY <= stub._y + stub._h) {
+      return { kind: 'outbound-lobe', other: stub.other };
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// L3 — Sublobe Map (layered DAG of neurons)
+// ============================================================
+function buildSublobeNeurons(lobeKey, sublobeKey) {
+  // Members of this sublobe — exact match, plus any deeper descendants
+  // (e.g. projects/backend/endpoints/* for sublobe projects/backend) so
+  // the view stays self-contained and includes inner-rank children.
+  return graph.nodes.filter(n =>
+    n.sublobe === sublobeKey ||
+    (n.sublobe && n.sublobe.startsWith(sublobeKey + '/')));
+}
+
+function buildSublobeOutbound(lobeKey, sublobeKey) {
+  // Cross-sublobe edges leaving this sublobe.
+  const groups = new Map();
+  const memberIds = new Set();
+  for (const n of graph.nodes) {
+    if (n.sublobe === sublobeKey || (n.sublobe && n.sublobe.startsWith(sublobeKey + '/'))) {
+      memberIds.add(n.id);
+    }
+  }
+  const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
+  for (const e of graph.edges) {
+    if (e.type === 'parent') continue;
+    const s = nodeMap.get(e.source);
+    const t = nodeMap.get(e.target);
+    if (!s || !t) continue;
+    const sIn = memberIds.has(e.source);
+    const tIn = memberIds.has(e.target);
+    if (sIn === tIn) continue;
+    const otherNode = sIn ? t : s;
+    const otherKey = otherNode.sublobe || otherNode.lobe;
+    const labelLobe = otherNode.lobe;
+    const key = otherKey + '||' + labelLobe;
+    if (!groups.has(key)) groups.set(key, { key: otherKey, lobe: labelLobe, forward: 0, reverse: 0 });
+    if (sIn) groups.get(key).forward += 1;
+    else groups.get(key).reverse += 1;
+  }
+  return [...groups.values()];
+}
+
+function drawSublobeMap(lobeKey, sublobeKey) {
+  const members = buildSublobeNeurons(lobeKey, sublobeKey);
+  const rect = stage.getBoundingClientRect();
+  const viewport = { width: rect.width || 900, height: rect.height || 600 };
+  sublobeBoxes = layoutSublobeMap(lobeKey, sublobeKey, members, viewport);
+  sublobeOutbound = buildSublobeOutbound(lobeKey, sublobeKey);
+  const boxById = new Map(sublobeBoxes.map(b => [b.id, b]));
+  // Edges within this sublobe — three styles per edge type.
+  sublobeNeuronEdges = [];
+  for (const e of graph.edges) {
+    if (!boxById.has(e.source) || !boxById.has(e.target)) continue;
+    sublobeNeuronEdges.push(e);
+  }
+  // Sublobe frame
+  if (sublobeBoxes.length) {
+    const minX = Math.min(...sublobeBoxes.map(b => b.x - b.w / 2));
+    const maxX = Math.max(...sublobeBoxes.map(b => b.x + b.w / 2));
+    const minY = Math.min(...sublobeBoxes.map(b => b.y - b.h / 2));
+    const maxY = Math.max(...sublobeBoxes.map(b => b.y + b.h / 2));
+    const pad = 40;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(123, 167, 255, 0.18)';
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(minX - pad, minY - pad - 28, maxX - minX + pad * 2, maxY - minY + pad * 2 + 28, 18);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = 'bold 10px "SFMono-Regular", monospace';
+    ctx.fillStyle = '#8ba7d1';
+    ctx.fillText('SUBLOBE · ' + sublobeTitle(sublobeKey).toUpperCase(),
+      minX - pad + 14, minY - pad - 12);
+    ctx.restore();
+  }
+  // Edges with three styles (parent solid, related dashed, replaced_by dotted)
+  for (const e of sublobeNeuronEdges) {
+    const a = boxById.get(e.source);
+    const b = boxById.get(e.target);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(139, 167, 209, 0.55)';
+    ctx.lineWidth = 1.4;
+    if (e.type === 'parent') {
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y + a.h / 2);
+      const midY = (a.y + a.h / 2 + b.y - b.h / 2) / 2;
+      ctx.lineTo(a.x, midY);
+      ctx.lineTo(b.x, midY);
+      ctx.lineTo(b.x, b.y - b.h / 2);
+      ctx.stroke();
+      // Arrowhead at target
+      _drawArrow(b.x, b.y - b.h / 2, b.x, b.y - b.h / 2 - 6);
+    } else if (e.type === 'replaced_by') {
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      _drawArrow(b.x, b.y, a.x, a.y);
+    } else {
+      // related (or inline) — dashed, no arrow
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  const query = searchInput.value.trim().toLowerCase();
+  const nodeMatches = (n) => {
+    if (!query) return false;
+    const hay = [
+      n.title, n.path, n.file_name, n.lobe, n.type, n.file_type || '',
+      ...(n.tags || []), n.excerpt || '',
+    ].join(' ').toLowerCase();
+    return hay.includes(query);
+  };
+  // Boxes
+  for (const box of sublobeBoxes) {
+    const matches = nodeMatches(box);
+    drawC4Box({
+      ...box,
+      title: box.title || box.label,
+      desc: box.updated || '',
+      tagChips: (box.tags || []).slice(0, 2),
+      statsLine: box.path,
+      dim: query && !matches,
+      matchHalo: query && matches,
+    }, { hover: hoveredId === box.id });
+  }
+  // Outbound stubs at the bottom
+  if (sublobeBoxes.length && sublobeOutbound.length) {
+    const maxY = Math.max(...sublobeBoxes.map(b => b.y + b.h / 2));
+    let stubY = maxY + 70;
+    let stubX = viewport.width / 2 - (sublobeOutbound.length * 150) / 2;
+    ctx.save();
+    ctx.font = 'bold 10px "SFMono-Regular", monospace';
+    for (const stub of sublobeOutbound) {
+      const f = stub.forward;
+      const r = stub.reverse;
+      const label = (f && r) ? '→ ' + stub.key + ' (' + f + ') ← (' + r + ')'
+        : (f ? '→ ' + stub.key + ' (' + f + ')' : '← ' + stub.key + ' (' + r + ')');
+      const m = ctx.measureText(label);
+      const w = m.width + 16;
+      const h = 22;
+      ctx.fillStyle = 'rgba(8, 15, 32, 0.78)';
+      ctx.beginPath();
+      ctx.roundRect(stubX, stubY - h / 2, w, h, 6);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(123, 167, 255, 0.30)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#e9f1ff';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, stubX + 8, stubY + 3);
+      stub._x = stubX;
+      stub._y = stubY - h / 2;
+      stub._w = w;
+      stub._h = h;
+      stubX += w + 12;
+    }
+    ctx.restore();
+  }
+}
+
+function _drawArrow(x, y, fromX, fromY) {
+  const angle = Math.atan2(y - fromY, x - fromX);
+  const len = 6;
+  ctx.save();
+  ctx.fillStyle = 'rgba(139, 167, 209, 0.78)';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - len * Math.cos(angle - 0.4), y - len * Math.sin(angle - 0.4));
+  ctx.lineTo(x - len * Math.cos(angle + 0.4), y - len * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function hitTestSublobeMap(worldX, worldY) {
+  for (const box of sublobeBoxes) {
+    if (worldX >= box.x - box.w / 2 && worldX <= box.x + box.w / 2 &&
+        worldY >= box.y - box.h / 2 && worldY <= box.y + box.h / 2) {
+      return { kind: 'neuron', id: box.id };
+    }
+  }
+  for (const stub of sublobeOutbound) {
+    if (stub._x == null) continue;
+    if (worldX >= stub._x && worldX <= stub._x + stub._w &&
+        worldY >= stub._y && worldY <= stub._y + stub._h) {
+      return { kind: 'outbound-sublobe', other: stub.key, lobe: stub.lobe };
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// Stage transitions & breadcrumb
+// ============================================================
+function setStageMode(mode, lobeKey, sublobeKey, opts) {
+  opts = opts || {};
+  const instant = !!opts.instant;
+  if (!['brain', 'lobe', 'sublobe', 'force'].includes(mode)) {
+    mode = 'brain';
+  }
+  stageMode = mode;
+  if (mode === 'lobe') activeLobe = lobeKey || activeLobe || uniqueLobes[0] || null;
+  if (mode === 'sublobe') {
+    activeLobe = lobeKey || activeLobe;
+    activeSublobe = sublobeKey || activeSublobe;
+  }
+  if (mode === 'brain') {
+    selectedId = null;
+  }
+  // Reflect on mode buttons; disable Lobe/Sublobe when no context.
+  for (const btn of modeButtons) {
+    const m = btn.dataset.stageMode;
+    btn.classList.toggle('active', m === mode);
+    btn.setAttribute('aria-pressed', m === mode ? 'true' : 'false');
+    if (m === 'lobe') btn.disabled = !activeLobe;
+    else if (m === 'sublobe') btn.disabled = !activeSublobe;
+    else btn.disabled = false;
+  }
+  renderBreadcrumb();
+  // Reset camera to identity for C4 modes; force mode reuses fitToFilteredNodes.
+  if (mode === 'force') {
+    if (legacyForce && legacyForce.initialized) {
+      legacyForce.fit(instant);
+    } else {
+      initLegacyForce();
+      legacyForce.fit(true);
+    }
+  } else {
+    if (instant) {
+      camera.x = 0;
+      camera.y = 0;
+      camera.scale = 1;
+    } else {
+      animateCamera(0, 0, 1, 240);
+    }
+  }
+  requestDraw();
+}
+
+function renderBreadcrumb() {
+  const segments = [];
+  segments.push({ label: BRAIN_NAME, level: 'brain' });
+  if (stageMode === 'lobe' || stageMode === 'sublobe') {
+    if (activeLobe) segments.push({ label: lobeTitle(activeLobe), level: 'lobe', key: activeLobe });
+  }
+  if (stageMode === 'sublobe' && activeSublobe) {
+    segments.push({ label: sublobeTitle(activeSublobe), level: 'sublobe', key: activeSublobe });
+  }
+  if (stageMode === 'force') {
+    segments.push({ label: 'Expert', level: 'force' });
+  }
+  breadcrumbEl.innerHTML = '';
+  segments.forEach((seg, idx) => {
+    const isLast = idx === segments.length - 1;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'crumb' + (isLast ? ' active' : '');
+    btn.dataset.level = seg.level;
+    if (seg.key) btn.dataset.key = seg.key;
+    btn.textContent = seg.label;
+    btn.addEventListener('click', () => {
+      if (isLast) return;
+      if (seg.level === 'brain') setStageMode('brain');
+      else if (seg.level === 'lobe') setStageMode('lobe', seg.key);
+    });
+    breadcrumbEl.appendChild(btn);
+    if (!isLast) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '›';
+      breadcrumbEl.appendChild(sep);
+    }
+  });
+}
+
+function focusLobe(lobeKey) { setStageMode('lobe', lobeKey); }
+function focusSublobe(lobeKey, sublobeKey) { setStageMode('sublobe', lobeKey, sublobeKey); }
+
+// ============================================================
+// Camera / pointer plumbing
+// ============================================================
+let cameraAnim = null;
+function animateCamera(tx, ty, ts, duration) {
+  const sx = camera.x, sy = camera.y, ss = camera.scale;
+  const start = performance.now();
+  if (cameraAnim) cancelAnimationFrame(cameraAnim);
+  function step(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    camera.x = sx + (tx - sx) * ease;
+    camera.y = sy + (ty - sy) * ease;
+    camera.scale = ss + (ts - ss) * ease;
+    requestDraw();
+    if (t < 1) cameraAnim = requestAnimationFrame(step);
+    else cameraAnim = null;
+  }
+  cameraAnim = requestAnimationFrame(step);
+}
+
+function resize() {
+  const rect = stage.getBoundingClientRect();
   W = canvas.width = Math.floor(rect.width * devicePixelRatio);
   H = canvas.height = Math.floor(rect.height * devicePixelRatio);
-  canvas.style.width = `${{rect.width}}px`;
-  canvas.style.height = `${{rect.height}}px`;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  buildAnchors(rect.width, rect.height);
-}}
+  if (legacyForce) legacyForce.buildAnchors(rect.width, rect.height);
+  requestDraw();
+}
 
-function buildAnchors(width, height) {{
-  const cx = width / 2;
-  const cy = height / 2;
-  // Elliptical anchor ring so lobes always sit inside the viewport, no
-  // matter the aspect ratio. With a landscape stage the old min-based
-  // radius pushed top/bottom lobes off-canvas. 0.36 leaves ~14% margin
-  // on each side for orbit + hull spread.
-  const rx = width * 0.36;
-  const ry = height * 0.36;
-  const nonRootLobes = uniqueLobes.filter(l => l !== 'root');
-  lobeAnchors.set('root', {{ x: cx, y: cy * 0.86 }});
-  nonRootLobes.forEach((lobe, i) => {{
-    const angle = -Math.PI / 2 + (i / Math.max(1, nonRootLobes.length)) * Math.PI * 2;
-    lobeAnchors.set(lobe, {{ x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry }});
-  }});
-}}
+function toWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - camera.x) / camera.scale,
+    y: (clientY - rect.top - camera.y) / camera.scale,
+  };
+}
 
-function initializeNodes() {{
-  const dim = canvas.parentElement.getBoundingClientRect();
-  const lobeCounters = new Map();
-  return graph.nodes.map((node, index) => {{
-    const anchor = lobeAnchors.get(node.lobe) || lobeAnchors.get('root') || {{ x: dim.width / 2, y: dim.height / 2 }};
-    let targetX, targetY;
-    const depth = depthMap.get(node.id) || 0;
-    if (node.type === 'brain') {{
-      targetX = dim.width / 2;
-      targetY = dim.height / 2;
-    }} else if (node.type === 'glossary') {{
-      targetX = dim.width / 2;
-      targetY = dim.height * 0.12;
-    }} else if (node.type === 'index') {{
-      targetX = dim.width * 0.14;
-      targetY = dim.height * 0.14;
-    }} else if (node.type === 'map') {{
-      if (depth <= 1) {{
-        targetX = anchor.x;
-        targetY = anchor.y;
-      }} else {{
-        // Sub-lobe: offset from lobe anchor
-        const count = lobeCounters.get('sublobe_' + node.lobe) || 0;
-        lobeCounters.set('sublobe_' + node.lobe, count + 1);
-        const subAngle = -Math.PI / 2 + (count / 3) * Math.PI * 2;
-        targetX = anchor.x + Math.cos(subAngle) * 65;
-        targetY = anchor.y + Math.sin(subAngle) * 65;
-      }}
-    }} else {{
-      const count = lobeCounters.get(node.lobe) || 0;
-      lobeCounters.set(node.lobe, count + 1);
-      const orbitRadius = 70 + count * 22;
-      const angle = count * 0.85 + index * 0.13;
-      targetX = anchor.x + Math.cos(angle) * orbitRadius;
-      targetY = anchor.y + Math.sin(angle) * orbitRadius;
-    }}
-    const searchText = [
-      node.title, node.path, node.file_name, node.lobe,
-      node.type, node.file_type || '', ...(node.tags || []),
-      node.excerpt || '', node.content_preview || '',
-    ].join(' ').toLowerCase();
-    return {{
-      ...node,
-      searchText,
-      color: colorForNode(node),
-      radius: nodeRadius(node),
-      depth,
-      x: targetX + (Math.random() - 0.5) * 6,
-      y: targetY + (Math.random() - 0.5) * 6,
-      vx: 0,
-      vy: 0,
-      targetX,
-      targetY,
-    }};
-  }});
-}}
+// ============================================================
+// Master draw + animation loop
+// ============================================================
+function draw() {
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.scale, camera.scale);
+  if (stageMode === 'brain') {
+    drawBrainMap();
+  } else if (stageMode === 'lobe' && activeLobe) {
+    drawLobeMap(activeLobe);
+  } else if (stageMode === 'sublobe' && activeLobe && activeSublobe) {
+    drawSublobeMap(activeLobe, activeSublobe);
+  } else if (stageMode === 'force') {
+    legacyForce && legacyForce.draw();
+  }
+  ctx.restore();
+}
 
-let nodes = [];
-let filteredNodes = [];
+function loop() {
+  if (stageMode === 'force') {
+    if (legacyForce) {
+      const ticks = legacyForce.filteredNodes.length > FORCE_PAIRWISE_LIMIT ? 1 : 2;
+      for (let i = 0; i < ticks; i++) legacyForce.tick();
+      draw();
+    }
+  } else if (needsDraw) {
+    draw();
+    needsDraw = false;
+  }
+  // The flash highlight on L1 needs to expire on its own.
+  if (highlightedEdge && performance.now() < highlightedEdgeUntil) {
+    requestDraw();
+  } else if (highlightedEdge && performance.now() >= highlightedEdgeUntil) {
+    highlightedEdge = null;
+    requestDraw();
+  }
+  requestAnimationFrame(loop);
+}
 
-function visibleNode(node) {{
-  if (node.type === 'brain') return false;
-  // Hide all map nodes -- hull labels show lobe/project names
-  if (node.type === 'map') return false;
-  // Multi-select visibility: hidden lobes and sub-lobes are excluded.
-  if (hiddenLobes.has(node.lobe)) return false;
-  if (node.sublobe && node.sublobe !== node.lobe && hiddenSublobes.has(node.sublobe)) return false;
+// ============================================================
+// Pointer events — route to the active level's hit tester
+// ============================================================
+canvas.addEventListener('pointerdown', event => {
+  canvas.setPointerCapture(event.pointerId);
+  dragMoved = false;
+  lastPointer = { x: event.clientX, y: event.clientY };
+  isPanning = true;
+  canvas.classList.add('dragging');
+});
+
+canvas.addEventListener('pointermove', event => {
+  pointer = { x: event.clientX, y: event.clientY };
+  const world = toWorld(event.clientX, event.clientY);
+  let hit = null;
+  if (stageMode === 'brain') hit = hitTestBrainMap(world.x, world.y);
+  else if (stageMode === 'lobe') hit = hitTestLobeMap(world.x, world.y);
+  else if (stageMode === 'sublobe') hit = hitTestSublobeMap(world.x, world.y);
+  // Force mode has its own hit-test inside legacyForce.
+  if (stageMode === 'force' && legacyForce) {
+    hit = legacyForce.hitTest(world.x, world.y);
+  }
+  if (hit) {
+    if (hit.kind === 'lobe') hoveredId = '__lobe__' + hit.key;
+    else if (hit.kind === 'sublobe') hoveredId = '__sublobe__' + hit.key;
+    else if (hit.kind === 'neuron') hoveredId = hit.id;
+    else hoveredId = null;
+  } else hoveredId = null;
+  const dx = event.clientX - lastPointer.x;
+  const dy = event.clientY - lastPointer.y;
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMoved = true;
+  lastPointer = { x: event.clientX, y: event.clientY };
+  if (isPanning) {
+    camera.x += dx;
+    camera.y += dy;
+  }
+  requestDraw();
+});
+
+canvas.addEventListener('pointerup', event => {
+  isPanning = false;
+  canvas.classList.remove('dragging');
+  if (dragMoved) return;
+  const world = toWorld(event.clientX, event.clientY);
+  if (stageMode === 'brain') {
+    const hit = hitTestBrainMap(world.x, world.y);
+    if (!hit) return;
+    if (hit.kind === 'lobe') focusLobe(hit.key);
+    else if (hit.kind === 'edge') {
+      highlightedEdge = { a: hit.a, b: hit.b };
+      highlightedEdgeUntil = performance.now() + 1200;
+      requestDraw();
+    }
+    return;
+  }
+  if (stageMode === 'lobe') {
+    const hit = hitTestLobeMap(world.x, world.y);
+    if (!hit) return;
+    if (hit.kind === 'sublobe') {
+      if (hit.empty) {
+        // Empty lobe placeholder: drop directly to L3 of the lobe itself.
+        focusSublobe(hit.lobe, hit.lobe);
+      } else {
+        focusSublobe(hit.lobe, hit.key);
+      }
+    } else if (hit.kind === 'outbound-lobe') {
+      // Navigate back to L1 with the target lobe pre-selected (flashes
+      // the edge between the current and target lobe so the user can see
+      // the relationship).
+      const currentLobe = activeLobe;
+      setStageMode('brain');
+      if (currentLobe && hit.other) {
+        const [a, b] = currentLobe.localeCompare(hit.other) <= 0
+          ? [currentLobe, hit.other]
+          : [hit.other, currentLobe];
+        highlightedEdge = { a, b };
+        highlightedEdgeUntil = performance.now() + 1500;
+        requestDraw();
+      }
+    }
+    return;
+  }
+  if (stageMode === 'sublobe') {
+    const hit = hitTestSublobeMap(world.x, world.y);
+    if (!hit) return;
+    if (hit.kind === 'neuron') {
+      const node = graph.nodes.find(n => n.id === hit.id);
+      if (node) {
+        selectedId = node.id;
+        openModal(node);
+      }
+    } else if (hit.kind === 'outbound-sublobe') {
+      // Navigate to L2 of the parent lobe of the target.
+      setStageMode('lobe', hit.lobe);
+    }
+    return;
+  }
+  if (stageMode === 'force' && legacyForce) {
+    legacyForce.handleClick(world.x, world.y);
+  }
+});
+
+canvas.addEventListener('pointerleave', () => {
+  hoveredId = null;
+  isPanning = false;
+  canvas.classList.remove('dragging');
+  requestDraw();
+});
+
+canvas.addEventListener('wheel', event => {
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+  const worldX = (mouseX - camera.x) / camera.scale;
+  const worldY = (mouseY - camera.y) / camera.scale;
+  const nextScale = Math.min(2.6, Math.max(0.35, camera.scale * (event.deltaY < 0 ? 1.08 : 0.92)));
+  camera.x = mouseX - worldX * nextScale;
+  camera.y = mouseY - worldY * nextScale;
+  camera.scale = nextScale;
+  requestDraw();
+}, { passive: false });
+
+// ============================================================
+// Search / filter / lobe filter
+// ============================================================
+function refreshSearch() {
   const query = searchInput.value.trim().toLowerCase();
-  if (!query) return true;
-  return node.searchText.includes(query);
-}}
-
-function refreshVisibility() {{
-  filteredNodes = nodes.filter(visibleNode);
-  const query = searchInput.value.trim();
-  const total = nodes.filter(n => n.type === 'neuron' || n.type === 'glossary' || n.type === 'index').length;
-  const anyHidden = hiddenLobes.size > 0 || hiddenSublobes.size > 0;
-  if (query) {{
-    resultCountEl.textContent = `Found ${{filteredNodes.length}} result${{filteredNodes.length === 1 ? '' : 's'}}.`;
-  }} else if (anyHidden) {{
-    resultCountEl.textContent = `Showing ${{filteredNodes.length}} of ${{total}} neurons.`;
-  }} else {{
-    resultCountEl.textContent = `Showing all ${{filteredNodes.length}} neurons.`;
-  }}
-  renderResults();
-  overviewItems = buildOverviewItems();
-  requestDraw();
-}}
-
-function lobeTitle(lobeKey) {{
-  const mapNode = nodes.find(n => n.type === 'map' && n.lobe === lobeKey && n.sublobe === lobeKey);
-  return mapNode?.title || lobeKey;
-}}
-
-function buildOverviewItems() {{
-  if (!nodes.length) return [];
-  const hasActiveFilter = searchInput.value.trim() || hiddenLobes.size > 0 || hiddenSublobes.size > 0;
-  const source = hasActiveFilter ? filteredNodes : nodes.filter(n => n.type !== 'brain' && n.type !== 'map');
-  const buckets = new Map();
-  for (const node of source) {{
-    if (!node.lobe || node.lobe === 'root') continue;
-    if (!buckets.has(node.lobe)) {{
-      buckets.set(node.lobe, {{
-        key: node.lobe,
-        title: lobeTitle(node.lobe),
-        color: lobeColor(node.lobe),
-        neurons: 0,
-        docs: 0,
-        sublobes: new Map(),
-      }});
-    }}
-    const bucket = buckets.get(node.lobe);
-    if (node.type === 'neuron') bucket.neurons += 1;
-    if (node.type === 'neuron' || node.type === 'glossary' || node.type === 'index') bucket.docs += 1;
-    if (node.sublobe && node.sublobe !== node.lobe) {{
-      const parts = node.sublobe.split('/');
-      const subKey = parts.length > 2 ? parts.slice(0, 2).join('/') : node.sublobe;
-      if (!bucket.sublobes.has(subKey)) {{
-        bucket.sublobes.set(subKey, {{
-          key: subKey,
-          title: nodes.find(n => n.type === 'map' && n.sublobe === subKey)?.title || (subKey.split('/').pop() || subKey),
-          count: 0,
-        }});
-      }}
-      bucket.sublobes.get(subKey).count += 1;
-    }}
-  }}
-
-  const lobes = [...buckets.values()].sort((a, b) => a.key.localeCompare(b.key));
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const width = rect.width || 900;
-  const height = rect.height || 620;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(lobes.length)));
-  const rows = Math.max(1, Math.ceil(lobes.length / cols));
-  const cellW = Math.max(180, width / cols);
-  const cellH = Math.max(150, height / rows);
-  return lobes.map((info, index) => {{
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    const x = centerX - ((cols - 1) * cellW) / 2 + col * cellW;
-    const y = centerY - ((rows - 1) * cellH) / 2 + row * cellH;
-    const weight = Math.max(1, info.docs);
-    const radius = Math.min(Math.min(cellW, cellH) * 0.36, 58 + Math.sqrt(weight) * 14);
-    return {{
-      ...info,
-      x,
-      y,
-      radius: Math.max(62, radius),
-      sublobes: [...info.sublobes.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
-    }};
-  }});
-}}
-
-function fitToOverviewItems(instant = false) {{
-  overviewItems = buildOverviewItems();
-  if (!overviewItems.length) {{
-    requestDraw();
-    return;
-  }}
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const padding = 90;
-  const minX = Math.min(...overviewItems.map(item => item.x - item.radius)) - padding;
-  const maxX = Math.max(...overviewItems.map(item => item.x + item.radius)) + padding;
-  const minY = Math.min(...overviewItems.map(item => item.y - item.radius)) - padding;
-  const maxY = Math.max(...overviewItems.map(item => item.y + item.radius)) + padding;
-  const w = Math.max(1, maxX - minX);
-  const h = Math.max(1, maxY - minY);
-  const scale = Math.min(rect.width / w, rect.height / h) * 0.96;
-  const clampedScale = Math.min(1.9, Math.max(0.46, scale));
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const tx = rect.width / 2 - cx * clampedScale;
-  const ty = rect.height / 2 - cy * clampedScale;
-  if (instant) {{
-    if (cameraAnim) {{ cancelAnimationFrame(cameraAnim); cameraAnim = null; }}
-    camera.x = tx;
-    camera.y = ty;
-    camera.scale = clampedScale;
-    requestDraw();
-  }} else {{
-    animateCamera(tx, ty, clampedScale, 280);
-  }}
-}}
-
-function hitTestOverview(worldX, worldY) {{
-  let candidate = null;
-  let minDistance = Infinity;
-  for (const item of overviewItems) {{
-    const distance = Math.hypot(item.x - worldX, item.y - worldY);
-    if (distance <= item.radius + 14 && distance < minDistance) {{
-      minDistance = distance;
-      candidate = item;
-    }}
-  }}
-  return candidate;
-}}
-
-function setStageMode(mode, instant = false) {{
-  stageMode = mode;
-  for (const btn of modeButtons) {{
-    const active = btn.dataset.stageMode === mode;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  }}
-  hoveredOverviewLobe = null;
-  pendingOverviewLobe = null;
-  if (mode === 'overview') {{
-    selectedId = null;
-    updateDetails();
-    fitToOverviewItems(instant);
-  }} else {{
-    fitToFilteredNodes(instant);
-  }}
-  requestDraw();
-}}
-
-function focusLobe(lobeKey) {{
-  hiddenLobes.clear();
-  for (const lobe of uniqueLobes) {{
-    if (lobe !== 'root' && lobe !== lobeKey) hiddenLobes.add(lobe);
-  }}
-  hiddenSublobes.clear();
-  renderLobes();
-  refreshVisibility();
-  setStageMode('detail');
-  const mapNode = nodes.find(n => n.type === 'map' && n.lobe === lobeKey && n.sublobe === lobeKey);
-  if (mapNode) selectNode(mapNode.id, true);
-  else fitToFilteredNodes();
-}}
-
-function renderResults() {{
+  // Render results panel with grouped Neurons / Sublobes / Lobes counts.
   resultsEl.innerHTML = '';
-  const limited = filteredNodes.slice(0, 14);
-  if (!limited.length) {{
-    const empty = document.createElement('div');
-    empty.className = 'details-empty';
-    empty.textContent = 'No nodes match the current search. Try a path fragment, a lobe name, or a tag.';
-    resultsEl.appendChild(empty);
+  if (!query) {
+    resultCountEl.textContent = '';
+    requestDraw();
     return;
-  }}
-  for (const node of limited) {{
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'result-card';
-    button.innerHTML = `
-      <div class="result-title">${{escapeHtml(node.title)}}</div>
-      <div class="result-meta">${{node.type === 'map' ? 'lobe' : escapeHtml(node.type)}} • ${{escapeHtml(node.sublobe || node.lobe)}}</div>
-      <div class="result-path">${{escapeHtml(node.path)}}</div>
-    `;
-    button.addEventListener('click', () => selectNode(node.id, true));
-    resultsEl.appendChild(button);
-  }}
-}}
+  }
+  const matches = { Neurons: [], Sublobes: [], Lobes: [] };
+  for (const lobeKey of uniqueLobes) {
+    if (lobeKey.toLowerCase().includes(query) || (lobeTitle(lobeKey) || '').toLowerCase().includes(query)) {
+      matches.Lobes.push({ kind: 'lobe', key: lobeKey, title: lobeTitle(lobeKey) });
+    }
+  }
+  const seenSubs = new Set();
+  for (const n of graph.nodes) {
+    if (n.sublobe && n.sublobe !== n.lobe && !seenSubs.has(n.sublobe)) {
+      const t = (sublobeTitle(n.sublobe) || '').toLowerCase();
+      if (t.includes(query) || n.sublobe.toLowerCase().includes(query)) {
+        matches.Sublobes.push({ kind: 'sublobe', key: n.sublobe, lobe: n.lobe, title: sublobeTitle(n.sublobe) });
+        seenSubs.add(n.sublobe);
+      }
+    }
+  }
+  for (const n of graph.nodes) {
+    if (n.type !== 'neuron' && n.type !== 'glossary' && n.type !== 'index') continue;
+    const hay = [
+      n.title, n.path, n.file_name, n.lobe, n.type, n.file_type || '',
+      ...(n.tags || []), n.excerpt || '',
+    ].join(' ').toLowerCase();
+    if (hay.includes(query)) matches.Neurons.push({ kind: 'neuron', node: n });
+  }
+  const total = matches.Neurons.length + matches.Sublobes.length + matches.Lobes.length;
+  resultCountEl.textContent = total + ' result' + (total === 1 ? '' : 's');
+  for (const group of ['Lobes', 'Sublobes', 'Neurons']) {
+    if (!matches[group].length) continue;
+    const heading = document.createElement('div');
+    heading.className = 'panel-section-header';
+    heading.style.padding = '4px 4px';
+    heading.innerHTML = '<h3>' + group + ' (' + matches[group].length + ')</h3>';
+    resultsEl.appendChild(heading);
+    for (const m of matches[group].slice(0, 12)) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'result-card';
+      let title = '';
+      let meta = '';
+      let path = '';
+      if (m.kind === 'lobe') {
+        title = m.title;
+        meta = 'lobe';
+      } else if (m.kind === 'sublobe') {
+        title = m.title;
+        meta = 'sublobe · ' + m.lobe;
+      } else {
+        title = m.node.title;
+        meta = m.node.type + ' · ' + (m.node.sublobe || m.node.lobe);
+        path = m.node.path;
+      }
+      card.innerHTML =
+        '<div class="result-title">' + escapeHtml(title) + '</div>' +
+        '<div class="result-meta">' + escapeHtml(meta) + '</div>' +
+        (path ? '<div class="result-path">' + escapeHtml(path) + '</div>' : '');
+      card.addEventListener('click', () => {
+        if (m.kind === 'lobe') focusLobe(m.key);
+        else if (m.kind === 'sublobe') focusSublobe(m.lobe, m.key);
+        else if (m.kind === 'neuron') {
+          // Drop into the deepest level that contains this neuron.
+          if (m.node.sublobe && m.node.sublobe !== m.node.lobe) {
+            const parts = m.node.sublobe.split('/');
+            const subKey = parts.length > 2 ? parts.slice(0, 2).join('/') : m.node.sublobe;
+            focusSublobe(m.node.lobe, subKey);
+          } else {
+            focusLobe(m.node.lobe);
+          }
+          selectedId = m.node.id;
+          openModal(m.node);
+        }
+      });
+      resultsEl.appendChild(card);
+    }
+  }
+  requestDraw();
+}
 
-function renderLobes() {{
+function searchEnterJump() {
+  // If exactly one result across all groups, jump to its level.
+  const query = searchInput.value.trim().toLowerCase();
+  if (!query) return;
+  // Reuse the matching logic from refreshSearch by walking the result cards.
+  const cards = resultsEl.querySelectorAll('.result-card');
+  if (cards.length === 1) cards[0].click();
+}
+
+function renderLobeFilter() {
   lobesListEl.innerHTML = '';
-  // Aggregate top-level lobes and their sub-lobes from the source graph.
-  // Each lobe collects: map node id, title, neuron count (incl. sub-lobes),
-  // color, and a Map of sub-lobes keyed by sublobe path. Sub-lobes track
-  // their own map node id, leaf title, and neuron count. The synthetic
-  // 'root' bucket (loose files in brain root) is skipped.
-  const lobeInfo = new Map();
-  function ensureLobe(lobeKey) {{
-    if (!lobeInfo.has(lobeKey)) {{
-      lobeInfo.set(lobeKey, {{
-        mapNodeId: null,
-        title: lobeKey,
-        neuronCount: 0,
-        color: lobeColor(lobeKey),
-        sublobes: new Map(),
-      }});
-    }}
-    return lobeInfo.get(lobeKey);
-  }}
-  function ensureSublobe(info, sublobeKey) {{
-    if (!info.sublobes.has(sublobeKey)) {{
-      info.sublobes.set(sublobeKey, {{
-        key: sublobeKey,
-        mapNodeId: null,
-        // Default to the leaf segment (e.g. "projects/foo" -> "foo") until
-        // a real map.md title is found.
-        title: sublobeKey.split('/').pop() || sublobeKey,
-        neuronCount: 0,
-      }});
-    }}
-    return info.sublobes.get(sublobeKey);
-  }}
-  for (const node of nodes) {{
-    if (!node.lobe || node.lobe === 'root') continue;
-    const info = ensureLobe(node.lobe);
-    const isSublobe = node.sublobe && node.sublobe !== node.lobe;
-    if (node.type === 'map' && !isSublobe) {{
-      info.mapNodeId = node.id;
-      info.title = node.title || node.lobe;
-    }} else if (node.type === 'map' && isSublobe) {{
-      const sub = ensureSublobe(info, node.sublobe);
-      sub.mapNodeId = node.id;
-      sub.title = node.title || sub.title;
-    }} else if (node.type === 'neuron') {{
-      info.neuronCount += 1;
-      if (isSublobe) {{
-        ensureSublobe(info, node.sublobe).neuronCount += 1;
-      }}
-    }}
-  }}
-  if (!lobeInfo.size) {{
-    const empty = document.createElement('div');
-    empty.className = 'details-empty';
-    empty.textContent = 'No lobes in this brain yet. Ask your agent to create one, then run kluris dream.';
-    lobesListEl.appendChild(empty);
-    return;
-  }}
-  const sortedLobes = [...lobeInfo.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  for (const [lobeKey, info] of sortedLobes) {{
-    const group = document.createElement('div');
-    group.className = 'lobe-group';
-
-    const hasSublobes = info.sublobes.size > 0;
-    const isExpanded = expandedLobes.has(lobeKey);
-
-    // The card stays flush-left like every other result-card; the caret
-    // (when present) floats over the card's right edge so cards never get
-    // shifted by an alignment spacer.
-    const wrap = document.createElement('div');
-    wrap.className = hasSublobes ? 'lobe-card-wrap has-caret' : 'lobe-card-wrap';
-
-    const isLobeHidden = hiddenLobes.has(lobeKey);
-
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = isLobeHidden ? 'lobe-card dimmed' : 'lobe-card';
-    card.title = isLobeHidden ? 'Click to show this lobe' : 'Click to hide this lobe';
-    const swatchShadow = `${{info.color}}55`;
-    const countLabel = `${{info.neuronCount}} neuron${{info.neuronCount === 1 ? '' : 's'}}`;
-    const subCountLabel = hasSublobes
-      ? ` • ${{info.sublobes.size}} sublobe${{info.sublobes.size === 1 ? '' : 's'}}`
-      : '';
-    card.innerHTML = `
-      <span class="lobe-swatch" style="background:${{info.color}};box-shadow:0 0 14px ${{swatchShadow}}"></span>
-      <span class="lobe-body">
-        <span class="lobe-name">${{escapeHtml(String(info.title).toUpperCase())}}</span>
-        <span class="lobe-meta">${{countLabel}}${{subCountLabel}}</span>
-      </span>
-    `;
-    card.addEventListener('click', () => {{
-      // Toggle this lobe's visibility. Multi-select: other hidden lobes
-      // stay hidden, other visible lobes stay visible.
+  for (const lobeKey of uniqueLobes) {
+    const stats = lobeStats(lobeKey);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lobe-row' + (hiddenLobes.has(lobeKey) ? ' dimmed' : '');
+    btn.style.setProperty('--bar', lobeColor(lobeKey));
+    btn.dataset.lobe = lobeKey;
+    btn.innerHTML =
+      '<span class="swatch"></span>' +
+      '<span class="label">' + escapeHtml(lobeTitle(lobeKey)) + '</span>' +
+      '<span class="count">' + stats.neurons + '</span>' +
+      '<span class="vis">' + (hiddenLobes.has(lobeKey) ? '○' : '●') + '</span>';
+    btn.addEventListener('click', () => {
       if (hiddenLobes.has(lobeKey)) hiddenLobes.delete(lobeKey);
       else hiddenLobes.add(lobeKey);
-      renderLobes();
-      refreshVisibility();
-      if (stageMode === 'overview') fitToOverviewItems();
-      else fitToFilteredNodes();
-    }});
-    wrap.appendChild(card);
+      renderLobeFilter();
+      requestDraw();
+    });
+    lobesListEl.appendChild(btn);
+  }
+}
 
-    if (hasSublobes) {{
-      const caret = document.createElement('button');
-      caret.type = 'button';
-      caret.className = 'lobe-caret';
-      caret.textContent = isExpanded ? '▾' : '▸';
-      caret.setAttribute('aria-label', isExpanded ? 'Collapse sublobes' : 'Expand sublobes');
-      caret.addEventListener('click', event => {{
-        event.stopPropagation();
-        if (expandedLobes.has(lobeKey)) expandedLobes.delete(lobeKey);
-        else expandedLobes.add(lobeKey);
-        renderLobes();
-      }});
-      wrap.appendChild(caret);
-    }}
+function renderRecent() {
+  recentListEl.innerHTML = '';
+  const neurons = graph.nodes
+    .filter(n => n.type === 'neuron' && n.updated)
+    .sort((a, b) => String(b.updated).localeCompare(String(a.updated)))
+    .slice(0, 5);
+  for (const n of neurons) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'recent-row';
+    row.innerHTML =
+      '<span class="label">' + escapeHtml(n.title) + '</span>' +
+      '<span class="ago">' + escapeHtml(_relAgo(n.updated)) + '</span>';
+    row.addEventListener('click', () => {
+      // Drop into the level containing this neuron and open modal.
+      if (n.sublobe && n.sublobe !== n.lobe) {
+        const parts = n.sublobe.split('/');
+        const subKey = parts.length > 2 ? parts.slice(0, 2).join('/') : n.sublobe;
+        focusSublobe(n.lobe, subKey);
+      } else {
+        focusLobe(n.lobe);
+      }
+      selectedId = n.id;
+      openModal(n);
+    });
+    recentListEl.appendChild(row);
+  }
+}
 
-    group.appendChild(wrap);
+function _relAgo(dateStr) {
+  if (!dateStr) return '';
+  const t = Date.parse(dateStr);
+  if (isNaN(t)) return '';
+  const diff = Date.now() - t;
+  const days = Math.round(diff / 86400000);
+  if (days < 1) return 'today';
+  if (days < 60) return days + 'd';
+  const months = Math.round(days / 30);
+  if (months < 24) return months + 'mo';
+  return Math.round(days / 365) + 'y';
+}
 
-    if (hasSublobes && isExpanded) {{
-      const sortedSubs = [...info.sublobes.values()].sort((a, b) => a.key.localeCompare(b.key));
-      // Build tree: separate root sublobes (depth 2, e.g. "projects/foo")
-      // from inner sublobes (depth 3+, e.g. "projects/foo/bar").
-      function renderSubTree(container, parentKey, allSubs, color) {{
-        const children = allSubs.filter(s => {{
-          if (!s.key.startsWith(parentKey + '/')) return false;
-          // Only direct children: no further '/' after parentKey + '/'
-          const rest = s.key.slice(parentKey.length + 1);
-          return !rest.includes('/');
-        }});
-        if (!children.length) return;
-        const childList = document.createElement('div');
-        childList.className = 'sublobes-list';
-        for (const child of children) {{
-          const isChildHidden = hiddenSublobes.has(child.key);
-          const hasInner = allSubs.some(s => s.key.startsWith(child.key + '/'));
-          const isChildExpanded = expandedSublobes.has(child.key);
-          const childWrap = document.createElement('div');
-          childWrap.className = 'sublobe-group';
-          const childCard = document.createElement('button');
-          childCard.type = 'button';
-          childCard.className = isChildHidden ? 'sublobe-card dimmed' : 'sublobe-card';
-          childCard.title = isChildHidden ? 'Click to show this sublobe' : 'Click to hide this sublobe';
-          const childCount = `${{child.neuronCount}} neuron${{child.neuronCount === 1 ? '' : 's'}}`;
-          childCard.innerHTML = `
-            <span class="sublobe-tick" style="background:${{color}}"></span>
-            <span class="lobe-body">
-              <span class="sublobe-name">${{escapeHtml(String(child.title))}}</span>
-              <span class="lobe-meta">${{childCount}}</span>
-            </span>
-          `;
-          childCard.addEventListener('click', event => {{
-            event.stopPropagation();
-            if (hiddenSublobes.has(child.key)) {{
-              hiddenSublobes.delete(child.key);
-              for (const s of allSubs) {{
-                if (s.key.startsWith(child.key + '/')) hiddenSublobes.delete(s.key);
-              }}
-            }} else {{
-              hiddenSublobes.add(child.key);
-              for (const s of allSubs) {{
-                if (s.key.startsWith(child.key + '/')) hiddenSublobes.add(s.key);
-              }}
-            }}
-            renderLobes();
-            refreshVisibility();
-            if (stageMode === 'overview') fitToOverviewItems();
-            else fitToFilteredNodes();
-          }});
-          if (hasInner) {{
-            const innerWrap = document.createElement('div');
-            innerWrap.className = 'sublobe-card-wrap has-caret';
-            innerWrap.appendChild(childCard);
-            const caret = document.createElement('button');
-            caret.type = 'button';
-            caret.className = 'lobe-caret';
-            caret.textContent = isChildExpanded ? '▾' : '▸';
-            caret.setAttribute('aria-label', isChildExpanded ? 'Collapse inner lobes' : 'Expand inner lobes');
-            caret.addEventListener('click', event => {{
-              event.stopPropagation();
-              if (expandedSublobes.has(child.key)) expandedSublobes.delete(child.key);
-              else expandedSublobes.add(child.key);
-              renderLobes();
-            }});
-            innerWrap.appendChild(caret);
-            childWrap.appendChild(innerWrap);
-            if (isChildExpanded) {{
-              renderSubTree(childWrap, child.key, allSubs, color);
-            }}
-          }} else {{
-            childWrap.appendChild(childCard);
-          }}
-          childList.appendChild(childWrap);
-        }}
-        container.appendChild(childList);
-      }}
-      // Render root-level sublobes (direct children of the lobe)
-      const rootSubs = sortedSubs.filter(s => {{
-        const rest = s.key.slice(lobeKey.length + 1);
-        return !rest.includes('/');
-      }});
-      const subList = document.createElement('div');
-      subList.className = 'sublobes-list';
-      for (const sub of rootSubs) {{
-        const isSubHidden = hiddenSublobes.has(sub.key);
-        const hasInner = sortedSubs.some(s => s.key.startsWith(sub.key + '/'));
-        const isSubExpanded = expandedSublobes.has(sub.key);
-        const subWrap = document.createElement('div');
-        subWrap.className = 'sublobe-group';
-        const subCard = document.createElement('button');
-        subCard.type = 'button';
-        subCard.className = isSubHidden ? 'sublobe-card dimmed' : 'sublobe-card';
-        subCard.title = isSubHidden ? 'Click to show this sublobe' : 'Click to hide this sublobe';
-        const subCount = `${{sub.neuronCount}} neuron${{sub.neuronCount === 1 ? '' : 's'}}`;
-        subCard.innerHTML = `
-          <span class="sublobe-tick" style="background:${{info.color}}"></span>
-          <span class="lobe-body">
-            <span class="sublobe-name">${{escapeHtml(String(sub.title))}}</span>
-            <span class="lobe-meta">${{subCount}}</span>
-          </span>
-        `;
-        subCard.addEventListener('click', event => {{
-          event.stopPropagation();
-          if (hiddenSublobes.has(sub.key)) {{
-            hiddenSublobes.delete(sub.key);
-            for (const s of sortedSubs) {{
-              if (s.key.startsWith(sub.key + '/')) hiddenSublobes.delete(s.key);
-            }}
-          }} else {{
-            hiddenSublobes.add(sub.key);
-            for (const s of sortedSubs) {{
-              if (s.key.startsWith(sub.key + '/')) hiddenSublobes.add(s.key);
-            }}
-          }}
-          renderLobes();
-          refreshVisibility();
-          if (stageMode === 'overview') fitToOverviewItems();
-          else fitToFilteredNodes();
-        }});
-        if (hasInner) {{
-          const innerWrap = document.createElement('div');
-          innerWrap.className = 'sublobe-card-wrap has-caret';
-          innerWrap.appendChild(subCard);
-          const caret = document.createElement('button');
-          caret.type = 'button';
-          caret.className = 'lobe-caret';
-          caret.textContent = isSubExpanded ? '▾' : '▸';
-          caret.setAttribute('aria-label', isSubExpanded ? 'Collapse inner lobes' : 'Expand inner lobes');
-          caret.addEventListener('click', event => {{
-            event.stopPropagation();
-            if (expandedSublobes.has(sub.key)) expandedSublobes.delete(sub.key);
-            else expandedSublobes.add(sub.key);
-            renderLobes();
-          }});
-          innerWrap.appendChild(caret);
-          subWrap.appendChild(innerWrap);
-          if (isSubExpanded) {{
-            renderSubTree(subWrap, sub.key, sortedSubs, info.color);
-          }}
-        }} else {{
-          subWrap.appendChild(subCard);
-        }}
-        subList.appendChild(subWrap);
-      }}
-      group.appendChild(subList);
-    }}
+// ============================================================
+// File tree (left sidebar)
+// ============================================================
+const treeRoot = { folders: new Map(), files: [] };
+let treeBuilt = false;
+function buildFileTree() {
+  treeRoot.folders = new Map();
+  treeRoot.files = [];
+  const entries = graph.nodes
+    .filter(n => (n.type === 'neuron' || n.type === 'glossary') && n.path)
+    .sort((a, b) => a.path.localeCompare(b.path));
+  for (const node of entries) {
+    const parts = node.path.split('/');
+    let cursor = treeRoot;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!cursor.folders.has(part)) {
+        cursor.folders.set(part, { folders: new Map(), files: [] });
+      }
+      cursor = cursor.folders.get(part);
+    }
+    cursor.files.push(node);
+  }
+  treeBuilt = true;
+}
+const treeCollapsed = {
+  'modal-tree': new Set(),
+  'panel-tree': new Set(),
+};
+function renderTreeFolder(name, folder, pathSoFar, targetId) {
+  const full = pathSoFar ? pathSoFar + '/' + name : name;
+  const collapsed = (treeCollapsed[targetId] || new Set()).has(full);
+  const caret = collapsed ? '▸' : '▾';
+  const subFolderHtml = [...folder.folders.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([n, f]) => renderTreeFolder(n, f, full, targetId))
+    .join('');
+  const fileHtml = folder.files
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map(node => '<div class="modal-tree-file" data-tree-node="' + node.id +
+      '" title="' + escapeHtml(node.path) + '"><span class="icon">📄</span>' +
+      escapeHtml(node.title) + '</div>')
+    .join('');
+  // Lobe color for top-level folders
+  const topLobeColor = pathSoFar === '' && uniqueLobes.includes(name)
+    ? ' style="--bar:' + lobeColor(name) + '"'
+    : '';
+  return (
+    '<div class="modal-tree-folder' + (collapsed ? ' collapsed' : '') +
+      '" data-tree-folder="' + escapeHtml(full) + '"' + topLobeColor + '>' +
+    '<div class="modal-tree-folder-label"><span class="caret">' + caret +
+      '</span><span class="icon">📁</span>' + escapeHtml(name) + '</div>' +
+    '<div class="modal-tree-children">' + subFolderHtml + fileHtml + '</div>' +
+    '</div>'
+  );
+}
+function renderFileTree(activeNodeId, targetId) {
+  if (!targetId) targetId = 'modal-tree';
+  if (!treeBuilt) buildFileTree();
+  const treeEl = document.getElementById(targetId);
+  if (!treeEl) return;
+  if (!treeCollapsed[targetId]) treeCollapsed[targetId] = new Set();
+  const topFolders = [...treeRoot.folders.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([n, f]) => renderTreeFolder(n, f, '', targetId))
+    .join('');
+  const topFiles = treeRoot.files
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map(node => '<div class="modal-tree-file" data-tree-node="' + node.id +
+      '" title="' + escapeHtml(node.path) + '"><span class="icon">📄</span>' +
+      escapeHtml(node.title) + '</div>')
+    .join('');
+  treeEl.innerHTML = topFolders + topFiles;
+  if (activeNodeId != null) {
+    for (const el of treeEl.querySelectorAll('.modal-tree-file')) {
+      if (Number(el.dataset.treeNode) === activeNodeId) el.classList.add('active');
+    }
+  }
+  for (const el of treeEl.querySelectorAll('.modal-tree-folder-label')) {
+    el.addEventListener('click', () => {
+      const folder = el.closest('.modal-tree-folder');
+      const path = folder?.dataset.treeFolder;
+      if (!path) return;
+      const collapsedSet = treeCollapsed[targetId];
+      if (collapsedSet.has(path)) {
+        collapsedSet.delete(path);
+        folder.classList.remove('collapsed');
+      } else {
+        collapsedSet.add(path);
+        folder.classList.add('collapsed');
+      }
+    });
+  }
+  for (const el of treeEl.querySelectorAll('.modal-tree-file')) {
+    el.addEventListener('click', () => {
+      const target = graph.nodes.find(n => n.id === Number(el.dataset.treeNode));
+      if (target) {
+        selectedId = target.id;
+        // Focus into the level that contains it.
+        if (target.sublobe && target.sublobe !== target.lobe) {
+          const parts = target.sublobe.split('/');
+          const subKey = parts.length > 2 ? parts.slice(0, 2).join('/') : target.sublobe;
+          focusSublobe(target.lobe, subKey);
+        } else if (target.lobe && target.lobe !== 'root') {
+          focusLobe(target.lobe);
+        }
+        openModal(target);
+      }
+    });
+  }
+}
 
-    lobesListEl.appendChild(group);
-  }}
-}}
-
-function escapeHtml(value) {{
+// ============================================================
+// Helpers — escapeHtml, markdown / yaml renderers (unchanged from prior MRI)
+// ============================================================
+function escapeHtml(value) {
   return String(value || '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
-}}
+}
 
-// ---- Markdown / YAML renderer ---------------------------------------
-// Mini line-based markdown subset (headings, lists, fenced code, tables,
-// blockquotes, inline code/bold/italic/links) and a regex YAML
-// highlighter. No external dependency — keeps the MRI a single file.
-
-function renderInline(text) {{
+function renderInline(text) {
   let html = escapeHtml(text);
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -2120,119 +2857,116 @@ function renderInline(text) {{
     '<a class="md-link" href="#" data-md-link="$2">$1</a>'
   );
   return html;
-}}
-
-function _isTableRow(line) {{ return /^\s*\|.*\|\s*$/.test(line); }}
-function _isTableSeparator(line) {{
+}
+function _isTableRow(line) { return /^\s*\|.*\|\s*$/.test(line); }
+function _isTableSeparator(line) {
   return /^\s*\|[\s:|\-]+\|\s*$/.test(line) && /-/.test(line);
-}}
-function _parseRow(line) {{
+}
+function _parseRow(line) {
   let row = line.trim();
   if (row.startsWith('|')) row = row.slice(1);
   if (row.endsWith('|')) row = row.slice(0, -1);
   return row.split('|').map(c => c.trim());
-}}
-function _renderTable(headerLine, bodyLines) {{
+}
+function _renderTable(headerLine, bodyLines) {
   const headers = _parseRow(headerLine);
   let html = '<table><thead><tr>';
   for (const h of headers) html += '<th>' + renderInline(h) + '</th>';
   html += '</tr></thead><tbody>';
-  for (const row of bodyLines) {{
+  for (const row of bodyLines) {
     const cells = _parseRow(row);
     html += '<tr>';
     for (const c of cells) html += '<td>' + renderInline(c) + '</td>';
     html += '</tr>';
-  }}
+  }
   html += '</tbody></table>';
   return html;
-}}
-
-function renderMarkdown(md) {{
-  const lines = (md || '').split(/\\r?\\n/);
+}
+function renderMarkdown(md) {
+  const lines = (md || '').split(/\r?\n/);
   const out = [];
   let inCode = false;
   let codeBuf = [];
   let listType = null;
   let inQuote = false;
-  function flushList() {{
-    if (listType) {{ out.push('</' + listType + '>'); listType = null; }}
-  }}
-  function flushQuote() {{
-    if (inQuote) {{ out.push('</blockquote>'); inQuote = false; }}
-  }}
+  function flushList() {
+    if (listType) { out.push('</' + listType + '>'); listType = null; }
+  }
+  function flushQuote() {
+    if (inQuote) { out.push('</blockquote>'); inQuote = false; }
+  }
   let i = 0;
-  while (i < lines.length) {{
+  while (i < lines.length) {
     const raw = lines[i];
-    if (inCode) {{
-      if (/^```/.test(raw)) {{
-        out.push('<pre><code>' + escapeHtml(codeBuf.join('\\n')) + '</code></pre>');
+    if (inCode) {
+      if (/^```/.test(raw)) {
+        out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
         codeBuf = []; inCode = false;
-      }} else {{ codeBuf.push(raw); }}
+      } else { codeBuf.push(raw); }
       i++; continue;
-    }}
-    if (/^```/.test(raw)) {{
+    }
+    if (/^```/.test(raw)) {
       flushList(); flushQuote(); inCode = true; i++; continue;
-    }}
+    }
     if (
       _isTableRow(raw) &&
       i + 1 < lines.length &&
       _isTableSeparator(lines[i + 1])
-    ) {{
+    ) {
       flushList(); flushQuote();
       const header = raw;
       const body = [];
       i += 2;
-      while (i < lines.length && _isTableRow(lines[i])) {{
+      while (i < lines.length && _isTableRow(lines[i])) {
         body.push(lines[i]); i++;
-      }}
+      }
       out.push(_renderTable(header, body));
       continue;
-    }}
-    const h = /^(#{{1,6}})\s+(.*)$/.exec(raw);
-    if (h) {{
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(raw);
+    if (h) {
       flushList(); flushQuote();
       const level = h[1].length;
       out.push('<h' + level + '>' + renderInline(h[2]) + '</h' + level + '>');
       i++; continue;
-    }}
+    }
     const ul = /^[-*]\s+(.*)$/.exec(raw);
     const ol = /^\d+\.\s+(.*)$/.exec(raw);
-    if (ul) {{
+    if (ul) {
       flushQuote();
-      if (listType !== 'ul') {{ flushList(); out.push('<ul>'); listType = 'ul'; }}
+      if (listType !== 'ul') { flushList(); out.push('<ul>'); listType = 'ul'; }
       out.push('<li>' + renderInline(ul[1]) + '</li>');
       i++; continue;
-    }}
-    if (ol) {{
+    }
+    if (ol) {
       flushQuote();
-      if (listType !== 'ol') {{ flushList(); out.push('<ol>'); listType = 'ol'; }}
+      if (listType !== 'ol') { flushList(); out.push('<ol>'); listType = 'ol'; }
       out.push('<li>' + renderInline(ol[1]) + '</li>');
       i++; continue;
-    }}
+    }
     const bq = /^>\s?(.*)$/.exec(raw);
-    if (bq) {{
+    if (bq) {
       flushList();
-      if (!inQuote) {{ out.push('<blockquote>'); inQuote = true; }}
+      if (!inQuote) { out.push('<blockquote>'); inQuote = true; }
       out.push('<p>' + renderInline(bq[1]) + '</p>');
       i++; continue;
-    }}
+    }
     flushList(); flushQuote();
-    if (/^\s*$/.test(raw)) {{ out.push(''); i++; continue; }}
-    if (/^[-=]{{3,}}\s*$/.test(raw)) {{ out.push('<hr>'); i++; continue; }}
+    if (/^\s*$/.test(raw)) { out.push(''); i++; continue; }
+    if (/^[-=]{3,}\s*$/.test(raw)) { out.push('<hr>'); i++; continue; }
     out.push('<p>' + renderInline(raw) + '</p>');
     i++;
-  }}
+  }
   flushList(); flushQuote();
-  if (inCode) {{
-    out.push('<pre><code>' + escapeHtml(codeBuf.join('\\n')) + '</code></pre>');
-  }}
-  return out.join('\\n');
-}}
-
-function _highlightYamlLine(escapedLine) {{
-  if (/^\s*#/.test(escapedLine)) {{
+  if (inCode) {
+    out.push('<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>');
+  }
+  return out.join('\n');
+}
+function _highlightYamlLine(escapedLine) {
+  if (/^\s*#/.test(escapedLine)) {
     return '<span class="yaml-comment">' + escapedLine + '</span>';
-  }}
+  }
   let html = escapedLine;
   html = html.replace(/(\s)(#.*)$/, '$1<span class="yaml-comment">$2</span>');
   html = html.replace(
@@ -2244,1148 +2978,580 @@ function _highlightYamlLine(escapedLine) {{
     '$1<span class="yaml-string">$2</span>'
   );
   html = html.replace(
-    /(:\s|-\s)(true|false|null|yes|no)\\b/g,
+    /(:\s|-\s)(true|false|null|yes|no)\b/g,
     '$1<span class="yaml-bool">$2</span>'
   );
   html = html.replace(
-    /(:\s|-\s)(-?\d+(?:\.\d+)?)\\b/g,
+    /(:\s|-\s)(-?\d+(?:\.\d+)?)\b/g,
     '$1<span class="yaml-num">$2</span>'
   );
   return html;
-}}
-function renderYaml(text) {{
-  const lines = (text || '').split(/\\r?\\n/);
+}
+function renderYaml(text) {
+  const lines = (text || '').split(/\r?\n/);
   const highlighted = lines
     .map(l => _highlightYamlLine(escapeHtml(l)))
-    .join('\\n');
+    .join('\n');
   return '<pre class="yaml-preview"><code>' + highlighted + '</code></pre>';
-}}
+}
 
-function updateDetails() {{
-  // The right-sidebar inspector was removed — selection now only
-  // updates the stage focus pill (canvas HUD) and the active highlight
-  // in the left-sidebar file tree. The modal is the single place that
-  // shows neuron content, opened via the file tree.
-  const node = nodes.find(item => item.id === selectedId);
-  if (!node) {{
-    stageFocus.textContent = '';
-    syncPanelTreeActive(null);
-    return;
-  }}
-  stageFocus.textContent = `${{node.title}} • ${{node.path}}`;
-  syncPanelTreeActive(node.id);
-}}
-
-// --- File browser tree (left sidebar of the expand modal) ---
-//
-// Built once from the set of neuron nodes, then reused on every openModal
-// call. Folders toggle via the caret. Clicking a file opens that node.
-const treeRoot = {{ folders: new Map(), files: [] }};
-let treeBuilt = false;
-
-function buildFileTree() {{
-  treeRoot.folders = new Map();
-  treeRoot.files = [];
-  // Include neurons + the glossary so the modal's left file tree mirrors
-  // what's actually on disk — glossary.md is a real file users want to
-  // click to open. brain.md and index.md stay hidden (they're
-  // auto-generated and don't carry hand-written content worth navigating
-  // to from this tree).
-  const entries = nodes
-    .filter(n => (n.type === 'neuron' || n.type === 'glossary') && n.path)
-    .sort((a, b) => a.path.localeCompare(b.path));
-  for (const node of entries) {{
-    const parts = node.path.split('/');
-    let cursor = treeRoot;
-    for (let i = 0; i < parts.length - 1; i++) {{
-      const part = parts[i];
-      if (!cursor.folders.has(part)) {{
-        cursor.folders.set(part, {{ folders: new Map(), files: [] }});
-      }}
-      cursor = cursor.folders.get(part);
-    }}
-    cursor.files.push(node);
-  }}
-  treeBuilt = true;
-}}
-
-// Per-target collapsed state — the panel tree (always visible) and the
-// modal tree have different lifecycles, so we don't want collapsing a
-// folder in one to flip the other.
-const treeCollapsed = {{
-  'modal-tree': new Set(),
-  'panel-tree': new Set(),
-}};
-
-function renderTreeFolder(name, folder, pathSoFar, targetId) {{
-  const full = pathSoFar ? `${{pathSoFar}}/${{name}}` : name;
-  const collapsed = (treeCollapsed[targetId] || new Set()).has(full);
-  const caret = collapsed ? '▸' : '▾';
-  const subFolderHtml = [...folder.folders.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([n, f]) => renderTreeFolder(n, f, full, targetId))
-    .join('');
-  const fileHtml = folder.files
-    .sort((a, b) => a.title.localeCompare(b.title))
-    .map(node => `<div class="modal-tree-file" data-tree-node="${{node.id}}" title="${{escapeHtml(node.path)}}"><span class="icon">📄</span>${{escapeHtml(node.title)}}</div>`)
-    .join('');
-  return (
-    `<div class="modal-tree-folder${{collapsed ? ' collapsed' : ''}}" data-tree-folder="${{escapeHtml(full)}}">` +
-      `<div class="modal-tree-folder-label"><span class="caret">${{caret}}</span><span class="icon">📁</span>${{escapeHtml(name)}}</div>` +
-      `<div class="modal-tree-children">${{subFolderHtml}}${{fileHtml}}</div>` +
-    `</div>`
-  );
-}}
-
-function renderFileTree(activeNodeId, targetId = 'modal-tree') {{
-  if (!treeBuilt) buildFileTree();
-  const treeEl = document.getElementById(targetId);
-  if (!treeEl) return;
-  if (!treeCollapsed[targetId]) treeCollapsed[targetId] = new Set();
-  const topFolders = [...treeRoot.folders.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([n, f]) => renderTreeFolder(n, f, '', targetId))
-    .join('');
-  const topFiles = treeRoot.files
-    .sort((a, b) => a.title.localeCompare(b.title))
-    .map(node => `<div class="modal-tree-file" data-tree-node="${{node.id}}" title="${{escapeHtml(node.path)}}"><span class="icon">📄</span>${{escapeHtml(node.title)}}</div>`)
-    .join('');
-  treeEl.innerHTML = topFolders + topFiles;
-
-  if (activeNodeId != null) {{
-    for (const el of treeEl.querySelectorAll('.modal-tree-file')) {{
-      if (Number(el.dataset.treeNode) === activeNodeId) el.classList.add('active');
-    }}
-  }}
-
-  for (const el of treeEl.querySelectorAll('.modal-tree-folder-label')) {{
-    el.addEventListener('click', () => {{
-      const folder = el.closest('.modal-tree-folder');
-      const path = folder?.dataset.treeFolder;
-      if (!path) return;
-      const collapsedSet = treeCollapsed[targetId];
-      if (collapsedSet.has(path)) {{
-        collapsedSet.delete(path);
-        folder.classList.remove('collapsed');
-      }} else {{
-        collapsedSet.add(path);
-        folder.classList.add('collapsed');
-      }}
-    }});
-  }}
-
-  for (const el of treeEl.querySelectorAll('.modal-tree-file')) {{
-    el.addEventListener('click', () => {{
-      const target = nodes.find(n => n.id === Number(el.dataset.treeNode));
-      if (target) {{ selectNode(target.id, true); openModal(target); }}
-    }});
-  }}
-}}
-
-// Cheap re-highlight of the active file in the panel tree without
-// rebuilding the DOM (called from selectNode / updateDetails).
-function syncPanelTreeActive(activeNodeId) {{
-  const treeEl = document.getElementById('panel-tree');
-  if (!treeEl) return;
-  for (const el of treeEl.querySelectorAll('.modal-tree-file.active')) {{
-    el.classList.remove('active');
-  }}
-  if (activeNodeId == null) return;
-  for (const el of treeEl.querySelectorAll('.modal-tree-file')) {{
-    if (Number(el.dataset.treeNode) === activeNodeId) el.classList.add('active');
-  }}
-}}
-
-function openModal(node) {{
+// ============================================================
+// Modal — open neuron details with C4 kicker, monospace stats
+// ============================================================
+const navHistory = [];
+let navIndex = -1;
+function pushNav(id) {
+  if (navHistory[navIndex] === id) return;
+  navHistory.splice(navIndex + 1);
+  navHistory.push(id);
+  navIndex = navHistory.length - 1;
+}
+function openModal(node) {
+  pushNav(node.id);
   const modal = document.getElementById('content-modal');
   const breadcrumb = node.path.split('/').map(p => p.replace(/\.(md|yml|yaml)$/, '')).join(' / ');
-  const authoredSub = node.authored_title
-    ? ` <span style="color:var(--muted);font-size:0.7em;font-weight:400;margin-left:10px" title="From H1 in the file">· ${{escapeHtml(node.authored_title)}}</span>`
-    : '';
-  document.getElementById('modal-title').innerHTML = `${{escapeHtml(node.title)}}${{authoredSub}} <span style="color:var(--muted);font-size:0.8em;font-weight:400;margin-left:8px">${{escapeHtml(breadcrumb)}}</span>`;
-  renderFileTree(node.id);
-  // Render content. Markdown neurons go through the mini renderer
-  // (headings, lists, fenced code, tables, blockquotes, inline
-  // formatting); yaml neurons (notably ``openapi.yml``) get the
-  // syntax-highlighted code block. Inline `[text](path.md)` links
-  // produced by the markdown renderer are rewired in a second pass
-  // to navigate to other neurons in the same brain (or render as
-  // a visible "broken" marker if the target isn't in the graph).
+  document.getElementById('modal-kicker').textContent =
+    node.type === 'glossary' ? 'GLOSSARY' :
+    node.type === 'index' ? 'INDEX' :
+    node.type === 'map' ? 'MAP' :
+    node.file_type === 'yaml' ? 'YAML' : 'NEURON';
+  document.getElementById('modal-title').textContent = node.title;
+  // Stats line (mono)
+  const statsEl = document.getElementById('modal-stats');
+  const parts = [];
+  if (node.lobe && node.lobe !== 'root') parts.push(node.lobe);
+  if (node.sublobe && node.sublobe !== node.lobe) parts.push(node.sublobe);
+  if (node.tags && node.tags.length) parts.push('tags: ' + node.tags.join(', '));
+  if (node.updated) parts.push('updated ' + node.updated);
+  statsEl.innerHTML =
+    '<span>' + escapeHtml(breadcrumb) + '</span>' +
+    (parts.length ? '<span class="dot">·</span><span>' + escapeHtml(parts.join(' · ')) + '</span>' : '');
+  renderFileTree(node.id, 'modal-tree');
   const raw = node.content_full || node.content_preview || 'No content.';
   const isYaml = node.file_type === 'yaml';
   const modalContent = document.getElementById('modal-content');
   modalContent.innerHTML = isYaml ? renderYaml(raw) : renderMarkdown(raw);
-
-  if (!isYaml) {{
+  if (!isYaml) {
     const nodePath = node.path.replace(/[^/]+$/, '');
-    for (const a of modalContent.querySelectorAll('a.md-link[data-md-link]')) {{
+    for (const a of modalContent.querySelectorAll('a.md-link[data-md-link]')) {
       const href = a.dataset.mdLink || '';
       const noAnchor = href.split('#')[0].split('?')[0];
-      // Leave external links and non-neuron-shaped hrefs alone — the
-      // user can still click them; they just won't navigate within
-      // the MRI graph.
       if (!noAnchor || /^https?:/.test(noAnchor)) continue;
       if (!/\.(md|ya?ml)$/i.test(noAnchor)) continue;
-      const parts = (nodePath + noAnchor).split('/');
+      const linkParts = (nodePath + noAnchor).split('/');
       const resolved = [];
-      for (const p of parts) {{
+      for (const p of linkParts) {
         if (p === '..') resolved.pop();
         else if (p && p !== '.') resolved.push(p);
-      }}
+      }
       const resolvedPath = resolved.join('/');
-      const target = nodes.find(n => n.path === resolvedPath);
+      const target = graph.nodes.find(n => n.path === resolvedPath);
       a.classList.remove('md-link');
       a.removeAttribute('href');
-      if (target) {{
+      if (target) {
         a.classList.add('content-link');
         a.dataset.modalNav = String(target.id);
         const anchor = href.includes('#') ? '#' + href.split('#')[1] : '';
         a.title = target.path + anchor;
-      }} else {{
+      } else {
         a.classList.add('content-link-broken');
         a.title = 'broken link: ' + href;
-      }}
-    }}
-    for (const btn of modalContent.querySelectorAll('[data-modal-nav]')) {{
-      btn.addEventListener('click', () => {{
-        const target = nodes.find(n => n.id === Number(btn.dataset.modalNav));
-        if (target) {{ selectNode(target.id, true); openModal(target); }}
-      }});
-    }}
-  }}
-  // Build nav buttons for connected nodes — show first N, expand on demand
+      }
+    }
+    for (const btn of modalContent.querySelectorAll('[data-modal-nav]')) {
+      btn.addEventListener('click', () => {
+        const target = graph.nodes.find(n => n.id === Number(btn.dataset.modalNav));
+        if (target) { openModal(target); }
+      });
+    }
+  }
+  // Synapse nav buttons (linked neurons)
   const navEl = document.getElementById('modal-nav');
   const connected = [...(neighbors.get(node.id) || [])]
-    .map(id => nodes.find(n => n.id === id))
+    .map(id => graph.nodes.find(n => n.id === id))
     .filter(n => n && n.type === 'neuron')
     .sort((a, b) => a.title.localeCompare(b.title));
   const NAV_COLLAPSE = 6;
-  // Disambiguator: only prefix a nav button with its parent folder when that
-  // parent differs from the current node's parent. In a same-project cluster
-  // every button would otherwise read "btb / X" and the repeated prefix
-  // hides the actual neuron name.
   const currentParts = node.path.split('/');
   const currentParent = currentParts.length >= 2 ? currentParts[currentParts.length - 2] : '';
-  const allNavHtml = connected.map(n => {{
-    const parts = n.path.split('/');
-    const parent = parts.length >= 2 ? parts[parts.length - 2] : '';
-    const label = parent && parent !== currentParent ? `${{parent}} / ${{n.title}}` : n.title;
-    return `<button type="button" class="modal-nav-btn" data-modal-nav="${{n.id}}" title="${{escapeHtml(n.path)}}">${{escapeHtml(label)}}</button>`;
-  }});
+  const allNavHtml = connected.map(n => {
+    const np = n.path.split('/');
+    const parent = np.length >= 2 ? np[np.length - 2] : '';
+    const label = parent && parent !== currentParent ? parent + ' / ' + n.title : n.title;
+    return '<button type="button" class="modal-nav-btn" data-modal-nav="' + n.id +
+      '" title="' + escapeHtml(n.path) + '">' + escapeHtml(label) + '</button>';
+  });
   const hasOverflow = connected.length > NAV_COLLAPSE;
-  function renderNav(expanded) {{
+  function renderNav(expanded) {
     const btns = expanded ? allNavHtml.join('') : allNavHtml.slice(0, NAV_COLLAPSE).join('');
     const toggle = hasOverflow
-      ? `<button type="button" class="modal-nav-toggle" id="modal-nav-toggle">${{expanded ? 'show less' : '+' + (connected.length - NAV_COLLAPSE) + ' more'}}</button>`
+      ? '<button type="button" class="modal-nav-toggle" id="modal-nav-toggle">' +
+        (expanded ? 'show less' : '+' + (connected.length - NAV_COLLAPSE) + ' more') + '</button>'
       : '';
     navEl.innerHTML = btns + toggle;
-    for (const btn of navEl.querySelectorAll('[data-modal-nav]')) {{
-      btn.addEventListener('click', () => {{
-        const target = nodes.find(n => n.id === Number(btn.dataset.modalNav));
-        if (target) {{ selectNode(target.id, true); openModal(target); }}
-      }});
-    }}
+    for (const btn of navEl.querySelectorAll('[data-modal-nav]')) {
+      btn.addEventListener('click', () => {
+        const target = graph.nodes.find(n => n.id === Number(btn.dataset.modalNav));
+        if (target) { openModal(target); }
+      });
+    }
     const tog = document.getElementById('modal-nav-toggle');
     if (tog) tog.addEventListener('click', () => renderNav(!expanded));
-  }}
+  }
   renderNav(false);
   modal.style.display = 'flex';
-}}
+}
 
-const navHistory = [];
-let navIndex = -1;
-
-function selectNode(id, recenter = false, fromNav = false) {{
-  if (id != null && stageMode === 'overview') {{
-    setStageMode('detail');
-  }}
-  if (id !== selectedId && id != null && !fromNav) {{
-    // Truncate forward history when navigating to a new node
-    navHistory.splice(navIndex + 1);
-    navHistory.push(id);
-    navIndex = navHistory.length - 1;
-  }}
-  selectedId = id;
-  updateDetails();
-  if (recenter) focusOnNode(id);
-}}
-
-function navBack() {{
-  if (navIndex > 0) {{
-    navIndex--;
-    selectNode(navHistory[navIndex], true, true);
-  }}
-}}
-
-function navForward() {{
-  if (navIndex < navHistory.length - 1) {{
-    navIndex++;
-    selectNode(navHistory[navIndex], true, true);
-  }}
-}}
-
-let cameraAnim = null;
-function animateCamera(tx, ty, ts, duration) {{
-  const sx = camera.x, sy = camera.y, ss = camera.scale;
-  const start = performance.now();
-  if (cameraAnim) cancelAnimationFrame(cameraAnim);
-  function step(now) {{
-    const t = Math.min(1, (now - start) / duration);
-    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-    camera.x = sx + (tx - sx) * ease;
-    camera.y = sy + (ty - sy) * ease;
-    camera.scale = ss + (ts - ss) * ease;
-    requestDraw();
-    if (t < 1) cameraAnim = requestAnimationFrame(step);
-    else cameraAnim = null;
-  }}
-  cameraAnim = requestAnimationFrame(step);
-}}
-
-function fitToFilteredNodes(instant = false) {{
-  // Frame the camera around whatever is currently visible. Used after a
-  // visibility toggle (and at startup with instant=true) so the user
-  // actually sees the result.
-  //
-  // Key trick: we use each node's stable targetX/targetY (the anchor-based
-  // layout coordinates) instead of live x/y. Physics has not settled at the
-  // moment the click handler fires, so live positions are transient. Target
-  // coords are deterministic and match where the nodes will drift toward,
-  // so the fit is correct regardless of mid-physics state.
-  if (!filteredNodes.length) return;
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const padding = 140;
-  const xs = filteredNodes.map(n => (n.targetX != null ? n.targetX : n.x));
-  const ys = filteredNodes.map(n => (n.targetY != null ? n.targetY : n.y));
-  const minX = Math.min(...xs) - padding;
-  const maxX = Math.max(...xs) + padding;
-  const minY = Math.min(...ys) - padding;
-  const maxY = Math.max(...ys) + padding;
-  const w = Math.max(1, maxX - minX);
-  const h = Math.max(1, maxY - minY);
-  const scale = Math.min(rect.width / w, rect.height / h) * 0.80;
-  const clampedScale = Math.min(2.4, Math.max(0.42, scale));
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const tx = rect.width / 2 - cx * clampedScale;
-  const ty = rect.height / 2 - cy * clampedScale;
-  if (instant) {{
-    if (cameraAnim) {{ cancelAnimationFrame(cameraAnim); cameraAnim = null; }}
-    camera.x = tx;
-    camera.y = ty;
-    camera.scale = clampedScale;
-    requestDraw();
-  }} else {{
-    animateCamera(tx, ty, clampedScale, 320);
-  }}
-}}
-
-function resetCamera() {{
-  // Smoothly snap the camera back to the default unfiltered view.
-  animateCamera(0, 0, 1, 320);
-}}
-
-function focusOnNode(id) {{
-  const node = nodes.find(item => item.id === id);
-  if (!node) return;
-  const rect = canvas.parentElement.getBoundingClientRect();
-  if (node.type === 'map') {{
-    // Zoom to frame the lobe (or sub-lobe). Sub-lobe map nodes have
-    // sublobe !== lobe (e.g. lobe="projects", sublobe="projects/foo");
-    // those should zoom to just their sub-lobe members, not the whole lobe.
-    const isSublobe = node.sublobe && node.sublobe !== node.lobe;
-    const members = isSublobe
-      ? filteredNodes.filter(n => n.sublobe === node.sublobe || n.sublobe.startsWith(node.sublobe + '/'))
-      : filteredNodes.filter(n => n.lobe === node.lobe);
-    if (members.length > 1) {{
-      const minX = Math.min(...members.map(n => n.x)) - 60;
-      const maxX = Math.max(...members.map(n => n.x)) + 60;
-      const minY = Math.min(...members.map(n => n.y)) - 60;
-      const maxY = Math.max(...members.map(n => n.y)) + 60;
-      const lobeW = maxX - minX;
-      const lobeH = maxY - minY;
-      const scale = Math.min(rect.width / lobeW, rect.height / lobeH) * 0.85;
-      const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2;
-      animateCamera(rect.width / 2 - cx * scale, rect.height / 2 - cy * scale, Math.min(2.4, Math.max(0.5, scale)), 300);
-      return;
-    }}
-  }}
-  const tx = rect.width / 2 - node.x * camera.scale;
-  const ty = rect.height / 2 - node.y * camera.scale;
-  animateCamera(tx, ty, camera.scale, 300);
-}}
-
-function toWorld(clientX, clientY) {{
-  const rect = canvas.getBoundingClientRect();
-  return {{
-    x: (clientX - rect.left - camera.x) / camera.scale,
-    y: (clientY - rect.top - camera.y) / camera.scale,
-  }};
-}}
-
-function hitTest(worldX, worldY) {{
-  let candidate = null;
-  let minDistance = Infinity;
-  for (const node of filteredNodes) {{
-    const distance = Math.hypot(node.x - worldX, node.y - worldY);
-    if (distance <= node.radius + 8 && distance < minDistance) {{
-      minDistance = distance;
-      candidate = node;
-    }}
-  }}
-  return candidate;
-}}
-
-function tick() {{
-  const visibleIds = new Set(filteredNodes.map(n => n.id));
-  // Repulsion with cross-lobe boost
-  if (filteredNodes.length <= FORCE_PAIRWISE_LIMIT) {{
-    for (let i = 0; i < filteredNodes.length; i++) {{
-      for (let j = i + 1; j < filteredNodes.length; j++) {{
-        const a = filteredNodes[i];
-        const b = filteredNodes[j];
+// ============================================================
+// Legacy force graph (Expert mode) — preserved verbatim from v2.16.3 logic,
+// scoped under `legacyForce` so it doesn't collide with the C4 levels.
+// ============================================================
+let legacyForce = null;
+function initLegacyForce() {
+  if (legacyForce) return;
+  const lobeAnchors = new Map();
+  const depthMap = new Map();
+  const treeParent = new Map();
+  function buildTree() {
+    depthMap.clear();
+    const parentEdges = graph.edges.filter(e => e.type === 'parent');
+    for (const n of graph.nodes) if (n.type === 'brain') depthMap.set(n.id, 0);
+    let frontier = [...depthMap.keys()];
+    while (frontier.length) {
+      const next = [];
+      for (const pid of frontier) {
+        for (const e of parentEdges) {
+          if (e.target === pid && !depthMap.has(e.source)) {
+            depthMap.set(e.source, depthMap.get(pid) + 1);
+            treeParent.set(e.source, pid);
+            next.push(e.source);
+          }
+        }
+      }
+      frontier = next;
+    }
+    for (const n of graph.nodes) {
+      if (!depthMap.has(n.id)) depthMap.set(n.id, n.type === 'map' ? 1 : 2);
+    }
+  }
+  buildTree();
+  function _hexToRgb(hex) {
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  function _desaturate(hex, amount) {
+    const [r, g, b] = _hexToRgb(hex);
+    const gray = (r + g + b) / 3;
+    return 'rgb(' + Math.round(r + (gray - r) * amount) + ',' +
+      Math.round(g + (gray - g) * amount) + ',' +
+      Math.round(b + (gray - b) * amount) + ')';
+  }
+  function colorForNode(node) {
+    if (node.type === 'brain') return '#ffffff';
+    if (node.type === 'glossary') return '#ffc6f4';
+    if (node.type === 'index') return '#ffd28e';
+    if (node.type === 'map') return lobeColor(node.lobe);
+    if (node.file_type === 'yaml') return '#9ea9ff';
+    return _desaturate(lobeColor(node.lobe), 0.3);
+  }
+  function nodeRadius(node) {
+    if (node.type === 'brain') return 22;
+    if (node.type === 'glossary') return 13;
+    if (node.type === 'index') return 11;
+    if (node.type === 'map') {
+      const d = depthMap.get(node.id) || 1;
+      return d <= 1 ? 30 : 22;
+    }
+    return Math.max(6, 5 + Math.min(node.degree || 0, 6) * 0.6);
+  }
+  function buildAnchors(width, height) {
+    const cx = width / 2;
+    const cy = height / 2;
+    // Elliptical anchor ring so lobes always sit inside the viewport, no
+    // matter the aspect ratio. With a landscape stage the old min-based
+    // radius pushed top/bottom lobes off-canvas. width * 0.36 / height * 0.36
+    // leaves ~14% margin on each side for orbit + hull spread.
+    const rx = width * 0.36;
+    const ry = height * 0.36;
+    const nonRoot = uniqueLobes;
+    lobeAnchors.set('root', { x: cx, y: cy * 0.86 });
+    nonRoot.forEach((lobe, i) => {
+      const angle = -Math.PI / 2 + (i / Math.max(1, nonRoot.length)) * Math.PI * 2;
+      lobeAnchors.set(lobe, { x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry });
+    });
+  }
+  function initializeNodes() {
+    const dim = stage.getBoundingClientRect();
+    const lobeCounters = new Map();
+    return graph.nodes.map((node, idx) => {
+      const anchor = lobeAnchors.get(node.lobe) || lobeAnchors.get('root') ||
+        { x: dim.width / 2, y: dim.height / 2 };
+      let tx, ty;
+      const d = depthMap.get(node.id) || 0;
+      if (node.type === 'brain') {
+        tx = dim.width / 2; ty = dim.height / 2;
+      } else if (node.type === 'glossary') {
+        tx = dim.width / 2; ty = dim.height * 0.12;
+      } else if (node.type === 'index') {
+        tx = dim.width * 0.14; ty = dim.height * 0.14;
+      } else if (node.type === 'map') {
+        if (d <= 1) { tx = anchor.x; ty = anchor.y; }
+        else {
+          const c = lobeCounters.get('sublobe_' + node.lobe) || 0;
+          lobeCounters.set('sublobe_' + node.lobe, c + 1);
+          const subAngle = -Math.PI / 2 + (c / 3) * Math.PI * 2;
+          tx = anchor.x + Math.cos(subAngle) * 65;
+          ty = anchor.y + Math.sin(subAngle) * 65;
+        }
+      } else {
+        const c = lobeCounters.get(node.lobe) || 0;
+        lobeCounters.set(node.lobe, c + 1);
+        const orbitR = 70 + c * 22;
+        const angle = c * 0.85 + idx * 0.13;
+        tx = anchor.x + Math.cos(angle) * orbitR;
+        ty = anchor.y + Math.sin(angle) * orbitR;
+      }
+      const searchText = [
+        node.title, node.path, node.file_name, node.lobe, node.type,
+        node.file_type || '', ...(node.tags || []), node.excerpt || '',
+        node.content_preview || '',
+      ].join(' ').toLowerCase();
+      return {
+        ...node,
+        searchText,
+        color: colorForNode(node),
+        radius: nodeRadius(node),
+        depth: d,
+        x: tx + (Math.random() - 0.5) * 6,
+        y: ty + (Math.random() - 0.5) * 6,
+        vx: 0, vy: 0,
+        targetX: tx, targetY: ty,
+      };
+    });
+  }
+  let nodes = [];
+  let filteredNodes = [];
+  function visibleNode(node) {
+    if (node.type === 'brain') return false;
+    if (node.type === 'map') return false;
+    if (hiddenLobes.has(node.lobe)) return false;
+    const query = searchInput.value.trim().toLowerCase();
+    if (!query) return true;
+    return node.searchText.includes(query);
+  }
+  function refreshVisibility() {
+    filteredNodes = nodes.filter(visibleNode);
+  }
+  function tick() {
+    const visibleIds = new Set(filteredNodes.map(n => n.id));
+    if (filteredNodes.length <= FORCE_PAIRWISE_LIMIT) {
+      for (let i = 0; i < filteredNodes.length; i++) {
+        for (let j = i + 1; j < filteredNodes.length; j++) {
+          const a = filteredNodes[i];
+          const b = filteredNodes[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const distance = Math.max(24, Math.hypot(dx, dy));
+          const crossLobe = a.lobe !== b.lobe ? 2.6 : 1.0;
+          const force = (1200 * crossLobe) / (distance * distance);
+          const ux = dx / distance;
+          const uy = dy / distance;
+          a.vx -= ux * force;
+          a.vy -= uy * force;
+          b.vx += ux * force;
+          b.vy += uy * force;
+        }
+      }
+    }
+    const lobeCentroids = new Map();
+    for (const lobe of uniqueLobes) {
+      const members = filteredNodes.filter(n => n.lobe === lobe);
+      if (!members.length) continue;
+      const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
+      const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
+      lobeCentroids.set(lobe, { x: cx, y: cy, members });
+      for (const n of members) {
+        if (n.type !== 'brain') {
+          n.vx += (cx - n.x) * 0.002;
+          n.vy += (cy - n.y) * 0.002;
+        }
+      }
+    }
+    // Push different lobes apart at the centroid level so their hulls never overlap.
+    const lobeKeys = [...lobeCentroids.keys()];
+    for (let i = 0; i < lobeKeys.length; i++) {
+      for (let j = i + 1; j < lobeKeys.length; j++) {
+        const a = lobeCentroids.get(lobeKeys[i]);
+        const b = lobeCentroids.get(lobeKeys[j]);
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        const distance = Math.max(24, Math.hypot(dx, dy));
-        const crossLobe = a.lobe !== b.lobe ? 2.6 : 1.0;
-        const force = (1200 * crossLobe) / (distance * distance);
-        const ux = dx / distance;
-        const uy = dy / distance;
-        a.vx -= ux * force;
-        a.vy -= uy * force;
-        b.vx += ux * force;
-        b.vy += uy * force;
-      }}
-    }}
-  }}
-  // Same-lobe cohesion. Track members on the centroid record so the
-  // pairwise lobe-vs-lobe push below can reuse them without re-filtering.
-  const lobeCentroids = new Map();
-  for (const lobe of uniqueLobes) {{
-    const members = filteredNodes.filter(n => n.lobe === lobe);
-    if (!members.length) continue;
-    const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
-    const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
-    lobeCentroids.set(lobe, {{ x: cx, y: cy, members }});
-    for (const n of members) {{
-      if (n.type !== 'brain') {{
-        n.vx += (cx - n.x) * 0.002;
-        n.vy += (cy - n.y) * 0.002;
-      }}
-    }}
-  }}
-  // Push different lobes apart at the centroid level so their hulls
-  // never overlap. minDist controls the breathing room; if two lobe
-  // centroids drift closer than that, every member of each lobe gets a
-  // shove away from the other lobe's centroid.
-  const lobeKeys = [...lobeCentroids.keys()];
-  for (let i = 0; i < lobeKeys.length; i++) {{
-    for (let j = i + 1; j < lobeKeys.length; j++) {{
-      const a = lobeCentroids.get(lobeKeys[i]);
-      const b = lobeCentroids.get(lobeKeys[j]);
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.max(60, Math.hypot(dx, dy));
-      // Scale minDist with each lobe's spread so big lobes claim more space.
-      const aSpread = Math.max(80, Math.sqrt(a.members.length) * 50);
-      const bSpread = Math.max(80, Math.sqrt(b.members.length) * 50);
-      const minDist = aSpread + bSpread + 220;
-      if (dist < minDist) {{
-        const push = (minDist - dist) * 0.030;
-        const ux = dx / dist;
-        const uy = dy / dist;
-        for (const n of a.members) {{ n.vx -= ux * push; n.vy -= uy * push; }}
-        for (const n of b.members) {{ n.vx += ux * push; n.vy += uy * push; }}
-      }}
-    }}
-  }}
-  // Sub-lobe cohesion + cross-sub-lobe repulsion
-  // Merge inner sublobes (depth 3+) into their 2nd-level parent for physics
-  function physicsSublobeKey(sl) {{
-    const parts = sl.split('/');
-    return parts.length > 2 ? parts.slice(0, 2).join('/') : sl;
-  }}
-  const sublobeGroups = new Map();
-  for (const n of filteredNodes) {{
-    const key = physicsSublobeKey(n.sublobe);
-    if (!sublobeGroups.has(key)) sublobeGroups.set(key, []);
-    sublobeGroups.get(key).push(n);
-  }}
-  const sublobeCentroids = new Map();
-  for (const [sl, members] of sublobeGroups) {{
-    if (members.length < 2 || sl === members[0].lobe) continue;
-    const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
-    const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
-    sublobeCentroids.set(sl, {{ x: cx, y: cy, lobe: members[0].lobe }});
-    // Pull members toward their sub-lobe centroid
-    for (const n of members) {{
-      n.vx += (cx - n.x) * 0.004;
-      n.vy += (cy - n.y) * 0.004;
-    }}
-  }}
-  // Push different sub-lobes within the same lobe apart
-  const slKeys = [...sublobeCentroids.keys()];
-  for (let i = 0; i < slKeys.length; i++) {{
-    for (let j = i + 1; j < slKeys.length; j++) {{
-      const a = sublobeCentroids.get(slKeys[i]);
-      const b = sublobeCentroids.get(slKeys[j]);
-      if (a.lobe !== b.lobe) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.max(40, Math.hypot(dx, dy));
-      const minDist = 400;
-      if (dist < minDist) {{
-        const push = (minDist - dist) * 0.02;
-        const ux = dx / dist;
-        const uy = dy / dist;
-        const membersA = sublobeGroups.get(slKeys[i]);
-        const membersB = sublobeGroups.get(slKeys[j]);
-        for (const n of membersA) {{ n.vx -= ux * push; n.vy -= uy * push; }}
-        for (const n of membersB) {{ n.vx += ux * push; n.vy += uy * push; }}
-      }}
-    }}
-  }}
-  // Edge springs
-  let springCount = 0;
-  for (const edge of graph.edges) {{
-    if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
-    const touchesSelection = selectedId != null && (edge.source === selectedId || edge.target === selectedId);
-    if (
-      filteredNodes.length > FORCE_PAIRWISE_LIMIT &&
-      edge.type !== 'parent' &&
-      !touchesSelection
-    ) continue;
-    if (springCount > DETAIL_EDGE_LIMIT && !touchesSelection) continue;
-    springCount += 1;
-    const source = nodes[edge.source];
-    const target = nodes[edge.target];
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    const distance = Math.max(30, Math.hypot(dx, dy));
-    const ideal = edge.type === 'parent' ? 80 : edge.type === 'related' ? 160 : 145;
-    const force = (distance - ideal) * 0.0026;
-    const ux = dx / distance;
-    const uy = dy / distance;
-    source.vx += ux * force;
-    source.vy += uy * force;
-    target.vx -= ux * force;
-    target.vy -= uy * force;
-  }}
-  // Anchor pull + damping
-  for (const node of filteredNodes) {{
-    const anchorPull = node.type === 'brain' ? 0.015 : node.type === 'map' ? 0.014 : 0.006;
-    node.vx += (node.targetX - node.x) * anchorPull;
-    node.vy += (node.targetY - node.y) * anchorPull;
-    if (draggingNodeId === node.id) {{ node.vx = 0; node.vy = 0; continue; }}
-    node.vx *= 0.88;
-    node.vy *= 0.88;
-    node.x += node.vx;
-    node.y += node.vy;
-  }}
-}}
-
-// --- Convex hull for lobe backgrounds ---
-function convexHull(points) {{
-  if (points.length < 3) return points.slice();
-  points = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (O, A, B) => (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
-  const lower = [];
-  for (const p of points) {{ while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }}
-  const upper = [];
-  for (let i = points.length - 1; i >= 0; i--) {{ const p = points[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }}
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
-}}
-
-function expandHull(hull, pad) {{
-  if (hull.length < 2) return hull;
-  const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
-  const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
-  return hull.map(p => {{
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const dist = Math.max(1, Math.hypot(dx, dy));
-    return {{ x: p.x + (dx / dist) * pad, y: p.y + (dy / dist) * pad }};
-  }});
-}}
-
-function drawLabel(text, x, y, fontSize, bold) {{
-  const maxLen = 22;
-  const label = text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
-  ctx.font = `${{bold ? 'bold ' : ''}}${{fontSize}}px "Avenir Next", "Segoe UI", sans-serif`;
-  const metrics = ctx.measureText(label);
-  const pw = 6;
-  const ph = 3;
-  const lw = metrics.width;
-  const lh = fontSize;
-  // Background pill
-  ctx.fillStyle = 'rgba(10, 15, 26, 0.75)';
-  const rx = x - pw;
-  const ry = y - lh - ph;
-  const rw = lw + pw * 2;
-  const rh = lh + ph * 2;
-  ctx.beginPath();
-  ctx.roundRect(rx, ry, rw, rh, 4);
-  ctx.fill();
-  // Text
-  ctx.fillStyle = 'rgba(233, 241, 255, 0.94)';
-  ctx.fillText(label, x, y);
-}}
-
-function drawOverview() {{
-  if (!overviewItems.length) overviewItems = buildOverviewItems();
-  const query = searchInput.value.trim().toLowerCase();
-  for (const item of overviewItems) {{
-    const color = item.color;
-    const isHovered = hoveredOverviewLobe === item.key;
-    const isHidden = hiddenLobes.has(item.key);
-    ctx.save();
-    ctx.globalAlpha = isHidden ? 0.36 : 1;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = isHovered ? 34 : 16;
-
-    const gradient = ctx.createRadialGradient(item.x - item.radius * 0.25, item.y - item.radius * 0.30, 12, item.x, item.y, item.radius * 1.12);
-    gradient.addColorStop(0, rgbaFromHex(color, 0.30));
-    gradient.addColorStop(0.62, rgbaFromHex(color, 0.12));
-    gradient.addColorStop(1, rgbaFromHex(color, 0.035));
-    ctx.beginPath();
-    ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = isHovered ? rgbaFromHex(color, 0.88) : rgbaFromHex(color, 0.35);
-    ctx.lineWidth = isHovered ? 2.4 : 1.3;
-    ctx.stroke();
-
-    const sublobes = item.sublobes.slice(0, 10);
-    if (sublobes.length) {{
-      const ringRadius = item.radius + 15;
-      sublobes.forEach((sub, index) => {{
-        const angle = -Math.PI / 2 + (index / sublobes.length) * Math.PI * 2;
-        const dotRadius = Math.max(4, Math.min(10, 3 + Math.sqrt(sub.count) * 1.7));
-        const dx = item.x + Math.cos(angle) * ringRadius;
-        const dy = item.y + Math.sin(angle) * ringRadius;
-        ctx.beginPath();
-        ctx.arc(dx, dy, dotRadius, 0, Math.PI * 2);
-        ctx.fillStyle = rgbaFromHex(color, 0.74);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(6, 17, 31, 0.86)';
+        const dist = Math.max(60, Math.hypot(dx, dy));
+        const aSpread = Math.max(80, Math.sqrt(a.members.length) * 50);
+        const bSpread = Math.max(80, Math.sqrt(b.members.length) * 50);
+        const minDist = aSpread + bSpread + 220;
+        if (dist < minDist) {
+          const push = (minDist - dist) * 0.030;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          for (const n of a.members) { n.vx -= ux * push; n.vy -= uy * push; }
+          for (const n of b.members) { n.vx += ux * push; n.vy += uy * push; }
+        }
+      }
+    }
+    let springCount = 0;
+    for (const edge of graph.edges) {
+      if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
+      const touchesSelection = selectedId != null && (edge.source === selectedId || edge.target === selectedId);
+      if (
+        filteredNodes.length > FORCE_PAIRWISE_LIMIT &&
+        edge.type !== 'parent' &&
+        !touchesSelection
+      ) continue;
+      if (springCount > DETAIL_EDGE_LIMIT && !touchesSelection) continue;
+      springCount += 1;
+      const source = nodes[edge.source];
+      const target = nodes[edge.target];
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const distance = Math.max(30, Math.hypot(dx, dy));
+      const ideal = edge.type === 'parent' ? 80 : edge.type === 'related' ? 160 : 145;
+      const force = (distance - ideal) * 0.0026;
+      const ux = dx / distance;
+      const uy = dy / distance;
+      source.vx += ux * force;
+      source.vy += uy * force;
+      target.vx -= ux * force;
+      target.vy -= uy * force;
+    }
+    for (const node of filteredNodes) {
+      const anchorPull = node.type === 'brain' ? 0.015 : node.type === 'map' ? 0.014 : 0.006;
+      node.vx += (node.targetX - node.x) * anchorPull;
+      node.vy += (node.targetY - node.y) * anchorPull;
+      if (draggingNodeId === node.id) { node.vx = 0; node.vy = 0; continue; }
+      node.vx *= 0.88; node.vy *= 0.88;
+      node.x += node.vx; node.y += node.vy;
+    }
+  }
+  function draw() {
+    let drawnEdges = 0;
+    const visibleIds = new Set(filteredNodes.map(n => n.id));
+    const query = searchInput.value.trim().toLowerCase();
+    for (const edge of graph.edges) {
+      if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
+      const selected = selectedId != null && (edge.source === selectedId || edge.target === selectedId);
+      if (
+        filteredNodes.length > FORCE_PAIRWISE_LIMIT &&
+        edge.type !== 'parent' &&
+        !selected
+      ) continue;
+      if (drawnEdges > DETAIL_EDGE_LIMIT && !selected) continue;
+      drawnEdges += 1;
+      const s = nodes[edge.source];
+      const t = nodes[edge.target];
+      ctx.save();
+      ctx.strokeStyle = edge.type === 'parent' ? 'rgba(248, 199, 109, 0.42)' :
+        edge.type === 'related' ? 'rgba(123, 247, 255, 0.44)' :
+        edge.type === 'replaced_by' ? 'rgba(255, 138, 138, 0.55)' :
+        'rgba(255, 139, 216, 0.34)';
+      ctx.lineWidth = selected ? 2.5 : 1.2;
+      if (edge.type === 'related') ctx.setLineDash([8, 8]);
+      else if (edge.type === 'inline') ctx.setLineDash([2, 7]);
+      else if (edge.type === 'replaced_by') ctx.setLineDash([2, 4]);
+      else ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(t.x, t.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.setLineDash([]);
+    for (const node of filteredNodes) {
+      if (node.type === 'brain') continue;
+      const isSelected = node.id === selectedId;
+      const dimmed = query && !node.searchText.includes(query);
+      ctx.globalAlpha = dimmed ? 0.22 : 1;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      ctx.fillStyle = node.color;
+      ctx.fill();
+      if (isSelected) {
+        ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2;
         ctx.stroke();
-      }});
-    }}
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(233, 241, 255, 0.96)';
-    ctx.font = 'bold 15px "Avenir Next", "Segoe UI", sans-serif';
-    const title = String(item.title || item.key).toUpperCase();
-    const displayTitle = title.length > 22 ? title.slice(0, 22) + '...' : title;
-    ctx.fillText(displayTitle, item.x, item.y - 4);
-    ctx.font = '12px "Avenir Next", "Segoe UI", sans-serif';
-    ctx.fillStyle = 'rgba(139, 167, 209, 0.94)';
-    const docs = `${{item.docs}} file${{item.docs === 1 ? '' : 's'}}`;
-    const subs = item.sublobes.length ? ` • ${{item.sublobes.length}} sublobe${{item.sublobes.length === 1 ? '' : 's'}}` : '';
-    ctx.fillText(docs + subs, item.x, item.y + 17);
-    if (query) {{
-      ctx.font = '10px "SFMono-Regular", "SF Mono", "Monaco", monospace';
-      ctx.fillStyle = rgbaFromHex(color, 0.82);
-      ctx.fillText('SEARCH MATCHES', item.x, item.y + 36);
-    }}
-    ctx.textAlign = 'start';
-    ctx.restore();
-  }}
-
-  if (!overviewItems.length) {{
-    const rect = canvas.getBoundingClientRect();
-    const cx = (rect.width / 2 - camera.x) / camera.scale;
-    const cy = (rect.height / 2 - camera.y) / camera.scale;
-    ctx.fillStyle = 'rgba(139, 167, 209, 0.9)';
-    ctx.font = '14px "Avenir Next", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('No visible lobes', cx, cy);
-    ctx.textAlign = 'start';
-  }}
-}}
-
-function draw() {{
-  const rect = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
-  ctx.save();
-  ctx.translate(camera.x, camera.y);
-  ctx.scale(camera.scale, camera.scale);
-
-  const visibleIds = new Set(filteredNodes.map(n => n.id));
-  const query = searchInput.value.trim().toLowerCase();
-
-  if (stageMode === 'overview') {{
-    drawOverview();
-    ctx.restore();
-    return;
-  }}
-
-  // --- Pass 1: Lobe hull backgrounds ---
-  for (const lobe of uniqueLobes) {{
-    if (lobe === 'root') continue;
-    const members = filteredNodes.filter(n => n.lobe === lobe);
-    const color = lobeColor(lobe);
-    if (members.length < 1) {{
-      // Empty lobe: draw circle at anchor with label
-      const anchor = lobeAnchors.get(lobe);
-      if (anchor) {{
-        ctx.beginPath();
-        ctx.arc(anchor.x, anchor.y, 50, 0, Math.PI * 2);
-        ctx.fillStyle = rgbaFromHex(color, 0.04);
-        ctx.fill();
-        ctx.strokeStyle = rgbaFromHex(color, 0.1);
-        ctx.lineWidth = 1;
-        ctx.setLineDash([6, 6]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = rgbaFromHex(color, 0.2);
-        ctx.font = 'bold 16px "Avenir Next", "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(lobe.toUpperCase(), anchor.x, anchor.y - 58);
-        ctx.fillStyle = rgbaFromHex(color, 0.12);
-        ctx.font = '11px "Avenir Next", "Segoe UI", sans-serif';
-        ctx.fillText('(empty)', anchor.x, anchor.y + 4);
-        ctx.textAlign = 'start';
-      }}
-      continue;
-    }}
-    const points = members.map(n => ({{ x: n.x, y: n.y }}));
-    if (points.length === 1) {{
-      // Single node: draw circle
-      ctx.beginPath();
-      ctx.arc(points[0].x, points[0].y, 50, 0, Math.PI * 2);
-      ctx.fillStyle = rgbaFromHex(color, 0.06);
-      ctx.fill();
-      ctx.strokeStyle = rgbaFromHex(color, 0.12);
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }} else if (points.length === 2) {{
-      // Two nodes: draw ellipse between them
-      const mx = (points[0].x + points[1].x) / 2;
-      const my = (points[0].y + points[1].y) / 2;
-      ctx.beginPath();
-      ctx.ellipse(mx, my, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) / 2 + 40, 40, Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x), 0, Math.PI * 2);
-      ctx.fillStyle = rgbaFromHex(color, 0.06);
-      ctx.fill();
-      ctx.strokeStyle = rgbaFromHex(color, 0.12);
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }} else {{
-      const hull = expandHull(convexHull(points), 40);
-      ctx.beginPath();
-      ctx.moveTo(hull[0].x, hull[0].y);
-      for (let i = 1; i < hull.length; i++) ctx.lineTo(hull[i].x, hull[i].y);
-      ctx.closePath();
-      ctx.fillStyle = rgbaFromHex(color, 0.06);
-      ctx.fill();
-      ctx.strokeStyle = rgbaFromHex(color, 0.12);
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }}
-    // Hull label
-    const cx = members.reduce((s, n) => s + n.x, 0) / members.length;
-    const cy = members.reduce((s, n) => s + n.y, 0) / members.length;
-    const minY = Math.min(...members.map(n => n.y));
-    ctx.fillStyle = rgbaFromHex(color, 0.2);
-    ctx.font = 'bold 16px "Avenir Next", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(lobe.toUpperCase(), cx, minY - 50);
-    ctx.textAlign = 'start';
-  }}
-
-  // --- Pass 1b: Sub-lobe group backgrounds ---
-  // Only draw hulls for 2nd-level sublobes (2 segments, e.g. "projects/foo").
-  // Include descendant nodes (3rd-level+) inside the parent hull.
-  const sublobes = [...new Set(filteredNodes.map(n => n.sublobe))];
-  for (const sl of sublobes) {{
-    if (sl === 'root') continue;
-    const topLobe = sl.split('/')[0];
-    if (sl === topLobe) continue; // top-level lobe, already drawn above
-    // Skip inner sublobes (depth 3+): they are included in their parent hull
-    if (sl.split('/').length > 2) continue;
-    // Include descendants: exact match OR starts with sl + '/'
-    const members = filteredNodes.filter(n => n.sublobe === sl || n.sublobe.startsWith(sl + '/'));
-    if (members.length < 2) continue;
-    const color = lobeColor(topLobe);
-    const points = members.map(n => ({{ x: n.x, y: n.y }}));
-    if (points.length === 2) {{
-      const mx = (points[0].x + points[1].x) / 2;
-      const my = (points[0].y + points[1].y) / 2;
-      ctx.beginPath();
-      ctx.ellipse(mx, my, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) / 2 + 30, 30, Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x), 0, Math.PI * 2);
-      ctx.fillStyle = rgbaFromHex(color, 0.04);
-      ctx.fill();
-      ctx.strokeStyle = rgbaFromHex(color, 0.08);
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }} else {{
-      const hull = expandHull(convexHull(points), 28);
-      ctx.beginPath();
-      ctx.moveTo(hull[0].x, hull[0].y);
-      for (let i = 1; i < hull.length; i++) ctx.lineTo(hull[i].x, hull[i].y);
-      ctx.closePath();
-      ctx.fillStyle = rgbaFromHex(color, 0.04);
-      ctx.fill();
-      ctx.strokeStyle = rgbaFromHex(color, 0.08);
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }}
-    // Sub-lobe label
-    const slName = sl.split('/').pop() || sl;
-    const scx = members.reduce((s, n) => s + n.x, 0) / members.length;
-    const sMinY = Math.min(...members.map(n => n.y));
-    ctx.fillStyle = rgbaFromHex(color, 0.16);
-    ctx.font = 'bold 12px "Avenir Next", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(slName, scx, sMinY - 34);
-    ctx.textAlign = 'start';
-  }}
-
-  // --- Pass 2: Edges ---
-  let drawnEdgeCount = 0;
-  for (const edge of graph.edges) {{
-    if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
-    const selected = selectedId != null && (edge.source === selectedId || edge.target === selectedId);
-    if (
-      filteredNodes.length > FORCE_PAIRWISE_LIMIT &&
-      edge.type !== 'parent' &&
-      !selected
-    ) continue;
-    if (drawnEdgeCount > DETAIL_EDGE_LIMIT && !selected) continue;
-    drawnEdgeCount += 1;
-    const source = nodes[edge.source];
-    const target = nodes[edge.target];
-    ctx.beginPath();
-    ctx.moveTo(source.x, source.y);
-    const mx = (source.x + target.x) / 2;
-    const my = (source.y + target.y) / 2;
-    const curve = edge.type === 'related' ? 18 : edge.type === 'inline' ? -12 : 0;
-    ctx.quadraticCurveTo(mx + curve, my - curve, target.x, target.y);
-    ctx.strokeStyle = EDGE_COLORS[edge.type] || 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = selected ? 2.7 : edge.type === 'parent' ? 1.8 : 1.2;
-    if (edge.type === 'related') ctx.setLineDash([8, 8]);
-    else if (edge.type === 'inline') ctx.setLineDash([2, 7]);
-    else ctx.setLineDash([]);
-    ctx.stroke();
-  }}
-  ctx.setLineDash([]);
-
-  // --- Pass 3: Nodes ---
-  for (const node of filteredNodes) {{
-    if (node.type === 'brain') continue; // brain name is in the page title
-    const isSelected = node.id === selectedId;
-    const isHovered = node.id === hoveredId;
-    const dimmed = query && !node.searchText.includes(query);
-    ctx.globalAlpha = dimmed ? 0.22 : 1;
-    ctx.shadowColor = node.color;
-    ctx.shadowBlur = isSelected ? 28 : isHovered ? 18 : 10;
-
-    if (node.type === 'map') {{
-      // Skip top-level lobe maps -- the hull label already shows the lobe name
-      // Top-level: path is "lobe/map.md" (2 parts). Sub-lobe: "lobe/sub/map.md" (3+ parts)
-      const pathDepth = node.path.split('/').length;
-      if (pathDepth <= 2) {{ ctx.shadowBlur = 0; continue; }}
-      const w = 110;
-      const h = 28;
-      const rx = node.x - w / 2;
-      const ry = node.y - h / 2;
-      const lobeCol = lobeColor(node.lobe);
-      ctx.beginPath();
-      ctx.roundRect(rx, ry, w, h, 10);
-      ctx.fillStyle = rgbaFromHex(lobeCol, 0.14);
-      ctx.fill();
-      ctx.strokeStyle = isSelected ? '#ffffff' : rgbaFromHex(lobeCol, 0.6);
-      ctx.lineWidth = isSelected ? 2.5 : 1.5;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      // Label: show parent/name for context (e.g. "projects / specmint")
-      const pathParts = node.path.split('/');
-      const dirName = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : node.lobe;
-      const label = dirName.length > 20 ? dirName.slice(0, 20) + '...' : dirName;
-      ctx.fillStyle = 'rgba(233, 241, 255, 0.95)';
-      ctx.font = 'bold 11px "Avenir Next", "Segoe UI", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(label, node.x, node.y + 4);
-      ctx.textAlign = 'start';
-
-    }} else if (node.type === 'glossary' || node.type === 'index') {{
-      // Diamond shape
-      const r = node.radius;
-      ctx.beginPath();
-      ctx.moveTo(node.x, node.y - r);
-      ctx.lineTo(node.x + r, node.y);
-      ctx.lineTo(node.x, node.y + r);
-      ctx.lineTo(node.x - r, node.y);
-      ctx.closePath();
-      ctx.fillStyle = node.color;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      if (isSelected) {{ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }}
-      // Always show label
-      drawLabel(node.title, node.x + r + 6, node.y + 4, 11, false);
-
-    }} else if (node.type === 'brain') {{
-      // Large white circle with double ring
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      drawLabel(node.title, node.x + node.radius + 10, node.y + 5, 15, true);
-
-    }} else {{
-      // Neuron: circle
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-      ctx.fillStyle = node.color;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      if (isSelected) {{ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }}
-      else if (isHovered) {{ ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.stroke(); }}
-
-      // Zoom-adaptive labels for neurons
-      const showLabel = isSelected || isHovered
-        || (camera.scale >= 1.2)
-        || (camera.scale >= 0.8 && (node.degree || 0) >= 3);
-      if (showLabel) {{
-        drawLabel(node.title, node.x + node.radius + 5, node.y + 3, 10, false);
-      }}
-    }}
-  }}
-  ctx.globalAlpha = 1;
-  ctx.restore();
-}}
-
-function loop() {{
-  if (stageMode === 'detail') {{
-    const ticks = filteredNodes.length > FORCE_PAIRWISE_LIMIT ? 1 : 2;
-    for (let i = 0; i < ticks; i++) tick();
-    draw();
-  }} else if (needsDraw) {{
-    draw();
-    needsDraw = false;
-  }}
-  requestAnimationFrame(loop);
-}}
-
-canvas.addEventListener('pointerdown', event => {{
-  canvas.setPointerCapture(event.pointerId);
-  dragMoved = false;
-  lastPointer = {{ x: event.clientX, y: event.clientY }};
-  const world = toWorld(event.clientX, event.clientY);
-  if (stageMode === 'overview') {{
-    const hit = hitTestOverview(world.x, world.y);
-    pendingOverviewLobe = hit ? hit.key : null;
-    hoveredOverviewLobe = pendingOverviewLobe;
-    if (!hit) {{
-      isPanning = true;
-      canvas.classList.add('dragging');
-    }}
-    requestDraw();
-    return;
-  }}
-  const hit = hitTest(world.x, world.y);
-  if (hit) {{
-    draggingNodeId = hit.id;
-    dragOffset = {{ x: world.x - hit.x, y: world.y - hit.y }};
-    selectNode(hit.id, false);
-  }} else {{
-    isPanning = true;
-    canvas.classList.add('dragging');
-  }}
-}});
-
-canvas.addEventListener('pointermove', event => {{
-  pointer = {{ x: event.clientX, y: event.clientY }};
-  const world = toWorld(event.clientX, event.clientY);
-  const overviewHit = stageMode === 'overview' ? hitTestOverview(world.x, world.y) : null;
-  const hit = stageMode === 'overview' ? null : hitTest(world.x, world.y);
-  hoveredOverviewLobe = overviewHit ? overviewHit.key : null;
-  hoveredId = hit ? hit.id : null;
-  const dx = event.clientX - lastPointer.x;
-  const dy = event.clientY - lastPointer.y;
-  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) dragMoved = true;
-  lastPointer = {{ x: event.clientX, y: event.clientY }};
-  if (draggingNodeId != null) {{
-    const node = nodes.find(item => item.id === draggingNodeId);
-    if (node) {{
-      node.x = world.x - dragOffset.x;
-      node.y = world.y - dragOffset.y;
-      node.targetX = node.x;
-      node.targetY = node.y;
-    }}
-  }} else if (isPanning) {{
-    camera.x += dx;
-    camera.y += dy;
-    requestDraw();
-  }}
-  if (stageMode === 'overview') requestDraw();
-}});
-
-canvas.addEventListener('pointerup', event => {{
-  if (stageMode === 'overview') {{
-    const world = toWorld(event.clientX, event.clientY);
-    const hit = hitTestOverview(world.x, world.y);
-    if (!dragMoved && hit && pendingOverviewLobe === hit.key) {{
-      focusLobe(hit.key);
-    }} else if (!dragMoved && !hit) {{
-      selectNode(null, false);
-    }}
-    pendingOverviewLobe = null;
-    isPanning = false;
-    canvas.classList.remove('dragging');
-    requestDraw();
-    return;
-  }}
-  if (!dragMoved && draggingNodeId == null && !isPanning) {{
-    const world = toWorld(event.clientX, event.clientY);
-    const hit = hitTest(world.x, world.y);
-    if (hit) selectNode(hit.id, false);
-    else selectNode(null, false);
-  }}
-  draggingNodeId = null;
-  isPanning = false;
-  canvas.classList.remove('dragging');
-}});
-
-canvas.addEventListener('pointerleave', () => {{
-  hoveredId = null;
-  hoveredOverviewLobe = null;
-  pendingOverviewLobe = null;
-  draggingNodeId = null;
-  isPanning = false;
-  canvas.classList.remove('dragging');
-  requestDraw();
-}});
-
-canvas.addEventListener('wheel', event => {{
-  event.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = event.clientX - rect.left;
-  const mouseY = event.clientY - rect.top;
-  const worldX = (mouseX - camera.x) / camera.scale;
-  const worldY = (mouseY - camera.y) / camera.scale;
-  const nextScale = Math.min(2.6, Math.max(0.42, camera.scale * (event.deltaY < 0 ? 1.08 : 0.92)));
-  camera.x = mouseX - worldX * nextScale;
-  camera.y = mouseY - worldY * nextScale;
-  camera.scale = nextScale;
-  requestDraw();
-}}, {{ passive: false }});
-
-searchInput.addEventListener('input', () => {{
-  refreshVisibility();
-  if (stageMode === 'overview') fitToOverviewItems();
-}});
-for (const button of modeButtons) {{
-  button.addEventListener('click', () => setStageMode(button.dataset.stageMode || 'overview'));
-}}
-document.getElementById('reset-view').addEventListener('click', () => {{
-  const rect = canvas.parentElement.getBoundingClientRect();
-  searchInput.value = '';
-  hiddenLobes.clear();
-  hiddenSublobes.clear();
-  expandedLobes.clear();
-  expandedSublobes.clear();
-  renderLobes();
-  refreshVisibility();
-  selectNode(null, false);
-  buildAnchors(rect.width, rect.height);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function fit(instant) {
+    const rect = stage.getBoundingClientRect();
+    if (!filteredNodes.length) {
+      camera.x = 0; camera.y = 0; camera.scale = 1;
+      requestDraw();
+      return;
+    }
+    const padding = 140;
+    const xs = filteredNodes.map(n => n.targetX != null ? n.targetX : n.x);
+    const ys = filteredNodes.map(n => n.targetY != null ? n.targetY : n.y);
+    const minX = Math.min(...xs) - padding;
+    const maxX = Math.max(...xs) + padding;
+    const minY = Math.min(...ys) - padding;
+    const maxY = Math.max(...ys) + padding;
+    const w = Math.max(1, maxX - minX);
+    const h = Math.max(1, maxY - minY);
+    const scale = Math.min(rect.width / w, rect.height / h) * 0.80;
+    const clampedScale = Math.min(2.4, Math.max(0.42, scale));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const tx = rect.width / 2 - cx * clampedScale;
+    const ty = rect.height / 2 - cy * clampedScale;
+    if (instant) {
+      camera.x = tx; camera.y = ty; camera.scale = clampedScale;
+      requestDraw();
+    } else {
+      animateCamera(tx, ty, clampedScale, 280);
+    }
+  }
+  function hitTest(worldX, worldY) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const node of filteredNodes) {
+      const d = Math.hypot(node.x - worldX, node.y - worldY);
+      if (d <= node.radius + 8 && d < bestDist) {
+        bestDist = d;
+        best = node;
+      }
+    }
+    return best ? { kind: 'neuron', id: best.id } : null;
+  }
+  function handleClick(worldX, worldY) {
+    const hit = hitTest(worldX, worldY);
+    if (hit) {
+      const node = graph.nodes.find(n => n.id === hit.id);
+      if (node) {
+        selectedId = node.id;
+        openModal(node);
+      }
+    }
+  }
+  buildAnchors(stage.getBoundingClientRect().width, stage.getBoundingClientRect().height);
   nodes = initializeNodes();
   refreshVisibility();
-  setStageMode('overview', true);
-}});
+  legacyForce = {
+    initialized: true,
+    nodes,
+    get filteredNodes() { return filteredNodes; },
+    tick,
+    draw,
+    fit,
+    hitTest,
+    handleClick,
+    refresh: refreshVisibility,
+    buildAnchors: (w, h) => buildAnchors(w, h),
+  };
+}
 
-// --- Collapsible side panels ---
-function togglePanel(side) {{
-  const shell = document.querySelector('.shell');
+// ============================================================
+// Wire up controls
+// ============================================================
+searchInput.addEventListener('input', () => {
+  refreshSearch();
+  if (legacyForce) legacyForce.refresh();
+  requestDraw();
+});
+searchInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    searchEnterJump();
+  }
+});
+for (const button of modeButtons) {
+  button.addEventListener('click', () => {
+    const m = button.dataset.stageMode;
+    if (button.disabled) return;
+    if (m === 'lobe' && !activeLobe) return;
+    if (m === 'sublobe' && !activeSublobe) return;
+    setStageMode(m, activeLobe, activeSublobe);
+  });
+}
+document.getElementById('btn-reset').addEventListener('click', () => {
+  searchInput.value = '';
+  hiddenLobes.clear();
+  selectedId = null;
+  activeLobe = null;
+  activeSublobe = null;
+  renderLobeFilter();
+  refreshSearch();
+  setStageMode('brain', null, null, { instant: true });
+});
+document.getElementById('btn-fit').addEventListener('click', () => {
+  if (stageMode === 'force' && legacyForce) legacyForce.fit(false);
+  else animateCamera(0, 0, 1, 240);
+});
+
+// Panel collapse — toggle a class on the body grid; show/hide expand button.
+function togglePanel(side) {
+  const body = document.querySelector('.body');
   const cls = side + '-collapsed';
-  const isCollapsed = shell.classList.toggle(cls);
+  const collapsed = body.classList.toggle(cls);
   const expandBtn = document.getElementById('expand-' + side);
-  if (expandBtn) expandBtn.classList.toggle('visible', isCollapsed);
-  // The stage column changes size; give the canvas a chance to re-measure
-  // on the next frame so the physics + hull rendering stay centered.
-  requestAnimationFrame(() => {{
+  if (expandBtn) expandBtn.classList.toggle('visible', collapsed);
+  requestAnimationFrame(() => {
     resize();
-    nodes = initializeNodes();
-    refreshVisibility();
-    updateDetails();
-    if (stageMode === 'overview') fitToOverviewItems(true);
-    else fitToFilteredNodes(true);
-  }});
-}}
+    requestDraw();
+  });
+}
 document.getElementById('collapse-left').addEventListener('click', () => togglePanel('left'));
 document.getElementById('collapse-right').addEventListener('click', () => togglePanel('right'));
 document.getElementById('expand-left').addEventListener('click', () => togglePanel('left'));
 document.getElementById('expand-right').addEventListener('click', () => togglePanel('right'));
 
-document.getElementById('modal-back').addEventListener('click', () => {{
-  navBack();
-  const node = nodes.find(n => n.id === selectedId);
-  if (node && document.getElementById('content-modal').style.display !== 'none') openModal(node);
-}});
-document.getElementById('modal-forward').addEventListener('click', () => {{
-  navForward();
-  const node = nodes.find(n => n.id === selectedId);
-  if (node && document.getElementById('content-modal').style.display !== 'none') openModal(node);
-}});
-document.getElementById('modal-close').addEventListener('click', () => {{
+document.getElementById('modal-back').addEventListener('click', () => {
+  if (navIndex > 0) {
+    navIndex--;
+    const node = graph.nodes.find(n => n.id === navHistory[navIndex]);
+    if (node) { selectedId = node.id; openModal(node); }
+  }
+});
+document.getElementById('modal-forward').addEventListener('click', () => {
+  if (navIndex < navHistory.length - 1) {
+    navIndex++;
+    const node = graph.nodes.find(n => n.id === navHistory[navIndex]);
+    if (node) { selectedId = node.id; openModal(node); }
+  }
+});
+document.getElementById('modal-close').addEventListener('click', () => {
   document.getElementById('content-modal').style.display = 'none';
-}});
-document.getElementById('content-modal').addEventListener('click', event => {{
+});
+document.getElementById('content-modal').addEventListener('click', event => {
   if (event.target === event.currentTarget) event.currentTarget.style.display = 'none';
-}});
-document.addEventListener('keydown', event => {{
-  if (event.key === 'Escape') {{
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
     document.getElementById('content-modal').style.display = 'none';
-  }}
-  if (event.key === '/') {{
+  }
+  if (event.key === '/' && event.target !== searchInput) {
     event.preventDefault();
     searchInput.focus();
     searchInput.select();
-  }}
-}});
+  }
+  if ((event.key === 'e' || event.key === 'E') && event.target !== searchInput) {
+    if (stageMode === 'force') setStageMode('brain');
+    else setStageMode('force');
+  }
+});
 
+// ============================================================
+// Bootstrap
+// ============================================================
 resize();
-addEventListener('resize', () => {{
-  resize();
-  nodes = initializeNodes();
-  refreshVisibility();
-  updateDetails();
-  if (stageMode === 'overview') fitToOverviewItems(true);
-  else fitToFilteredNodes(true);
-}});
-nodes = initializeNodes();
-renderLobes();
+addEventListener('resize', resize);
+renderLobeFilter();
+renderRecent();
 renderFileTree(null, 'panel-tree');
-refreshVisibility();
-updateDetails();
-// Frame the lobe-first layout so the brain is centered regardless of viewport
-// aspect ratio. Neuron detail is available on demand without starting the
-// expensive all-node force graph by default.
-setStageMode('overview', true);
+renderBreadcrumb();
+setStageMode('brain', null, null, { instant: true });
 loop();
-</script>
-</body>
-</html>"""
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
-
-    return {"nodes": len(graph["nodes"]), "edges": len(graph["edges"])}
+"""

@@ -291,15 +291,15 @@ def test_html_modal_link_regex_matches_yaml(tmp_path):
 
 
 def test_html_search_placeholder_mentions_yaml(tmp_path):
-    """The left-panel search input placeholder must acknowledge yaml as a
-    search dimension."""
+    """The right-panel search input placeholder must acknowledge yaml as a
+    search dimension so users discover that yaml neurons are searchable."""
     brain = _make_brain_with_yaml_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
     assert "yaml" in html.lower()
-    # Placeholder attribute specifically
-    assert 'placeholder="Name, path, lobe, tag, or yaml"' in html
+    # The exact placeholder string in the new design.
+    assert 'placeholder="Search neurons, path, lobe, tag, or yaml"' in html
 
 
 def test_html_searchtext_builder_includes_file_type(tmp_path):
@@ -487,21 +487,25 @@ def test_html_no_cdn(tmp_path):
 def test_html_has_search_and_file_tree_ui(tmp_path):
     """The shell must include search and the left-sidebar file tree.
 
-    The right-sidebar inspector was removed entirely — clicking a
-    neuron only updates the stage-focus pill and the active highlight
-    in the file tree. The modal (opened from the file tree) is the
-    single place that shows neuron content.
+    The new C4 design keeps the same DOM hooks (search input, file tree,
+    results panel) but the right sidebar gets restyled to the flat
+    `FIND` / `LOBES` / `RECENT` / `RESULTS` layout from the mockups.
     """
     brain = _make_brain_with_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
-    # Kept: search, lobes, results, the left-sidebar file tree.
+    # Kept: search input, lobes filter, results panel, panel tree.
     assert 'id="search-input"' in html
-    assert "Search the brain" in html
     assert 'id="lobes-list"' in html
     assert 'id="search-results"' in html
     assert 'id="panel-tree"' in html
+    assert 'id="recent-list"' in html
+    # Right-sidebar section labels (uppercase via CSS) — assert on
+    # the literal HTML text in the section headers.
+    assert ">Find<" in html
+    assert ">Lobes<" in html
+    assert ">Recent<" in html
     # Removed: every inspector / details / connections-card hook.
     assert 'id="details-panel"' not in html
     assert 'id="details-empty"' not in html
@@ -516,20 +520,26 @@ def test_html_has_search_and_file_tree_ui(tmp_path):
 
 
 def test_html_has_lobes_list_in_left_panel(tmp_path):
-    """The left panel must include a Lobes section that mirrors the result-card style."""
+    """The right panel includes a Lobes filter rendered as flat 4×22 swatch rows.
+
+    The C4 redesign drops the old gradient lobe-card; the right-sidebar
+    `LOBES` section now uses flat `.lobe-row` rows with a 4×22 color swatch,
+    a label, a count, and a visibility dot — matching the mockup-shell.html
+    contract.
+    """
     brain = _make_brain_with_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
-    # Section title and container
+    # Section + container
     assert ">Lobes<" in html
     assert 'id="lobes-list"' in html
-    # CSS hooks for the new card style
-    assert ".lobe-card" in html
-    assert ".lobe-swatch" in html
+    # New flat row style replaces .lobe-card / .lobe-swatch.
+    assert ".lobe-row" in html
+    assert ".swatch" in html
     # JS renderer wired up at startup
-    assert "function renderLobes" in html
-    assert "renderLobes();" in html
+    assert "function renderLobeFilter" in html
+    assert "renderLobeFilter();" in html
 
 
 def _make_brain_with_sublobes(tmp_path):
@@ -564,136 +574,30 @@ def _make_brain_with_sublobes(tmp_path):
     return brain
 
 
-def test_html_has_sublobes_collapsible_tree(tmp_path):
-    """The Lobes section must support sub-lobes via a collapsible tree.
-
-    Solves the 'too busy canvas' problem when one lobe has many sub-lobes
-    by giving the user a navigation aid in the left panel.
-    """
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # CSS hooks for the new sub-lobe tree style.
-    # Cards stay flush-left; the caret floats on the right of cards that have
-    # sublobes (no left-side alignment spacer that would shift the lobes).
-    assert ".lobe-group" in html
-    assert ".lobe-card-wrap" in html
-    assert ".lobe-caret" in html
-    assert ".sublobes-list" in html
-    assert ".sublobe-card" in html
-    assert ".sublobe-tick" in html
-
-    # JS state + render path for sub-lobes
-    assert "expandedLobes" in html
-    assert "info.sublobes" in html
-
-    # focusOnNode must distinguish sub-lobe map nodes (zoom to sublobe members,
-    # not the whole lobe) so clicking a sublobe in the list zooms tightly.
-    assert "n.sublobe === node.sublobe" in html
-
-
-def test_focus_on_node_zooms_sublobe_members_only(tmp_path):
-    """Sub-lobe map nodes must zoom to their own members, not the parent lobe."""
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-    # The fix: filter by sublobe when node.sublobe !== node.lobe
-    assert "isSublobe" in html
-    assert "n.sublobe === node.sublobe" in html
-    assert "n.lobe === node.lobe" in html  # original branch still present for top-level lobes
-
-
 def test_lobes_act_as_visibility_toggles(tmp_path):
-    """Clicking a lobe in the left panel must toggle its visibility (multi-select),
-    not activate a single-lobe filter. Each lobe and sub-lobe is an independent
-    on/off switch, so the user can hide several at once to reduce clutter.
+    """Clicking a lobe in the right panel toggles visibility for that lobe.
+
+    The C4 redesign keeps the multi-select lobe filter (as 4×22 swatch rows
+    in the right sidebar) but drops the per-sublobe collapsible tree from
+    the right sidebar — sublobes are reachable by drilling into a lobe (L2)
+    rather than via a tree filter.
     """
     brain = _make_brain_with_sublobes(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
-    # Independent hidden-sets for lobes and sublobes
+    # The hidden-lobes set still exists and powers the L1 search dim path.
     assert "const hiddenLobes = new Set()" in html
-    assert "const hiddenSublobes = new Set()" in html
-    # visibleNode() respects both sets
-    assert "hiddenLobes.has(node.lobe)" in html
-    assert "hiddenSublobes.has(node.sublobe)" in html
-    # Dimmed visual state on hidden cards (replaces the old .active state)
-    assert ".lobe-card.dimmed" in html
-    assert ".sublobe-card.dimmed" in html
-    # The old single-filter machinery must be gone
-    assert "activeFilter" not in html
-    # Reset clears both sets
+    # The dimmed style applies to hidden lobe rows.
+    assert ".lobe-row" in html
+    assert ".dimmed" in html
+    # Reset clears the set.
     assert "hiddenLobes.clear()" in html
-    assert "hiddenSublobes.clear()" in html
 
 
-def test_lobes_have_anti_overlap_physics_and_auto_fit(tmp_path):
-    """Lobe layout must have:
-       1. A wider anchor ring (radius * 0.55 instead of the old 0.40)
-       2. A pairwise lobe-centroid repulsion pass so hulls cannot overlap
-       3. fitToFilteredNodes() / resetCamera() helpers wired into the
-          lobe-card and sublobe-card click handlers, so applying a filter
-          actually frames the result instead of leaving the user staring
-          at off-screen nodes.
-    """
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-    # Bigger initial spacing
-    # Elliptical anchor ring so lobes always sit inside the viewport
-    assert "width * 0.36" in html
-    assert "height * 0.36" in html
-    # Lobe-vs-lobe centroid repulsion (the "never overlap" pass)
-    assert "Push different lobes apart" in html
-    assert "lobeCentroids.get(lobeKeys[i])" in html
-    # Auto-fit helpers
-    assert "function fitToFilteredNodes" in html
-    assert "fitToFilteredNodes(true)" in html  # instant detail refit after layout changes
-
-
-def test_mri_defaults_to_lobe_overview_with_drilldown(tmp_path):
-    """MRI starts as a lobe-first overview instead of the all-neuron force graph.
-
-    Big brains stay readable because the first canvas pass draws aggregate lobe
-    cells; clicking a lobe drills into the existing neuron graph for that lobe.
-    """
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    assert "let stageMode = 'overview'" in html
-    assert 'data-stage-mode="overview"' in html
-    assert 'data-stage-mode="detail"' in html
-    assert "function drawOverview" in html
-    assert "function focusLobe" in html
-    assert "hitTestOverview" in html
-    assert "setStageMode('overview', true)" in html
-
-
-def test_mri_big_brain_force_graph_has_performance_caps(tmp_path):
-    """The detail graph must avoid O(n^2) physics once a brain is large."""
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    assert "const FORCE_PAIRWISE_LIMIT = 180" in html
-    assert "filteredNodes.length <= FORCE_PAIRWISE_LIMIT" in html
-    assert "const DETAIL_EDGE_LIMIT = 700" in html
-    assert "if (stageMode === 'detail')" in html
-    assert "else if (needsDraw)" in html
-
-
-def test_sidebars_are_collapsible_and_long_names_dont_overflow(tmp_path):
-    """Left and right panels must each have a collapse button + a matching
-    floating expand button, and the lobes list must be constrained so long
-    lobe/sublobe names cannot introduce a horizontal scrollbar in the panel.
+def test_sidebars_are_collapsible(tmp_path):
+    """Left and right panels collapse via the panel-header buttons; floating
+    expand buttons live at the screen edge and toggle them back on.
     """
     brain = _make_brain_with_sublobes(tmp_path)
     output = tmp_path / "brain-mri.html"
@@ -708,16 +612,66 @@ def test_sidebars_are_collapsible_and_long_names_dont_overflow(tmp_path):
     assert ".panel-collapse-btn" in html
     assert ".panel-expand-btn" in html
 
-    # Grid overrides for the collapsed states
-    assert ".shell.left-collapsed" in html
-    assert ".shell.right-collapsed" in html
+    # Body grid overrides for the collapsed states (left-collapsed / right-collapsed)
+    assert ".body.left-collapsed" in html
+    assert ".body.right-collapsed" in html
 
     # JS toggle wiring
     assert "function togglePanel" in html
 
-    # Horizontal-overflow guards for long lobe / sublobe names
-    assert "overflow-x: hidden" in html
-    assert "grid-template-columns: minmax(0, 1fr)" in html
+
+def test_mri_defaults_to_lobe_overview_with_drilldown(tmp_path):
+    """MRI starts in the new C4 'brain' mode (Level 1: lobes + cross-lobe synapses).
+
+    Stage modes are 'brain' | 'lobe' | 'sublobe' | 'force'.
+    Default at startup is 'brain'. Clicking a lobe transitions to 'lobe'
+    (Level 2); from there a sublobe transitions to 'sublobe' (Level 3).
+    'force' is the legacy force graph available as Expert mode.
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Default startup mode
+    assert "let stageMode = 'brain'" in html
+    # Each of the 4 modes is a button in the header switch
+    assert 'data-stage-mode="brain"' in html
+    assert 'data-stage-mode="lobe"' in html
+    assert 'data-stage-mode="sublobe"' in html
+    assert 'data-stage-mode="force"' in html
+    # Drill-in entry points
+    assert "function drawBrainMap" in html
+    assert "function drawLobeMap" in html
+    assert "function drawSublobeMap" in html
+    assert "function focusLobe" in html
+    assert "function focusSublobe" in html
+    # Hit testers per level
+    assert "function hitTestBrainMap" in html
+    assert "function hitTestLobeMap" in html
+    assert "function hitTestSublobeMap" in html
+    # Bootstraps into 'brain' mode
+    assert "setStageMode('brain', null, null, { instant: true })" in html
+
+
+def test_mri_big_brain_force_graph_has_performance_caps(tmp_path):
+    """The legacy force graph (Expert mode) keeps the v2.16.3 perf caps.
+
+    FORCE_PAIRWISE_LIMIT and DETAIL_EDGE_LIMIT still gate O(n²) physics;
+    the loop only ticks when stageMode === 'force'. C4 modes use the
+    needsDraw idle path.
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert "const FORCE_PAIRWISE_LIMIT = 180" in html
+    assert "filteredNodes.length <= FORCE_PAIRWISE_LIMIT" in html
+    assert "const DETAIL_EDGE_LIMIT = 700" in html
+    # loop() ticks physics only in 'force' mode; otherwise idle on needsDraw.
+    assert "if (stageMode === 'force')" in html
+    assert "else if (needsDraw)" in html
 
 
 def test_search_chips_removed(tmp_path):
@@ -731,9 +685,8 @@ def test_search_chips_removed(tmp_path):
     assert "renderFilters" not in html
     assert "TYPE_LABELS" not in html
     assert "activeTypes" not in html
-    # Search input is still present and unchanged
+    # Search input is still present
     assert 'id="search-input"' in html
-    assert "Search the brain" in html
 
 
 def test_html_under_500kb(tmp_path):
@@ -848,78 +801,18 @@ def test_inner_sublobe_html_generation_succeeds(tmp_path):
     assert size_kb < 500
 
 
-def test_inner_sublobe_sidebar_has_nested_tree(tmp_path):
-    """Inner sublobes must render nested under their parent in the sidebar,
-    not as flat siblings. The JS must use expandedSublobes state and the
-    recursive renderSubTree helper.
+def test_inner_sublobe_l3_includes_descendants(tmp_path):
+    """The Level 3 sublobe map must include 3rd-level descendants in the
+    layered DAG so neurons inside an inner lobe (e.g. backend/endpoints/*)
+    show up when drilling into the parent sublobe (backend).
     """
     brain = _make_brain_with_inner_sublobes(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    # expandedSublobes state exists alongside expandedLobes
-    assert "const expandedSublobes = new Set()" in html
-    # Recursive tree builder
-    assert "renderSubTree" in html
-    # CSS hooks for nested sublobe groups
-    assert ".sublobe-group" in html
-    assert ".sublobe-card-wrap" in html
-
-
-def test_inner_sublobe_visibility_cascades(tmp_path):
-    """Hiding a parent sublobe must cascade to its inner sublobes.
-    The click handler must use startsWith to toggle descendants.
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # Cascade logic: startsWith(key + '/') for toggling descendants
-    assert "startsWith(child.key + '/')" in html or "startsWith(sub.key + '/')" in html
-
-
-def test_inner_sublobe_reset_clears_expanded_sublobes(tmp_path):
-    """The reset-view handler must clear expandedSublobes alongside the
-    other state sets.
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    assert "expandedSublobes.clear()" in html
-
-
-def test_inner_sublobe_no_canvas_hull(tmp_path):
-    """3rd-level sublobes must NOT get their own hull or label on the canvas.
-    They stay inside their parent 2nd-level sublobe hull. The skip is based
-    on sublobe key depth (more than 2 segments).
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # The skip guard for inner sublobes in the canvas hull pass
-    assert "sl.split('/').length > 2" in html
-
-
-def test_inner_sublobe_included_in_parent_hull(tmp_path):
-    """2nd-level sublobe hulls must include descendant nodes (3rd-level+)
-    via startsWith matching. Physics must merge inner sublobes into their
-    parent group so they cluster together.
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # Hull member filter uses startsWith to include descendants
-    assert "n.sublobe.startsWith(sl + '/')" in html
-    # Physics merges inner sublobes into parent group
-    assert "physicsSublobeKey" in html
+    # The L3 member-collection filter uses startsWith to include descendants.
+    assert "n.sublobe.startsWith(sublobeKey + '/')" in html
 
 
 def test_modal_nav_collapsed_with_toggle(tmp_path):
@@ -936,3 +829,209 @@ def test_modal_nav_collapsed_with_toggle(tmp_path):
     # JS: NAV_COLLAPSE constant and renderNav toggle logic
     assert "NAV_COLLAPSE" in html
     assert "renderNav" in html
+
+
+# ======================================================================
+# C4 redesign (v2.17.0) — Phase 1..5 acceptance tests
+# ======================================================================
+
+def _make_brain_with_cross_lobe_synapses(tmp_path):
+    """Brain with 3 lobes (projects, infrastructure, knowledge) and known
+    cross-lobe synapse counts so the L1 brain map renders aggregate edges.
+
+    - projects/auth.md ↔ infrastructure/keycloak.md  (related)
+    - projects/auth.md → knowledge/jwt.md            (related)
+    - infrastructure/keycloak.md ↔ knowledge/jwt.md  (related)
+    """
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / "brain.md").write_text("---\n---\n# Brain\n", encoding="utf-8")
+    (brain / "glossary.md").write_text("---\n---\n# Glossary\n", encoding="utf-8")
+
+    for lobe_name, h1 in [
+        ("projects", "Projects"),
+        ("infrastructure", "Infrastructure"),
+        ("knowledge", "Knowledge"),
+    ]:
+        d = brain / lobe_name
+        d.mkdir()
+        (d / "map.md").write_text(
+            f"---\nauto_generated: true\nparent: ../brain.md\n---\n# {h1}\n",
+            encoding="utf-8",
+        )
+
+    (brain / "projects" / "auth.md").write_text(
+        "---\nparent: ./map.md\n"
+        "related: [../infrastructure/keycloak.md, ../knowledge/jwt.md]\n"
+        "tags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Auth\n",
+        encoding="utf-8",
+    )
+    (brain / "infrastructure" / "keycloak.md").write_text(
+        "---\nparent: ./map.md\n"
+        "related: [../knowledge/jwt.md]\n"
+        "tags: [auth, identity]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# Keycloak\n",
+        encoding="utf-8",
+    )
+    (brain / "knowledge" / "jwt.md").write_text(
+        "---\nparent: ./map.md\nrelated: []\n"
+        "tags: [auth]\ncreated: 2026-04-01\nupdated: 2026-04-01\n---\n# JWT\n",
+        encoding="utf-8",
+    )
+    return brain
+
+
+def test_brain_map_renders_inter_lobe_edges_with_counts(tmp_path):
+    """Level 1 (drawBrainMap) must render aggregate cross-lobe edges using
+    the aggregateEdges helper and the drawAggregateEdge primitive.
+
+    The fixture brain has known cross-lobe synapses; we assert that the
+    generated HTML contains both helpers wired up (the canvas drawing
+    happens at runtime, but the JS must be present and the helper must
+    iterate over `aggregateEdges(g, 'brain')`).
+    """
+    brain = _make_brain_with_cross_lobe_synapses(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Helpers + L1 draw path
+    assert "function aggregateEdges" in html
+    assert "function drawAggregateEdge" in html
+    assert "function drawBrainMap" in html
+    # L1 specifically calls aggregateEdges with 'brain' as the level argument.
+    assert "aggregateEdges(graph, 'brain')" in html
+    # Edge label format with synapse count (the unicode arrow + total)
+    # appears in the drawAggregateEdge body.
+    assert "↔ " in html
+
+
+def test_lobe_map_renders_outbound_stubs(tmp_path):
+    """Level 2 (drawLobeMap) must render outbound stubs at the lobe boundary
+    listing synapses that leave the lobe, grouped by target lobe.
+    """
+    brain = _make_brain_with_cross_lobe_synapses(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # The outbound builder + the L2 draw path are present
+    assert "function buildLobeOutbound" in html
+    assert "function drawLobeMap" in html
+    # The grouped-by-other-lobe shape is what the spec calls for.
+    assert "lobeOutbound" in html
+
+
+def test_sublobe_map_layered_layout_is_deterministic(tmp_path):
+    """layoutSublobeMap is a pure function of (lobeKey, sublobeKey, members,
+    viewport). Two calls with the same brain produce byte-identical HTML
+    so snapshots stay stable across kluris mri runs.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    out1 = tmp_path / "first.html"
+    out2 = tmp_path / "second.html"
+    generate_mri_html(brain, out1)
+    generate_mri_html(brain, out2)
+    h1 = out1.read_text(encoding="utf-8")
+    h2 = out2.read_text(encoding="utf-8")
+    assert h1 == h2, "MRI HTML must be deterministic across runs"
+    # The layered layout is the function the spec adds; assert it exists
+    # and that it sorts ranks deterministically.
+    assert "function layoutSublobeMap" in h1
+    # Sort key: tags[0] then filename (the spec's deterministic ordering).
+    assert "tagFor" in h1
+    assert "file_name" in h1
+
+
+def test_aggregate_edges_drops_self_loops(tmp_path):
+    """The aggregateEdges helper must drop self-edges (within the same lobe at
+    L1, or same sublobe at L2) and exclude `parent:` edges.
+
+    We assert by inspecting the inline JS — the function body documents both
+    invariants in plain code (sk === tk skip + edge.type === 'parent' skip).
+    """
+    brain = _make_brain_with_cross_lobe_synapses(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Self-edge skip
+    assert "if (sk === tk) continue" in html
+    # parent: edges excluded
+    assert "if (edge.type === 'parent') continue" in html
+
+
+def test_expert_mode_toggle_re_enables_force_graph(tmp_path):
+    """Setting stageMode === 'force' re-enters the legacy force graph
+    (Expert mode) — the loop ticks physics and draws via legacyForce.draw().
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # The loop branches on 'force' to invoke tick().
+    assert "if (stageMode === 'force')" in html
+    assert "legacyForce.tick()" in html
+    # legacyForce wraps the physics + draw + hit-test code.
+    assert "function initLegacyForce" in html
+
+
+def test_breadcrumb_segments_are_clickable(tmp_path):
+    """The breadcrumb in the header bar must render each segment with a
+    `data-level="brain|lobe|sublobe"` attribute so click handlers can
+    route back to the correct stage mode.
+    """
+    brain = _make_brain_with_cross_lobe_synapses(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="breadcrumb"' in html
+    # The static initial breadcrumb has a data-level attribute on the brain crumb.
+    assert 'data-level="brain"' in html
+    # The renderer sets data-level dynamically as well — assert the JS path.
+    assert "btn.dataset.level = seg.level" in html
+    # Click handler maps level → setStageMode.
+    assert "setStageMode('brain')" in html
+    assert "setStageMode('lobe', seg.key)" in html
+
+
+def test_mri_header_has_full_width_bar_with_mode_switch(tmp_path):
+    """The header bar lives full-width above the three-column body and contains
+    the brain title, stats, breadcrumb pill, mode switch, and Fit/Reset icons.
+    """
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Header structure
+    assert 'class="mri-header"' in html
+    assert 'class="brain-title"' in html
+    assert 'class="stats"' in html
+    assert 'class="breadcrumb"' in html
+    assert 'class="mode-switch"' in html
+    # Mode switch buttons in spec order: Brain, Lobe, Sublobe, Expert
+    assert html.find('data-stage-mode="brain"') < html.find('data-stage-mode="lobe"')
+    assert html.find('data-stage-mode="lobe"') < html.find('data-stage-mode="sublobe"')
+    assert html.find('data-stage-mode="sublobe"') < html.find('data-stage-mode="force"')
+    # Fit + Reset icon buttons
+    assert 'id="btn-fit"' in html
+    assert 'id="btn-reset"' in html
+    # Stats line numbers (lobes / neurons / synapses)
+    assert 'id="stat-lobes"' in html
+    assert 'id="stat-neurons"' in html
+    assert 'id="stat-synapses"' in html
+
+
+def test_mri_uses_dot_grid_background(tmp_path):
+    """The stage canvas uses a flat dot-grid background (28×28) instead of
+    the legacy radial gradients."""
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Dot grid background-image + size
+    assert "radial-gradient(rgba(123, 167, 255, 0.08) 1px" in html
+    assert "background-size: 28px 28px" in html

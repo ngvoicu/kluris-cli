@@ -323,9 +323,9 @@ keep everything navigable.
 ## Visualize with `kluris mri`
 
 Run `kluris mri` to generate a self-contained HTML file that renders the whole
-brain as an interactive map — lobes as coloured clusters, neurons as nodes,
-synapses as the lines between them. Click any neuron to open its rendered
-markdown and related-neuron tabs.
+brain as an interactive map. The MRI opens with a **brain-architecture view**
+(lobes + cross-lobe synapses); click a lobe to drill into sublobes, click a
+sublobe to see neurons. Toggle **Expert mode** for the legacy force graph.
 
 ![kluris mri — overview of the ngvoicu-sme brain, with coloured lobes and synapse links](https://kluris.io/mri-overview.png)
 
