@@ -2,7 +2,6 @@
 
 import json
 
-from click.testing import CliRunner
 
 from kluris.cli import cli
 from conftest import create_test_brain
@@ -48,14 +47,12 @@ def test_wake_up_json_schema(temp_brain, cli_runner):
     assert "is_default" not in data  # field removed in multi-brain refactor
     assert str(temp_brain) == data["path"]
 
-    # Brain type and structure
-    assert data["type"] == "product-group"
-    assert isinstance(data["type_structure"], dict)
-    assert "projects" in data["type_structure"]
-    assert "infrastructure" in data["type_structure"]
-    assert "knowledge" in data["type_structure"]
+    # Scaffold-time `type` / `type_structure` overlay was removed in 2.16.0;
+    # agents read live structure from `lobes[]` instead.
+    assert "type" not in data
+    assert "type_structure" not in data
 
-    # Lobes: list of {name, neurons} dicts
+    # Lobes: list of {name, neurons} dicts (live, on-disk structure)
     assert isinstance(data["lobes"], list)
     lobe_names = {lobe["name"] for lobe in data["lobes"]}
     assert {"projects", "infrastructure", "knowledge"} <= lobe_names
@@ -99,8 +96,9 @@ def test_wake_up_recent_limited_to_five(temp_brain, cli_runner):
     assert data["recent"][0]["path"] == "knowledge/neuron-09.md"
 
 
-def test_wake_up_type_structure_matches_brain_type(tmp_path, temp_config, cli_runner, monkeypatch):
-    """type_structure reflects the brain's registered type, not just the default."""
+def test_wake_up_lobes_reflect_research_scaffold(tmp_path, temp_config, cli_runner, monkeypatch):
+    """A brain scaffolded with --type research surfaces its actual lobes via
+    `lobes[]`, not via a stale `type_structure` overlay."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     create_test_brain(cli_runner, "research-brain", tmp_path, type="research")
@@ -108,10 +106,37 @@ def test_wake_up_type_structure_matches_brain_type(tmp_path, temp_config, cli_ru
     result = cli_runner.invoke(cli, ["wake-up", "--brain", "research-brain", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["type"] == "research"
-    assert "literature" in data["type_structure"]
-    assert "experiments" in data["type_structure"]
-    assert "projects" not in data["type_structure"]
+    assert "type" not in data
+    assert "type_structure" not in data
+    lobe_names = {lobe["name"] for lobe in data["lobes"]}
+    assert "literature" in lobe_names
+    assert "experiments" in lobe_names
+    assert "projects" not in lobe_names
+
+
+def test_wake_up_lobes_reflect_live_changes(tmp_path, temp_config, cli_runner, monkeypatch):
+    """Adding a top-level lobe directory must surface in lobes[] without
+    needing the user to re-register the brain."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    create_test_brain(cli_runner, "live-brain", tmp_path)
+
+    brain_path = tmp_path / "live-brain"
+    new_lobe = brain_path / "monitoring"
+    new_lobe.mkdir()
+    (new_lobe / "map.md").write_text(
+        "---\nauto_generated: true\nupdated: 2026-04-01\n---\n# Monitoring\n\n"
+        "Alerts, dashboards, and observability practice.\n",
+        encoding="utf-8",
+    )
+
+    result = cli_runner.invoke(cli, ["wake-up", "--brain", "live-brain", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    lobe_names = {lobe["name"] for lobe in data["lobes"]}
+    assert "monitoring" in lobe_names
+    descs = {l["name"]: l["description"] for l in data["lobes"]}
+    assert "Alerts" in descs.get("monitoring", "")
 
 
 def test_wake_up_lobes_include_description(tmp_path, temp_config, cli_runner, monkeypatch):

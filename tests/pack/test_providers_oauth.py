@@ -10,7 +10,7 @@ import pytest
 import respx
 
 from kluris.pack.config import Config
-from kluris.pack.providers.base import AuthError, RequestError
+from kluris.pack.providers.base import AuthError, ContextLimitError, RequestError
 from kluris.pack.providers.oauth import OAuthProvider
 
 pytestmark = pytest.mark.asyncio
@@ -55,6 +55,10 @@ def _smoke_response() -> dict:
             }
         ],
     }
+
+
+def _sse_lines(events: list[str]) -> bytes:
+    return ("\n".join(events) + "\n").encode("utf-8")
 
 
 # --- Token fetch ----------------------------------------------------------
@@ -152,6 +156,44 @@ async def test_token_fetch_timeout_raises_auth_error(respx_mock):
     cfg = _build_config()
     respx_mock.post(_TOKEN_URL).mock(side_effect=httpx.ConnectTimeout("simulated"))
     with pytest.raises(AuthError):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_token_fetch_http_error_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(side_effect=httpx.ConnectError("simulated"))
+    with pytest.raises(AuthError, match="http error"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_token_fetch_non_json_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(return_value=httpx.Response(200, text="oops"))
+    with pytest.raises(AuthError, match="not JSON"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_token_fetch_missing_access_token_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(200, json={"expires_in": 3600})
+    )
+    with pytest.raises(AuthError, match="missing access_token"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_token_fetch_invalid_expires_in_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": {"bad": "shape"}}
+        )
+    )
+    with pytest.raises(AuthError, match="invalid expires_in"):
         await OAuthProvider(cfg).smoke_test()
 
 
@@ -282,3 +324,204 @@ async def test_smoke_rejects_non_completion_response(respx_mock):
     )
     with pytest.raises(RequestError):
         await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_auth_status_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(401, json={"error": "bad token"})
+    )
+    with pytest.raises(AuthError, match="auth failed"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_non_2xx_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(500, json={"error": "upstream"})
+    )
+    with pytest.raises(RequestError, match="non-2xx"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_non_json_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(200, text="<html>proxy</html>")
+    )
+    with pytest.raises(RequestError, match="not JSON"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_timeout_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        side_effect=httpx.ReadTimeout("simulated")
+    )
+    with pytest.raises(RequestError, match="timeout"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_smoke_http_error_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        side_effect=httpx.ConnectError("simulated")
+    )
+    with pytest.raises(RequestError, match="http error"):
+        await OAuthProvider(cfg).smoke_test()
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_yields_openai_events_and_sends_bearer(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok-stream", "expires_in": 3600}
+        )
+    )
+    route = respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_lines([
+                "data: " + json.dumps({"choices": [{"delta": {"content": "hi"}}]}),
+                "",
+                "data: " + json.dumps({
+                    "choices": [],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+                }),
+                "",
+                "data: [DONE]",
+                "",
+            ]),
+        )
+    )
+
+    events = [
+        e async for e in OAuthProvider(cfg).complete_stream(
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+        )
+    ]
+
+    assert route.calls.last.request.headers.get("Authorization") == "Bearer tok-stream"
+    sent = json.loads(route.calls.last.request.content)
+    assert sent["messages"] == [{"role": "user", "content": "hello"}]
+    assert [e for e in events if e["kind"] == "token"] == [
+        {"kind": "token", "text": "hi"}
+    ]
+    assert [e for e in events if e["kind"] == "usage"] == [
+        {"kind": "usage", "input": 2, "output": 1}
+    ]
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_auth_status_raises_auth_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(403, json={"error": "forbidden"})
+    )
+    with pytest.raises(AuthError, match="streaming auth failed"):
+        async for _ in OAuthProvider(cfg).complete_stream(messages=[], tools=[]):
+            pass
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_raises_context_limit_on_413(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(413, json={"error": "too big"})
+    )
+    with pytest.raises(ContextLimitError):
+        async for _ in OAuthProvider(cfg).complete_stream(messages=[], tools=[]):
+            pass
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_raises_context_limit_on_marker_400(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            400,
+            json={"error": "context_length_exceeded: maximum 8192 tokens"},
+        )
+    )
+    with pytest.raises(ContextLimitError):
+        async for _ in OAuthProvider(cfg).complete_stream(messages=[], tools=[]):
+            pass
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_non_2xx_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        return_value=httpx.Response(500, text="upstream broke")
+    )
+    with pytest.raises(RequestError, match="streaming non-2xx"):
+        async for _ in OAuthProvider(cfg).complete_stream(messages=[], tools=[]):
+            pass
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stream_http_error_raises_request_error(respx_mock):
+    cfg = _build_config()
+    respx_mock.post(_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "tok", "expires_in": 3600}
+        )
+    )
+    respx_mock.post(_API_URL + "/v1/chat/completions").mock(
+        side_effect=httpx.ConnectError("simulated")
+    )
+    with pytest.raises(RequestError, match="streaming http error"):
+        async for _ in OAuthProvider(cfg).complete_stream(messages=[], tools=[]):
+            pass

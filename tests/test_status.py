@@ -33,6 +33,22 @@ def test_status_json(tmp_path, monkeypatch):
     data = json.loads(result.output)
     assert data["ok"] is True
     assert "brains" in data
+    # `type` was dropped from the BrainEntry / status payload in 2.16.0.
+    for entry in data["brains"]:
+        assert "type" not in entry
+
+
+def test_status_human_heading_no_type_suffix(tmp_path, monkeypatch):
+    """The human-readable status heading must not show a `(type)` suffix."""
+    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runner = CliRunner()
+    create_test_brain(runner, "my-brain", tmp_path)
+    result = runner.invoke(cli, ["status"])
+    assert result.exit_code == 0
+    # The heading is `[bold]my-brain[/bold]` only — no parenthetical suffix.
+    assert "my-brain" in result.output
+    assert "(product-group)" not in result.output
 
 
 def test_status_no_git_brain(tmp_path, monkeypatch):

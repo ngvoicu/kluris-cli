@@ -1,11 +1,10 @@
 """Tests for brain scaffolding."""
 
-import re
 from pathlib import Path
 
 import yaml
 
-from kluris.core.brain import get_type_defaults, scaffold_brain, validate_brain_name
+from kluris.core.brain import scaffold_brain, validate_brain_name
 
 
 # --- [TEST-KLU-09] Brain scaffolding ---
@@ -81,6 +80,32 @@ def test_creates_readme(tmp_path):
     readme = (tmp_path / "brain" / "README.md").read_text()
     assert "/kluris-brain" in readme
     assert "auto-fix safe issues" in readme
+
+
+def test_generated_readme_teaches_git_native_workflow(tmp_path):
+    """README must teach git clone + kluris register, not the deleted wrappers."""
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
+    readme = (tmp_path / "brain" / "README.md").read_text()
+
+    # New workflow appears
+    assert "git clone <this-repo-url>" in readme
+    assert "kluris register" in readme
+    # Removed commands must not be advertised anywhere in the README
+    for stale in (
+        "kluris clone",
+        "kluris push",
+        "kluris pull",
+        "kluris branch",
+    ):
+        assert stale not in readme, f"removed command leaked into README: {stale}"
+    # No zip path
+    assert ".zip" not in readme
+    # Rule #8 mentions git directly
+    assert "git directly" in readme
+    # CLI commands block does not list deleted commands
+    assert "kluris dream" in readme
+    assert "kluris status" in readme
+    assert "kluris mri" in readme
 
 
 def test_generated_readme_uses_brain_named_slash(tmp_path):

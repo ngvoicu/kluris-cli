@@ -35,6 +35,20 @@ def _install(tmp_path, agent_name="claude", skill_name="kluris", brain_name="tes
     )
 
 
+def test_skill_omits_removed_cli_commands():
+    """The rendered SKILL.md must not advertise any of the deleted commands
+    (clone/push/pull/branch) and must point at git for sync."""
+    body_single = _render()
+    body_multi = _render(skill_name="kluris-test-brain")
+    for body, label in ((body_single, "single-brain"), (body_multi, "multi-brain")):
+        for stale in ("kluris push", "kluris pull", "kluris branch", "kluris clone"):
+            assert stale not in body, f"{label}: removed command leaked: {stale}"
+        # The new approval-protocol tail uses git directly
+        assert "commit with git" in body, f"{label}: missing git-commit guidance"
+        # Wake-up refresh-trigger sentence does not list `kluris push`
+        # (already covered by the substring test above, kept explicit for clarity).
+
+
 def test_skill_has_capture_from_session_intent():
     """'Capture from session' reads the conversation itself (not the
     project code) and routes facts into existing or new lobes/neurons.
@@ -370,9 +384,11 @@ def test_skill_learn_has_explicit_stop():
     assert "STOP. NEVER write until the human explicitly approves" in _render()
 
 
-def test_skill_cli_section_mentions_pull():
-    """Regression guard: the CLI commands section must reference `kluris pull`
-    so agents know about the fetch-remote-changes primitive.
+def test_skill_cli_section_points_at_git_for_sync():
+    """`kluris pull` was removed in 2.16.0; sync goes through git directly.
+    The CLI commands section must point users there instead.
     """
     c = _render()
-    assert "kluris pull" in c
+    assert "kluris pull" not in c
+    assert "git -C" in c
+    assert "plain git repos" in c

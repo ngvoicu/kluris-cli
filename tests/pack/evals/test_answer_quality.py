@@ -85,20 +85,3 @@ async def test_eval_count_meets_spec_minimum():
     """
     assert len(CASES) >= 8
 
-
-async def test_live_model_evals_are_marker_skipped():
-    """The live eval module exists, registers ``llm_eval`` marker, and
-    skips by default. We don't run it here — just confirm the marker
-    is wired in :file:`pyproject.toml`.
-    """
-    import tomllib
-    from pathlib import Path
-
-    repo_root = Path(__file__).resolve().parents[3]
-    cfg = tomllib.loads((repo_root / "pyproject.toml").read_text())
-    markers = cfg.get("tool", {}).get("pytest", {}).get(
-        "ini_options", {}
-    ).get("markers", [])
-    if not markers:
-        pytest.skip("pyproject.toml has no pytest markers section yet")
-    assert any("llm_eval" in m for m in markers)

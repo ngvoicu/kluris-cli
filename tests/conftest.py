@@ -5,7 +5,6 @@ import subprocess
 import pytest
 import yaml
 from click.testing import CliRunner
-from pathlib import Path
 
 from kluris.cli import cli
 
@@ -54,8 +53,6 @@ def temp_brain(tmp_path, temp_config):
     (brain_path / "kluris.yml").write_text(yaml.dump({
         "name": "test-brain",
         "description": "Test brain",
-        "type": "product-group",
-        "git": {"commit_prefix": "brain:"},
         "agents": {"commands_for": ["claude"]},
     }), encoding="utf-8")
 
@@ -90,24 +87,12 @@ def temp_brain(tmp_path, temp_config):
             "test-brain": {
                 "path": str(brain_path),
                 "description": "Test brain",
-                "type": "product-group",
             }
         },
     }
     temp_config.write_text(yaml.dump(config_data), encoding="utf-8")
 
     return brain_path
-
-
-@pytest.fixture
-def bare_remote(tmp_path_factory):
-    """Bare git repo for testing push/clone."""
-    remote_path = tmp_path_factory.mktemp("remote")
-    subprocess.run(["git", "init", "--bare"], cwd=remote_path,
-                   capture_output=True)
-    subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/main"],
-                   cwd=remote_path, capture_output=True)
-    return remote_path
 
 
 def create_test_brain_with_neurons(runner, name, path, count=100):

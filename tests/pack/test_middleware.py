@@ -7,8 +7,8 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
-from kluris.pack.config import Config
-from kluris.pack.main import _redact, create_app
+from kluris.pack.config import Config, ConfigError
+from kluris.pack.main import _provider_from_config, _redact, create_app
 from kluris.pack.middleware import RedactingLogFilter, install_redacting_filter
 
 
@@ -201,6 +201,73 @@ def test_create_app_systemexits_on_invalid_brain(
             provider=stub_provider,
             allow_writable_brain=True,
         )
+
+
+def test_create_app_enters_brain_only_mode_on_config_error(
+    fixture_brain, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("KLURIS_BRAIN_DIR", str(fixture_brain))
+    monkeypatch.setenv("KLURIS_DATA_DIR", str(tmp_path / "data"))
+
+    def fail_load_from_env():
+        raise ConfigError("missing auth")
+
+    monkeypatch.setattr(Config, "load_from_env", fail_load_from_env)
+    app = create_app(allow_writable_brain=True)
+
+    assert app.state.llm_ready is False
+    assert app.state.provider is None
+    assert app.state.config.brain_dir == fixture_brain
+    assert "starting in BRAIN-ONLY mode" in capsys.readouterr().err
+
+
+def test_create_app_prints_boot_warnings(
+    api_key_env, fixture_brain, tmp_path, stub_provider, capsys
+):
+    env = dict(
+        api_key_env,
+        KLURIS_BASE_URL="http://api.test/v1/chat/completions",
+        KLURIS_BRAIN_DIR=str(fixture_brain),
+        KLURIS_DATA_DIR=str(tmp_path / "data"),
+    )
+    cfg = Config.load_from_env(env)
+    create_app(
+        config=cfg,
+        provider=stub_provider,
+        allow_writable_brain=True,
+        skip_smoke_test=True,
+    )
+
+    assert "trimmed '/v1/chat/completions'" in capsys.readouterr().err
+
+
+def test_create_app_prints_tls_insecure_warning(
+    api_key_env, fixture_brain, tmp_path, stub_provider, capsys
+):
+    env = dict(
+        api_key_env,
+        KLURIS_BRAIN_DIR=str(fixture_brain),
+        KLURIS_DATA_DIR=str(tmp_path / "data"),
+        KLURIS_TLS_INSECURE="1",
+    )
+    cfg = Config.load_from_env(env)
+    create_app(
+        config=cfg,
+        provider=stub_provider,
+        allow_writable_brain=True,
+        skip_smoke_test=True,
+    )
+
+    assert "KLURIS_TLS_INSECURE=1" in capsys.readouterr().err
+
+
+def test_provider_factory_selects_auth_mode(api_key_config: Config, oauth_env):
+    from kluris.pack.providers.apikey import APIKeyProvider
+    from kluris.pack.providers.oauth import OAuthProvider
+
+    assert isinstance(_provider_from_config(api_key_config), APIKeyProvider)
+    oauth_cfg = Config.load_from_env(dict(oauth_env, KLURIS_BRAIN_DIR="/app/brain"))
+    assert isinstance(_provider_from_config(oauth_cfg), OAuthProvider)
 
 
 def test_healthz_returns_200(api_key_config: Config, stub_provider):

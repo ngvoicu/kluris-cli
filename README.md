@@ -71,7 +71,7 @@ Kluris lives in two places. Knowing which is which makes everything else click.
 
 | Surface | Prompt | Where you type it | What it is | Examples |
 |---------|:------:|-------------------|-----------|----------|
-| **Terminal** | `$ kluris …` | Your shell — bash, zsh, fish, PowerShell | The `kluris` Python CLI | `kluris create`, `kluris dream`, `kluris push`, `kluris mri`, `kluris doctor` |
+| **Terminal** | `$ kluris …` | Your shell — bash, zsh, fish, PowerShell | The `kluris` Python CLI | `kluris create`, `kluris dream`, `kluris status`, `kluris mri`, `kluris doctor` |
 | **AI agent** | `> /kluris …` | Inside your coding agent — Claude Code, Cursor, Windsurf, Codex, Copilot, Gemini CLI, Kilo, Junie | The per-brain slash-command skill Kluris keeps refreshed automatically | `/kluris learn …`, `/kluris remember …`, `/kluris search …`, `/kluris what …`, `/kluris implement …`, `/kluris fix …` |
 
 Throughout this README:
@@ -136,7 +136,7 @@ and any deprecation warnings. That's enough context for the agent to decode
 jargon and avoid citing superseded neurons without touching the filesystem
 again for the rest of the session. You never call it manually. The agent
 refreshes the snapshot after mutating commands (`/kluris remember`,
-`/kluris learn`, `kluris dream`, `kluris push`) or direct brain-file edits.
+`/kluris learn`, `kluris dream`) or direct brain-file edits.
 
 If you want to see what the agent sees, run it yourself **in your terminal**:
 
@@ -156,9 +156,9 @@ you mean.
 
 CLI commands prompt interactively when 2+ brains are registered:
 
-- Fan-out commands (`dream`, `push`, `status`, `mri`) show
+- Fan-out commands (`dream`, `status`, `mri`, `companion add/remove`) show
   `[1] acme [2] personal [3] all`. Pick a single brain or apply to every brain.
-- Single-brain commands (`wake-up`, `neuron`, `lobe`) show
+- Single-brain commands (`wake-up`, `search`) show
   `[1] acme [2] personal` (no `all` option).
 
 Pass `--brain NAME` to skip the picker, or `--brain all` on fan-out commands
@@ -169,20 +169,19 @@ Code that inherit a terminal but cannot block on prompts).
 
 ### Joining an existing brain
 
+A Kluris brain is a plain git repository. To adopt one, clone it with `git`
+and register the local directory with kluris:
+
 **In your terminal:**
 
 ```bash
-kluris clone git@github.com:team/brain.git    # fetch from a git remote and register
-kluris register ~/brains/acme-sme             # register a brain that is already on disk
-kluris register ~/Downloads/acme-sme.zip      # unpack a brain zip and register it
+git clone git@github.com:team/brain.git ~/brains/acme   # plain git
+kluris register ~/brains/acme                            # adopt it
 ```
 
-Use `clone` when the brain lives at a git remote. Use `register` when a
-teammate handed you a zip, the brain is sitting in a backup folder, or the
-brain is already on disk for any other reason. Directory registration is
-in-place -- Kluris does not copy or move the source. Zip registration
-extracts into `~/<zip-basename>` by default, or `--dest <path>` if you want
-it elsewhere.
+Registration is in-place -- Kluris does not copy or move the source. If a
+teammate handed you a zip, unzip it first (`unzip brain.zip -d ~/brains/acme`)
+and then run `kluris register ~/brains/acme`.
 
 ### Learning a project
 
@@ -258,12 +257,13 @@ one-by-one flow. Handy after a `learn` binge or a big merge.
 
 ```bash
 kluris dream         # regenerate maps, fix links, validate structure
-kluris branch        # show, switch, or create branches
-kluris push          # commit and push to the current branch
-kluris pull          # pull remote changes for the current branch
 kluris status        # brain tree, neuron counts, recent changes
 kluris mri           # generate visualization, prints the link to open in your browser
 ```
+
+Brains are git repos. Use `git push` / `git pull` / `git checkout` from the
+brain directory like any other repo. Run `kluris dream` first if you've made
+structural changes so the auto-generated maps land in the same commit.
 
 ### Deprecating a decision
 
@@ -297,7 +297,7 @@ list via `kluris dream --json`. They flag affected topics when asked.
 
 ```
 acme-brain/
-├── kluris.yml              # Local config (gitignored -- your agents, branch)
+├── kluris.yml              # Local config (gitignored -- agents, companions)
 ├── brain.md                # Root lobes directory (auto-generated)
 ├── glossary.md             # Domain terms (hand-edited)
 ├── README.md               # Usage guide
@@ -431,8 +431,7 @@ Run these in bash, zsh, fish, or PowerShell. They handle setup, git, maintenance
 | Command | What it does |
 |---------|-------------|
 | `kluris create` | Create a new brain (interactive wizard) |
-| `kluris clone <url>` | Clone a brain from git |
-| `kluris register <path-or-zip>` | Register an existing brain on disk, or extract a brain zip and register it |
+| `kluris register <path>` | Register an existing brain directory on disk |
 | `kluris list` | List registered brains |
 | `kluris status` | Brain tree, neuron counts, recent changes |
 | `kluris search <query>` | Ranked search across neurons, glossary, brain.md (`--lobe`, `--tag`, `--limit`, `--json`) |
@@ -440,15 +439,23 @@ Run these in bash, zsh, fish, or PowerShell. They handle setup, git, maintenance
 | `kluris companion add specmint-core\|specmint-tdd` | Opt a brain into an embedded companion playbook |
 | `kluris companion remove specmint-core\|specmint-tdd` | Remove a companion opt-in from a brain |
 | `kluris dream` | Regenerate maps, fix links, validate structure |
-| `kluris branch [name]` | Show, switch, or create a git branch (`--list` to see all) |
-| `kluris push` | Commit and push to the current branch |
-| `kluris pull` | Pull remote changes for the current branch |
+| `kluris pack` | Pack a brain into a self-contained Docker chat server |
 | `kluris mri` | Visualize the brain (opens in browser by default) |
 | `kluris remove <name>` | Unregister a brain (keeps files on disk) |
 | `kluris doctor` | Check prerequisites, refresh agent skills, and refresh companion playbooks after `pipx upgrade kluris`. Pass `--no-refresh` to skip writes. |
 | `kluris help` | Show command help |
 
 All CLI commands support `--json` for machine-readable output.
+
+Sync, commit, and branch operations go through `git` directly. Brains are
+plain git repos — use `git -C <brain-path> push / pull / status / checkout`
+from the brain directory like any other repo.
+
+> **Upgrading from 2.15.x?** See [`MIGRATION.md`](./MIGRATION.md) for the
+> 2.16.0 changes — four CLI commands (`clone`, `push`, `pull`, `branch`)
+> were removed and a few persisted config fields are now ignored. Existing
+> installations keep working without migration; the guide walks through the
+> optional manual cleanup.
 
 ### Inside your AI coding agent — `> /kluris ...`
 
@@ -481,8 +488,7 @@ not shared. Each team member can have different settings.
 ```yaml
 name: my-brain
 description: my-brain knowledge base
-git:
-  commit_prefix: "brain:"
+# `companions:` and `agents:` may also appear here.
 ```
 
 ## Brain vocabulary

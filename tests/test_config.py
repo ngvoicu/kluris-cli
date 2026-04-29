@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
+import pytest
 import kluris
 from kluris.core.config import (
     AgentsConfig,
     BrainConfig,
     BrainEntry,
-    GitConfig,
     GlobalConfig,
     get_config_path,
     read_brain_config,
@@ -24,7 +24,7 @@ from kluris.core.config import (
 
 def test_kluris_importable():
     assert hasattr(kluris, "__version__")
-    assert kluris.__version__ == "2.15.9"
+    assert kluris.__version__ == "2.16.0"
 
 
 def test_global_config_defaults():
@@ -37,40 +37,44 @@ def test_global_config_with_brains():
         brains={
             "my-brain": BrainEntry(
                 path="/home/user/my-brain",
-                repo="https://github.com/team/brain.git",
                 description="Team brain",
-                type="product-group",
             )
         },
     )
     assert "my-brain" in cfg.brains
     entry = cfg.brains["my-brain"]
     assert entry.path == "/home/user/my-brain"
-    assert entry.repo == "https://github.com/team/brain.git"
     assert entry.description == "Team brain"
-    assert entry.type == "product-group"
 
 
 def test_brain_entry_defaults():
     entry = BrainEntry(path="/x")
     assert entry.path == "/x"
-    assert entry.repo is None
     assert entry.description == ""
-    assert entry.type == "product-group"
+
+
+def test_brain_entry_model_shape():
+    """BrainEntry only carries `path` and `description` as of 2.16.0."""
+    assert BrainEntry.model_fields.keys() == {"path", "description"}
 
 
 def test_brain_config_defaults():
     cfg = BrainConfig(name="x")
     assert cfg.name == "x"
     assert cfg.description == ""
-    assert isinstance(cfg.git, GitConfig)
     assert isinstance(cfg.agents, AgentsConfig)
     assert cfg.companions == []
 
 
-def test_git_config_defaults():
-    cfg = GitConfig()
-    assert cfg.commit_prefix == "brain:"
+def test_brain_config_model_shape():
+    """BrainConfig drops the legacy `git` block as of 2.16.0."""
+    assert BrainConfig.model_fields.keys() == {"name", "description", "agents", "companions"}
+
+
+def test_git_config_class_removed():
+    """`GitConfig` was deleted along with `BrainConfig.git`."""
+    with pytest.raises(ImportError):
+        from kluris.core.config import GitConfig  # noqa: F401
 
 
 def test_agents_config_defaults():
@@ -160,33 +164,86 @@ def test_config_not_found_returns_empty(tmp_path, monkeypatch):
     assert cfg.brains == {}
 
 
-def test_legacy_default_brain_pointing_at_real_brain_is_silently_dropped(tmp_path, monkeypatch):
-    """Loading a kluris<=1.6.x YAML with default_brain set to a registered brain works."""
+# --- Legacy-tolerance regressions: old YAML keys must load silently ---
+
+
+def test_legacy_default_brain_is_tolerated(tmp_path, monkeypatch):
+    """Loading a kluris<=1.6.x YAML with default_brain set must work without
+    raising. Pydantic's default extra="ignore" drops the key at validation."""
     import yaml
     config_path = tmp_path / "config.yml"
     monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
     config_path.write_text(yaml.dump({
         "default_brain": "my-brain",
-        "brains": {"my-brain": {"path": "/tmp/my-brain", "description": "x", "type": "product-group"}},
+        "brains": {"my-brain": {"path": "/tmp/my-brain", "description": "x"}},
     }), encoding="utf-8")
     cfg = read_global_config()
     assert "my-brain" in cfg.brains
     assert not hasattr(cfg, "default_brain")
 
 
-def test_legacy_default_brain_pointing_at_unregistered_brain_is_silently_dropped(tmp_path, monkeypatch):
-    """Loading a kluris<=1.6.x YAML with default_brain pointing at an unknown brain still works."""
+def test_legacy_brain_entry_keys_are_tolerated(tmp_path, monkeypatch):
+    """Loading a 2.15.x global config with `type:` and `repo:` per brain must
+    succeed. The runtime model omits both fields."""
     import yaml
     config_path = tmp_path / "config.yml"
     monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
     config_path.write_text(yaml.dump({
-        "default_brain": "ghost",
-        "brains": {"foo": {"path": "/tmp/foo", "description": "x", "type": "product-group"}},
+        "brains": {
+            "foo": {
+                "path": "/tmp/foo",
+                "description": "x",
+                "type": "product-group",     # legacy
+                "repo": "git@example:t/foo", # legacy
+            }
+        },
     }), encoding="utf-8")
     cfg = read_global_config()
     assert "foo" in cfg.brains
-    assert "ghost" not in cfg.brains
-    assert not hasattr(cfg, "default_brain")
+    entry = cfg.brains["foo"]
+    assert entry.path == "/tmp/foo"
+    assert entry.description == "x"
+    assert not hasattr(entry, "type")
+    assert not hasattr(entry, "repo")
+    assert entry.model_dump() == {"path": "/tmp/foo", "description": "x"}
+
+
+def test_legacy_kluris_yml_git_block_is_tolerated(tmp_path):
+    """Loading a 2.15.x kluris.yml with a `git: { commit_prefix: ... }` block
+    must succeed. The runtime model has no `git` attribute."""
+    brain_path = tmp_path / "old-brain"
+    brain_path.mkdir()
+    (brain_path / "kluris.yml").write_text(
+        "name: old-brain\ndescription: y\ngit:\n  commit_prefix: 'brain:'\n",
+        encoding="utf-8",
+    )
+
+    loaded = read_brain_config(brain_path)
+    assert loaded.name == "old-brain"
+    assert loaded.description == "y"
+    assert not hasattr(loaded, "git")
+
+
+def test_write_global_config_does_not_emit_legacy_keys(tmp_path, monkeypatch):
+    """Round-trip: writing a fresh BrainEntry must not produce any of the
+    dropped keys (`type`, `repo`, `default_brain`) on disk."""
+    config_path = tmp_path / "config.yml"
+    monkeypatch.setenv("KLURIS_CONFIG", str(config_path))
+    register_brain("foo", BrainEntry(path="/tmp/foo", description="x"))
+    raw = config_path.read_text(encoding="utf-8")
+    assert "type" not in raw
+    assert "repo" not in raw
+    assert "default_brain" not in raw
+
+
+def test_write_brain_config_does_not_emit_legacy_keys(tmp_path):
+    """Round-trip: writing a fresh BrainConfig must not produce a `git:` block."""
+    brain_path = tmp_path / "new-brain"
+    brain_path.mkdir()
+    write_brain_config(BrainConfig(name="new-brain", description="y"), brain_path)
+    raw = (brain_path / "kluris.yml").read_text(encoding="utf-8")
+    assert "git:" not in raw
+    assert "commit_prefix" not in raw
 
 
 def test_register_brain(tmp_path, monkeypatch):

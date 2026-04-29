@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from kluris.pack.tools import brain as brain_tools
 from kluris.pack.tools.brain import (
     NotFoundError,
     SandboxError,
@@ -150,6 +151,11 @@ def test_resolve_in_brain_rejects_symlink_escape(fixture_brain, tmp_path):
         resolve_in_brain(fixture_brain, "knowledge/escape.md")
 
 
+def test_resolve_in_brain_rejects_empty_path(fixture_brain):
+    with pytest.raises(SandboxError):
+        resolve_in_brain(fixture_brain, "")
+
+
 # --- multi_read --------------------------------------------------------------
 
 
@@ -200,6 +206,12 @@ def test_multi_read_empty_list_returns_empty_results(fixture_brain):
     assert out["results"] == []
 
 
+def test_multi_read_rejects_non_list(fixture_brain):
+    out = multi_read_tool(fixture_brain, "knowledge/jwt.md", max_paths=5)
+    assert out["ok"] is False
+    assert "list" in out["error"]
+
+
 @pytest.mark.parametrize("max_paths", [1, 5, 20])
 def test_multi_read_limit_parametrized(fixture_brain, max_paths):
     out = multi_read_tool(
@@ -224,6 +236,42 @@ def test_related_handles_no_links(fixture_brain):
     out = related_tool(fixture_brain, "knowledge/raw-sql-modern.md")
     assert out["outbound"] == []
     assert isinstance(out["inbound"], list)
+
+
+def test_related_ignores_malformed_and_invalid_links(fixture_brain):
+    (fixture_brain / "knowledge" / "messy.md").write_text(
+        "---\n"
+        "parent: ./map.md\n"
+        "updated: 2026-04-16\n"
+        "related:\n"
+        "  - 123\n"
+        "  - ../projects/btb/auth.md\n"
+        "  - ../projects/btb/auth.md\n"
+        "  - ../../outside.md\n"
+        "  - ./missing.md\n"
+        "---\n"
+        "# Messy\n\nLinks include values that should be ignored.\n",
+        encoding="utf-8",
+    )
+    (fixture_brain / "knowledge" / "scalar-related.md").write_text(
+        "---\nparent: ./map.md\nupdated: 2026-04-17\nrelated: nope\n---\n# Scalar\n",
+        encoding="utf-8",
+    )
+    (fixture_brain / "knowledge" / "non-string-related.md").write_text(
+        "---\n"
+        "parent: ./map.md\n"
+        "updated: 2026-04-18\n"
+        "related:\n"
+        "  - 123\n"
+        "---\n"
+        "# Non String\n",
+        encoding="utf-8",
+    )
+
+    out = related_tool(fixture_brain, "knowledge/messy.md")
+    assert out["outbound"] == ["projects/btb/auth.md"]
+    assert "knowledge/scalar-related.md" not in out["inbound"]
+    assert "knowledge/non-string-related.md" not in out["inbound"]
 
 
 # --- recent ------------------------------------------------------------------
@@ -259,6 +307,19 @@ def test_recent_limit_honored(fixture_brain):
     assert len(out["results"]) <= 2
 
 
+def test_recent_skips_unreadable_frontmatter(fixture_brain, monkeypatch):
+    original = brain_tools.read_frontmatter
+
+    def flaky_read(path):
+        if path.name == "jwt.md":
+            raise ValueError("bad frontmatter")
+        return original(path)
+
+    monkeypatch.setattr(brain_tools, "read_frontmatter", flaky_read)
+    out = recent_tool(fixture_brain, lobe="knowledge", include_deprecated=True)
+    assert "knowledge/jwt.md" not in {r["path"] for r in out["results"]}
+
+
 # --- glossary ----------------------------------------------------------------
 
 
@@ -288,6 +349,25 @@ def test_glossary_missing_file(tmp_path):
     assert out["entries"] == []
 
 
+def test_glossary_read_error_returns_empty(fixture_brain, monkeypatch):
+    original = brain_tools.read_frontmatter
+
+    def flaky_read(path):
+        if path.name == "glossary.md":
+            raise ValueError("bad frontmatter")
+        return original(path)
+
+    monkeypatch.setattr(brain_tools, "read_frontmatter", flaky_read)
+    out = glossary_tool(fixture_brain, "JWT")
+    assert out == {
+        "ok": True,
+        "entries": [],
+        "term": "JWT",
+        "match": None,
+        "alternates": [],
+    }
+
+
 # --- lobe_overview -----------------------------------------------------------
 
 
@@ -314,6 +394,16 @@ def test_lobe_overview_missing_lobe_raises(fixture_brain):
         lobe_overview_tool(fixture_brain, "nope", budget=4096)
 
 
+def test_lobe_overview_rejects_empty_lobe_name(fixture_brain):
+    with pytest.raises(NotFoundError):
+        lobe_overview_tool(fixture_brain, "", budget=4096)
+
+
+def test_lobe_overview_rejects_file_path(fixture_brain):
+    with pytest.raises(NotFoundError):
+        lobe_overview_tool(fixture_brain, "knowledge/jwt.md", budget=4096)
+
+
 def test_lobe_overview_rejects_path_escape(fixture_brain, tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -337,6 +427,60 @@ def test_lobe_overview_truncation_drops_neurons(fixture_brain):
     out = lobe_overview_tool(fixture_brain, "knowledge", budget=1024)
     if out.get("truncated"):
         assert out["omitted_count"] > 0
+
+
+def test_lobe_overview_skips_unreadable_map_and_neuron(fixture_brain, monkeypatch):
+    original = brain_tools.read_frontmatter
+
+    def flaky_read(path):
+        if path.name in {"map.md", "jwt.md"}:
+            raise ValueError("bad frontmatter")
+        return original(path)
+
+    monkeypatch.setattr(brain_tools, "read_frontmatter", flaky_read)
+    out = lobe_overview_tool(fixture_brain, "knowledge", budget=4096)
+    assert out["map_body"] == ""
+    assert "knowledge/jwt.md" not in {n["path"] for n in out["neurons"]}
+
+
+def test_lobe_overview_yaml_title_fallback_and_non_list_tags(fixture_brain):
+    (fixture_brain / "infrastructure" / "untitled-api.yml").write_text(
+        "#---\n"
+        "# updated: 2026-04-09\n"
+        "# tags: infra\n"
+        "#---\n"
+        "openapi: 3.1.0\n"
+        "info:\n"
+        "  title: Untitled API\n",
+        encoding="utf-8",
+    )
+
+    out = lobe_overview_tool(fixture_brain, "infrastructure", budget=4096)
+    by_path = {n["path"]: n for n in out["neurons"]}
+    assert by_path["infrastructure/untitled-api.yml"]["title"] == "Untitled Api"
+    assert by_path["infrastructure/untitled-api.yml"]["tags"] == []
+
+
+def test_lobe_overview_drops_neurons_to_fit_budget(fixture_brain):
+    out = lobe_overview_tool(fixture_brain, "knowledge", budget=600)
+    assert out["truncated"] is True
+    assert out["omitted_count"] > 0
+    encoded = json.dumps(out, ensure_ascii=False).encode("utf-8")
+    assert len(encoded) <= 600
+
+
+def test_lobe_overview_keeps_oversized_map_body_with_note(tmp_path):
+    brain = tmp_path / "brain"
+    lobe = brain / "large"
+    lobe.mkdir(parents=True)
+    (brain / "brain.md").write_text("# Brain\n", encoding="utf-8")
+    (lobe / "map.md").write_text("# Large\n\n" + ("x" * 1000), encoding="utf-8")
+
+    out = lobe_overview_tool(brain, "large", budget=200)
+    assert out["neurons"] == []
+    assert out["tag_union"] == []
+    assert out["truncated"] is True
+    assert out["note"].startswith("map_body exceeds budget")
 
 
 # --- schemas -----------------------------------------------------------------

@@ -1,17 +1,38 @@
 """Tests for git operations wrapper."""
 
 import subprocess
-from pathlib import Path
+
+import pytest
 
 from kluris.core.git import (
     git_add,
-    git_clone,
     git_commit,
     git_init,
     git_log,
-    git_push,
     git_status,
 )
+
+
+# --- Forbidden-import lockdown ---
+
+
+@pytest.mark.parametrize("name", [
+    "git_clone",
+    "git_push",
+    "git_pull",
+    "git_fetch",
+    "git_merge",
+    "git_has_upstream",
+    "git_conflicted_files",
+    "checkout_or_create_branch",
+    "git_current_branch",
+    "git_list_branches",
+    "git_checkout",
+])
+def test_removed_helpers_no_longer_importable(name):
+    """The eleven helpers that only the deleted commands used must be gone."""
+    import kluris.core.git as git_mod
+    assert not hasattr(git_mod, name), f"{name} should be removed from kluris.core.git"
 
 
 # --- [TEST-KLU-05] Git wrapper tests ---
@@ -79,45 +100,6 @@ def test_git_status_dirty(tmp_path):
     (tmp_path / "test.md").write_text("modified", encoding="utf-8")
     status = git_status(tmp_path)
     assert "test.md" in status
-
-
-def test_git_push(tmp_path, bare_remote):
-    git_init(tmp_path)
-    (tmp_path / "test.md").write_text("hello", encoding="utf-8")
-    git_add(tmp_path)
-    git_commit(tmp_path, "initial")
-    subprocess.run(
-        ["git", "remote", "add", "origin", str(bare_remote)],
-        cwd=tmp_path, capture_output=True,
-    )
-    git_push(tmp_path, "origin", "main")
-    # Verify remote has the commit
-    result = subprocess.run(
-        ["git", "log", "--oneline"],
-        cwd=bare_remote, capture_output=True, text=True,
-    )
-    assert "initial" in result.stdout
-
-
-def test_git_clone(tmp_path, bare_remote):
-    # Create a source repo and push to bare
-    source = tmp_path / "source"
-    source.mkdir()
-    git_init(source)
-    (source / "test.md").write_text("hello", encoding="utf-8")
-    git_add(source)
-    git_commit(source, "initial")
-    subprocess.run(
-        ["git", "remote", "add", "origin", str(bare_remote)],
-        cwd=source, capture_output=True,
-    )
-    git_push(source, "origin", "main")
-
-    # Clone
-    clone_path = tmp_path / "cloned"
-    git_clone(str(bare_remote), clone_path)
-    assert (clone_path / "test.md").exists()
-    assert (clone_path / "test.md").read_text() == "hello"
 
 
 # --- Batch git_log_file_dates ---

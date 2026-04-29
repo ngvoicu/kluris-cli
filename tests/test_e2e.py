@@ -8,7 +8,11 @@ from kluris.core.brain import generate_neuron_content
 
 
 def test_full_workflow(tmp_path, monkeypatch):
-    """Create brain -> add neurons -> dream -> verify -> mri -> push."""
+    """Create brain -> add neurons -> dream -> verify -> mri.
+
+    Sync (commit/push) is not a kluris concern as of 2.16.0 — the user invokes
+    git directly. This test ends at the last command kluris owns.
+    """
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path))
     runner = CliRunner()
@@ -60,11 +64,6 @@ def test_full_workflow(tmp_path, monkeypatch):
     # 7. MRI
     result = runner.invoke(cli, ["mri"])
     assert (brain / "brain-mri.html").exists()
-
-    # 8. Push (local only, no remote)
-    result = runner.invoke(cli, ["push", "-m", "add neurons"])
-    # Should succeed even without remote (commits locally)
-    assert result.exit_code == 0
 
 
 def test_multi_brain(tmp_path, monkeypatch):

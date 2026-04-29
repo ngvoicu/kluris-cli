@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from kluris.core.config import BrainConfig, GitConfig, AgentsConfig
+from kluris.core.config import BrainConfig, AgentsConfig
 
 
 # --- Brain type defaults ---
@@ -134,23 +134,6 @@ def get_type_defaults(brain_type: str) -> dict:
     return BRAIN_TYPES.get(brain_type, BRAIN_TYPES["blank"])
 
 
-def infer_brain_type(brain_path: Path) -> str:
-    """Best-effort brain type inference from top-level lobe directories."""
-    lobe_names = sorted(
-        item.name
-        for item in brain_path.iterdir()
-        if item.is_dir() and item.name != ".git"
-    )
-    if not lobe_names:
-        return "blank"
-
-    for brain_type, defaults in BRAIN_TYPES.items():
-        if sorted(defaults["structure"].keys()) == lobe_names:
-            return brain_type
-
-    return "product-group"
-
-
 def scaffold_brain(
     brain_path: Path,
     name: str,
@@ -181,7 +164,6 @@ def scaffold_brain(
     config = BrainConfig(
         name=name,
         description=description,
-        git=GitConfig(),
         agents=AgentsConfig(),
     )
     config_data = config.model_dump(exclude_none=True)
@@ -259,9 +241,8 @@ subject matter experts. Curated by humans, read by every agent on the team.
 
 ```bash
 pipx install kluris
-kluris clone <this-repo-url>               # if the brain lives at a git remote
-kluris register ~/path/to/brain            # if the brain is already on your disk
-kluris register ~/Downloads/brain.zip      # if a teammate shared it as a zip
+git clone <this-repo-url> ~/path/to/brain  # if the brain lives at a git remote
+kluris register ~/path/to/brain            # register the on-disk brain
 ```
 
 ### Start building your team knowledge
@@ -288,8 +269,9 @@ below).
 Cursor, Windsurf, Cline, Devin, Gemini CLI, and others). Type it inside your
 coding agent -- not in a regular terminal. The agent detects your intent and
 acts accordingly. Search and guided documentation happen through the slash
-command; the `kluris` CLI is for mechanical operations like `dream`, `push`,
-and `status` that you run in a terminal.
+command; the `kluris` CLI is for mechanical operations like `dream`, `mri`,
+and `status` that you run in a terminal. Sync (commit, push, pull) goes
+through `git` directly — kluris brains are plain git repos.
 
 If `{name}` is the only kluris brain registered on your machine, kluris also
 exposes a bare `/kluris` slash command as an alias -- both forms produce the
@@ -303,8 +285,8 @@ On the first `/kluris-{name}` call of each session, the agent runs
 snapshot of the brain: lobes with neuron counts, the 5 most recently updated
 neurons, total neuron count. You never run it manually. The agent refreshes
 the snapshot after mutating commands (`/kluris-{name} remember`,
-`/kluris-{name} learn`, `kluris dream --brain {name}`,
-`kluris push --brain {name}`, or direct brain-file edits).
+`/kluris-{name} learn`, `kluris dream --brain {name}`, or direct
+brain-file edits).
 
 If you want to peek at what the agent sees, run
 `kluris wake-up --brain {name}` yourself.
@@ -398,12 +380,11 @@ kluris search "<query>" --brain {name}  # Ranked search across neurons + glossar
 kluris status --brain {name}             # Brain tree, recent changes, neuron counts
 kluris wake-up --brain {name}            # Compact snapshot for agent bootstrap (--json for machines)
 kluris dream --brain {name}               # Regenerate maps, auto-fix safe issues, validate remaining links
-kluris branch --brain {name}              # Show, switch, or create branches
-kluris push --brain {name}                # Commit and push to the current branch
-kluris pull --brain {name}                # Pull remote changes for the current branch
 kluris mri --brain {name}                 # Generate visualization (prints link to open in browser)
 kluris help                               # All commands
 ```
+
+# Sync and branch with git directly: git -C <brain-path> push / pull / status / checkout / branch.
 
 If `{name}` is your only registered brain, you can drop `--brain {name}` from
 every CLI invocation -- kluris auto-resolves the single brain.
@@ -482,8 +463,7 @@ not shared. Each team member can have different settings.
 ```yaml
 name: my-brain
 description: my-brain knowledge base
-git:
-  commit_prefix: "brain:"
+# `companions:` and `agents:` may also appear here.
 ```
 
 ## Rules
@@ -495,5 +475,5 @@ git:
 5. **Focus on decisions and rationale** -- "we chose X because Y"
 6. **Bidirectional synapses** -- if A links to B, add the reverse link in B
 7. **Run `kluris dream` after adding neurons** -- keeps maps and brain.md fresh
-8. **Run `kluris push` to save** -- commits and pushes to git (if brain uses git)
+8. **Use git directly to commit and sync** -- kluris brains are plain git repos
 """

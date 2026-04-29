@@ -55,13 +55,6 @@ def test_mri_no_brains(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
-def test_push_no_brains(tmp_path, monkeypatch):
-    monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "config.yml"))
-    runner = CliRunner()
-    result = runner.invoke(cli, ["push"])
-    assert result.exit_code != 0
-
-
 def test_version():
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
@@ -73,9 +66,14 @@ def test_main_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
     assert "create" in result.output
-    assert "clone" in result.output
+    assert "register" in result.output
     assert "dream" in result.output
     assert "companion" in result.output
+    assert "pack" in result.output
+    # Removed in 2.16.0:
+    assert "clone" not in result.output
+    assert "push" not in result.output
+    assert " pull" not in result.output  # leading space avoids matching "Pull" in prose
     assert "install-skills" not in result.output
     assert "uninstall-skills" not in result.output
     assert "  neuron " not in result.output

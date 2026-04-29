@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-import zipfile
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -32,25 +31,6 @@ def _use_fresh_registry(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("KLURIS_CONFIG", str(tmp_path / "register-config.yml"))
     monkeypatch.setenv("HOME", str(tmp_path / "register-home"))
     (tmp_path / "register-home").mkdir(exist_ok=True)
-
-
-def _zip_brain(brain_path: Path, out_path: Path, include_top_level: bool = False) -> Path:
-    """Zip a brain into ``out_path``.
-
-    - include_top_level=False: members are flat relative to brain root
-      (``brain.md``, ``projects/map.md``, ...).
-    - include_top_level=True: members are under ``<brain_name>/`` inside the zip.
-    """
-    with zipfile.ZipFile(out_path, "w") as zf:
-        for item in brain_path.rglob("*"):
-            if ".git" in item.parts:
-                continue
-            if not item.is_file():
-                continue
-            rel = item.relative_to(brain_path)
-            arcname = f"{brain_path.name}/{rel}" if include_top_level else str(rel)
-            zf.write(item, arcname)
-    return out_path
 
 
 # -----------------------------------------------------------------------------
@@ -119,6 +99,9 @@ def test_register_keeps_existing_kluris_yml(tmp_path, monkeypatch):
     """When the source already has kluris.yml, we must not clobber it."""
     source = _make_source_brain(tmp_path, monkeypatch)
     # Edit the existing kluris.yml so we can detect whether we overwrote it.
+    # The legacy `git: { commit_prefix: ... }` block is intentionally included
+    # to cover the read-tolerance regression: a 2.15.x kluris.yml must load
+    # cleanly under 2.16.0 without raising.
     (source / "kluris.yml").write_text(
         "name: source-brain\ndescription: custom tag\ngit:\n  commit_prefix: 'custom:'\n",
         encoding="utf-8",
@@ -132,7 +115,8 @@ def test_register_keeps_existing_kluris_yml(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     brain_config = read_brain_config(source)
     assert brain_config.description == "custom tag"
-    assert brain_config.git.commit_prefix == "custom:"
+    # Legacy `git:` block on disk is ignored at runtime; no `git` attribute on the model.
+    assert not hasattr(brain_config, "git")
 
 
 def test_register_writes_kluris_yml_when_missing(tmp_path, monkeypatch):
@@ -264,11 +248,13 @@ def test_register_runs_install(tmp_path, monkeypatch):
 
 
 # -----------------------------------------------------------------------------
-# Git remote auto-detection
+# Persisted shape — no `type`, no `repo`
 # -----------------------------------------------------------------------------
 
 
-def test_register_captures_git_remote_when_set(tmp_path, monkeypatch):
+def test_register_does_not_persist_repo(tmp_path, monkeypatch):
+    """Even if the brain has a git origin remote, the persisted BrainEntry
+    must not include a `repo` field — kluris no longer tracks remote URLs."""
     source = _make_source_brain(tmp_path, monkeypatch)
     # Wire up a fake origin remote. It does not need to be reachable.
     subprocess.run(
@@ -284,15 +270,13 @@ def test_register_captures_git_remote_when_set(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     config = read_global_config()
-    assert config.brains["source-brain"].repo == "git@example.com:team/source-brain.git"
+    entry = config.brains["source-brain"]
+    assert not hasattr(entry, "repo")
 
 
-def test_register_no_git_no_remote(tmp_path, monkeypatch):
-    """A brain directory without a .git dir must register with repo=None."""
+def test_register_does_not_persist_type(tmp_path, monkeypatch):
+    """The persisted BrainEntry must have no `type` field after register."""
     source = _make_source_brain(tmp_path, monkeypatch)
-    # Delete the .git dir so we look like a fresh unpacked directory.
-    import shutil
-    shutil.rmtree(source / ".git")
 
     _use_fresh_registry(tmp_path, monkeypatch)
     runner = CliRunner()
@@ -300,120 +284,39 @@ def test_register_no_git_no_remote(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     config = read_global_config()
-    assert config.brains["source-brain"].repo is None
+    entry = config.brains["source-brain"]
+    assert not hasattr(entry, "type")
 
 
 # -----------------------------------------------------------------------------
-# Zip registration
+# Zip rejection (zip path removed in 2.16.0)
 # -----------------------------------------------------------------------------
 
 
-def test_register_zip_flat_layout(tmp_path, monkeypatch):
-    """Zip packed from inside the brain (flat) must register correctly."""
-    source = _make_source_brain(tmp_path, monkeypatch)
-    zip_path = tmp_path / "source-brain.zip"
-    _zip_brain(source, zip_path, include_top_level=False)
-
+def test_register_rejects_zip_with_clear_hint(tmp_path, monkeypatch):
+    """Passing a .zip path must error with a hint to unzip + git clone."""
     _use_fresh_registry(tmp_path, monkeypatch)
-    dest = tmp_path / "extracted-flat"
+    zip_path = tmp_path / "old-brain.zip"
+    zip_path.write_bytes(b"PK\x03\x04")  # minimal bytes — we never read it
+
     runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(zip_path), "--dest", str(dest)])
-
-    assert result.exit_code == 0, result.output
-    assert (dest / "brain.md").exists()
-    config = read_global_config()
-    assert "source-brain" in config.brains
-    assert Path(config.brains["source-brain"].path).resolve() == dest.resolve()
-
-
-def test_register_zip_with_top_level_dir(tmp_path, monkeypatch):
-    """Zip with a single top-level dir (GitHub-style export) must register."""
-    source = _make_source_brain(tmp_path, monkeypatch)
-    zip_path = tmp_path / "source-brain.zip"
-    _zip_brain(source, zip_path, include_top_level=True)
-
-    _use_fresh_registry(tmp_path, monkeypatch)
-    dest = tmp_path / "extracted-nested"
-    runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(zip_path), "--dest", str(dest)])
-
-    assert result.exit_code == 0, result.output
-    # Brain root is dest/<name>/ because the archive nested the brain one level.
-    brain_root = dest / "source-brain"
-    assert brain_root.exists()
-    assert (brain_root / "brain.md").exists()
-    config = read_global_config()
-    assert "source-brain" in config.brains
-    assert Path(config.brains["source-brain"].path).resolve() == brain_root.resolve()
-
-
-def test_register_zip_rejects_path_traversal(tmp_path, monkeypatch):
-    """Zip slip defense: a member that escapes the destination must be rejected."""
-    _use_fresh_registry(tmp_path, monkeypatch)
-
-    evil_zip = tmp_path / "evil.zip"
-    with zipfile.ZipFile(evil_zip, "w") as zf:
-        zf.writestr("brain.md", "---\nauto_generated: true\n---\n# evil-brain\n")
-        # Attempt to write outside the extraction destination.
-        zf.writestr("../escaped.txt", "pwned")
-
-    dest = tmp_path / "sandbox"
-    runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(evil_zip), "--dest", str(dest)])
+    result = runner.invoke(cli, ["register", str(zip_path)])
 
     assert result.exit_code != 0
-    assert "unsafe path" in result.output.lower()
-    # The extraction dir was created but must be cleaned up on failure.
-    assert not dest.exists()
-    # The escape target must never exist.
-    assert not (tmp_path / "escaped.txt").exists()
+    output = result.output.lower()
+    assert "no longer accepts .zip" in output
+    assert "unzip first" in output
+    assert "git clone" in output
 
 
-def test_register_zip_dest_collision(tmp_path, monkeypatch):
-    """If --dest points to a non-empty dir, abort rather than overwrite."""
-    source = _make_source_brain(tmp_path, monkeypatch)
-    zip_path = tmp_path / "source-brain.zip"
-    _zip_brain(source, zip_path, include_top_level=False)
-
-    _use_fresh_registry(tmp_path, monkeypatch)
-    dest = tmp_path / "occupied"
-    dest.mkdir()
-    (dest / "existing-file.txt").write_text("do not overwrite me", encoding="utf-8")
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(zip_path), "--dest", str(dest)])
-
-    assert result.exit_code != 0
-    assert "not empty" in result.output.lower()
-    # Pre-existing file must still be there.
-    assert (dest / "existing-file.txt").read_text(encoding="utf-8") == "do not overwrite me"
-
-
-def test_register_zip_without_brain_md(tmp_path, monkeypatch):
-    """Zip that does not contain a brain.md must be rejected and extraction cleaned up."""
-    _use_fresh_registry(tmp_path, monkeypatch)
-
-    bogus_zip = tmp_path / "not-a-brain.zip"
-    with zipfile.ZipFile(bogus_zip, "w") as zf:
-        zf.writestr("README.md", "# not a brain\n")
-
-    dest = tmp_path / "extract-here"
-    runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(bogus_zip), "--dest", str(dest)])
-
-    assert result.exit_code != 0
-    assert "not a Kluris brain" in result.output or "missing brain.md" in result.output.lower()
-    # Cleanup contract: we extracted, so we delete.
-    assert not dest.exists()
-
-
-def test_register_zip_missing_file(tmp_path, monkeypatch):
+def test_register_no_dest_flag(tmp_path, monkeypatch):
+    """--dest was removed when zip support was removed."""
     _use_fresh_registry(tmp_path, monkeypatch)
     runner = CliRunner()
-    result = runner.invoke(cli, ["register", str(tmp_path / "missing.zip")])
-
+    result = runner.invoke(cli, ["register", "--dest", "/tmp/foo", "/tmp/bar"])
     assert result.exit_code != 0
-    assert "not found" in result.output.lower()
+    # Click reports "no such option" for an unknown flag.
+    assert "no such option" in result.output.lower() or "--dest" in result.output
 
 
 # -----------------------------------------------------------------------------
@@ -435,3 +338,5 @@ def test_register_json_output(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["name"] == "source-brain"
     assert Path(payload["path"]).resolve() == source.resolve()
+    # JSON must not advertise the dropped fields.
+    assert "remote" not in payload

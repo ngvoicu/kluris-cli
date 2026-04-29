@@ -12,19 +12,12 @@ from pydantic import BaseModel, Field
 class BrainEntry(BaseModel):
     """A registered brain in the global config."""
     path: str
-    repo: str | None = None
     description: str = ""
-    type: str = "product-group"
 
 
 class GlobalConfig(BaseModel):
     """Global kluris config at ~/.config/kluris/config.yml."""
     brains: dict[str, BrainEntry] = Field(default_factory=dict)
-
-
-class GitConfig(BaseModel):
-    """Git settings for a brain."""
-    commit_prefix: str = "brain:"
 
 
 class AgentsConfig(BaseModel):
@@ -45,7 +38,6 @@ class BrainConfig(BaseModel):
     """Local brain config stored in kluris.yml (gitignored)."""
     name: str
     description: str = ""
-    git: GitConfig = Field(default_factory=GitConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     companions: list[str] = Field(default_factory=list)
 
@@ -62,17 +54,18 @@ def get_config_path() -> Path:
 
 
 def read_global_config() -> GlobalConfig:
-    """Read global config from disk. Returns empty config if file doesn't exist."""
+    """Read global config from disk. Returns empty config if file doesn't exist.
+
+    Pydantic's default ``extra="ignore"`` silently drops any keys the model
+    doesn't declare — that's how we tolerate legacy fields from older
+    installations (``default_brain`` from <= 1.6.x, ``type`` / ``repo`` per
+    brain entry from <= 2.15.x). No active migration; old configs just keep
+    working.
+    """
     path = get_config_path()
     if not path.exists():
         return GlobalConfig()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    # Legacy field cleanup: kluris <= 1.6.x had a `default_brain` field that
-    # was removed when per-brain skill installs replaced the single shared
-    # skill. Drop it explicitly so old YAML loads cleanly even if the model
-    # is later tightened to extra="forbid".
-    if isinstance(data, dict):
-        data.pop("default_brain", None)
     return GlobalConfig.model_validate(data)
 
 
@@ -91,7 +84,12 @@ def write_global_config(config: GlobalConfig) -> None:
 
 
 def read_brain_config(brain_path: Path) -> BrainConfig:
-    """Read kluris.yml from a brain directory."""
+    """Read kluris.yml from a brain directory.
+
+    Pydantic's default ``extra="ignore"`` silently drops legacy keys
+    (e.g. the ``git: { commit_prefix: ... }`` block from <= 2.15.x). No
+    active migration.
+    """
     config_file = brain_path / "kluris.yml"
     data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
     return BrainConfig.model_validate(data)

@@ -63,7 +63,7 @@ The wake-up output is your compact brain index:
 
 Re-run `kluris wake-up{brain_flag_hint_inline} --json` only after the brain changes:
 `/{skill_name} remember`, `/{skill_name} learn`, `kluris dream{brain_flag_hint_inline}`,
-`kluris push{brain_flag_hint_inline}`, or direct file edits the user tells you about.
+or direct file edits the user tells you about.
 
 If the `kluris` CLI is unavailable, the brain is still a plain filesystem tree
 at `{brain_path}`. Read `brain.md`, `glossary.md`, and each relevant lobe's
@@ -483,8 +483,8 @@ For Learn, Remember, and Create flows:
    reference the neuron you just wrote, surface them to the user in plain
    language and propose fixes in the same turn -- don't wait for the user to
    notice. If the output is clean, tell the user "dream is clean" and move
-   on. Then remind them to `kluris push{brain_flag_hint_inline}` if the
-   brain uses git.
+   on. Then remind them to commit with git (`cd {brain_path} && git add -A && git commit`)
+   if the brain uses git.
 
 Other writing rules:
 - Never create `.md`, `.yml`, or `.yaml` neurons directly at the brain root.
@@ -552,10 +552,11 @@ These are terminal commands, not skill actions:
 - `kluris wake-up{brain_flag_hint_inline} --json` -- compact brain snapshot
 - `kluris dream{brain_flag_hint_inline}` -- regenerate maps, auto-fix safe issues, and validate links
 - `kluris status{brain_flag_hint_inline}` -- show brain tree, recent changes, and counts
-- `kluris branch{brain_flag_hint_inline}` -- show, switch, or create a branch
-- `kluris push{brain_flag_hint_inline}` -- commit and push brain changes
-- `kluris pull{brain_flag_hint_inline}` -- pull remote changes
 - `kluris mri{brain_flag_hint_inline}` -- generate interactive visualization
+
+Sync, commit, and branch operations go through `git` directly -- kluris
+brains are plain git repos. Use `git -C {brain_path} push / pull / status /
+checkout` as you would with any other repo.
 """
 
 

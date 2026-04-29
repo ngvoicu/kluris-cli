@@ -10,44 +10,29 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.table import Table
-from rich.tree import Tree
 
 from kluris import __version__
 from kluris.core.brain import (
     BRAIN_NAME_MAX_LENGTH,
     BRAIN_NAME_RESERVED,
     BRAIN_TYPES,
-    infer_brain_type,
     scaffold_brain,
     validate_brain_name,
 )
 from kluris.core.config import (
-    BrainConfig,
     BrainEntry,
     read_brain_config,
     read_global_config,
     register_brain,
     unregister_brain,
     write_brain_config,
-    write_global_config,
 )
 from kluris.core import companions
 from kluris.core.git import (
-    checkout_or_create_branch,
     git_add,
-    git_checkout,
-    git_clone,
     git_commit,
-    git_conflicted_files,
-    git_current_branch,
-    git_fetch,
-    git_has_upstream,
     git_init,
-    git_list_branches,
     git_log,
-    git_merge,
-    git_pull,
-    git_push,
     git_status,
     is_git_repo,
 )
@@ -348,7 +333,7 @@ def _resolve_brains(
     if brain_name == "all":
         if not allow_all:
             raise click.ClickException(
-                "--brain all is only supported on dream, push, status, mri."
+                "--brain all is only supported on dream, status, mri, and companion add/remove."
             )
         if not brains:
             raise click.ClickException(
@@ -618,7 +603,7 @@ def create(name: str | None, desc: str | None, base_path: str | None,
             from kluris.core.git import _run
             _run(["git", "remote", "add", "origin", remote], cwd=brain_path)
 
-    entry = BrainEntry(path=str(brain_path), description=description, type=brain_type)
+    entry = BrainEntry(path=str(brain_path), description=description)
     register_brain(name, entry)
 
     # Dream to generate proper maps and navigation, then commit
@@ -649,252 +634,50 @@ def create(name: str | None, desc: str | None, base_path: str | None,
         )
 
 
-@cli.command("clone")
-@click.argument("url", required=False)
-@click.argument("path", required=False)
-@click.option("--branch", "branch_name", help="Branch to checkout")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def clone_cmd(url: str | None, path: str | None, branch_name: str | None, as_json: bool):
-    """Clone an existing brain from a git remote.
-
-    Run with no arguments for an interactive wizard:
-
-    \b
-      kluris clone
-      kluris clone git@github.com:team/brain.git
-      kluris clone git@github.com:team/brain.git ~/my-copy --branch develop
-    """
-    companion_prompt = _wizard_can_prompt(as_json) and not url
-    if not url:
-        console.print("\n[bold]Clone a brain[/bold]\n")
-        url = click.prompt("  Git remote URL", type=str)
-        if not path:
-            default_path = str(Path.home() / url.rstrip("/").split("/")[-1].replace(".git", ""))
-            path = click.prompt("  Clone to", default=default_path, type=str)
-        if not branch_name:
-            console.print(
-                "  [dim]Tip: leave blank to use the remote default branch. "
-                "Or type any name -- if it exists on the remote we'll track it, "
-                "otherwise we'll create it locally so you can push to it later.[/dim]"
-            )
-            branch_name = click.prompt("  Branch name", default="", show_default=False, type=str) or None
-        console.print()
-    dest = Path(path) if path else Path(url.rstrip("/").split("/")[-1].replace(".git", ""))
-    dest = dest.resolve()
-
-    try:
-        git_clone(url, dest)
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()
-        detail = stderr or f"git exited with status {exc.returncode}"
-        raise click.ClickException(
-            f"git clone failed for {url}\n{detail}\n\n"
-            "Common causes: missing credentials (set up a PAT, SSH key, or "
-            "git-credential-manager), unreachable host, or the repository does not exist."
-        ) from exc
-
-    try:
-        if branch_name:
-            checkout_or_create_branch(dest, branch_name)
-
-        # Verify this is a brain (has brain.md -- kluris.yml is local-only now)
-        if not (dest / "brain.md").exists():
-            raise click.ClickException(
-                "Cloned repository does not contain brain.md. This is not a Kluris brain."
-            )
-
-        fallback_name = dest.name
-        if not validate_brain_name(fallback_name):
-            fallback_name = dest.name.lower().replace(" ", "-")
-        name, description = _read_brain_identity(dest, fallback_name)
-
-        existing_config = read_global_config()
-        if name in existing_config.brains:
-            existing_path = Path(existing_config.brains[name].path).resolve()
-            if existing_path != dest:
-                raise click.ClickException(
-                    f"A brain named '{name}' is already registered at {existing_path}. "
-                    "Use a different clone destination name only after removing or renaming the existing brain."
-                )
-
-        # Create local kluris.yml (not in repo -- it's gitignored)
-        inferred_type = infer_brain_type(dest)
-        if not (dest / "kluris.yml").exists():
-            from kluris.core.config import BrainConfig, GitConfig, write_brain_config
-            from kluris.core.git import _run
-
-            local_config = BrainConfig(
-                name=name,
-                description=description,
-                git=GitConfig(),
-            )
-            write_brain_config(local_config, dest)
-
-        selected_companions = _maybe_prompt_companions_for_new_brain(dest, companion_prompt)
-        brain_config = read_brain_config(dest)
-        entry = BrainEntry(
-            path=str(dest),
-            repo=url,
-            description=brain_config.description or description,
-            type=inferred_type,
-        )
-        register_brain(name, entry)
-        _do_install()
-    except Exception as exc:
-        # Clone succeeded but a later step failed (bad branch, not a brain,
-        # duplicate name). Remove the partial clone so the user can retry
-        # with a different argument instead of having to rm -rf manually.
-        import shutil
-        shutil.rmtree(dest, ignore_errors=True)
-        if isinstance(exc, click.ClickException):
-            raise
-        if isinstance(exc, subprocess.CalledProcessError):
-            stderr = (exc.stderr or "").strip() or str(exc)
-            raise click.ClickException(f"Clone setup failed: {stderr}") from exc
-        raise click.ClickException(f"Clone setup failed: {exc}") from exc
-
-    if as_json:
-        click.echo(json_lib.dumps({
-            "ok": True,
-            "name": name,
-            "path": str(dest),
-            "remote": url,
-            "companions": selected_companions,
-        }))
-    else:
-        console.print(f"Brain cloned: [bold]{name}[/bold]")
-        console.print(f"  Path: {dest}")
-
-
-def _locate_brain_root(dest: Path) -> Path | None:
-    """Return the directory inside ``dest`` that contains ``brain.md``.
-
-    Two shapes are accepted:
-    - ``dest/brain.md`` -- zip was packed from inside the brain.
-    - ``dest/<onedir>/brain.md`` -- zip was packed from the brain's parent.
-      This is the shape you get from ``git archive`` or most GitHub zip exports.
-
-    Returns None when neither shape matches.
-    """
-    if (dest / "brain.md").exists():
-        return dest
-    subdirs = [p for p in dest.iterdir() if p.is_dir() and p.name != "__MACOSX"]
-    if len(subdirs) == 1 and (subdirs[0] / "brain.md").exists():
-        return subdirs[0]
-    return None
-
-
-def _get_git_origin_url(brain_root: Path) -> str | None:
-    """Return ``git remote get-url origin`` or None when unavailable.
-
-    Silent no-op when the directory is not a git repo or has no origin remote.
-    """
-    if not (brain_root / ".git").exists():
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=brain_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (OSError, FileNotFoundError):
-        return None
-    if result.returncode != 0:
-        return None
-    url = result.stdout.strip()
-    return url or None
-
-
 @cli.command("register")
 @click.argument("source", required=False)
-@click.option("--dest", "extract_dest", help="Where to extract a zip (default: ~/<basename>)")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
-    """Register an existing brain already on disk, or extract a brain zip and register it.
+def register_cmd(source: str | None, as_json: bool):
+    """Register an existing brain directory on disk.
 
-    Counterpart to ``kluris clone``. Use clone when the brain lives at a git
-    remote. Use register when the brain is already a directory on your disk
-    (e.g. a teammate handed you a zip or you restored from backup).
-
-    The brain stays where it is -- directory registration is in-place, no copy.
-    Zip sources are extracted first, then registered the same way.
+    The brain stays where it is -- registration is in-place, no copy.
+    For brains hosted on git, use ``git clone <url> <path>`` first, then
+    ``kluris register <path>``.
 
     \b
       kluris register ~/brains/acme-sme
-      kluris register ~/Downloads/acme-sme.zip
-      kluris register ~/Downloads/acme-sme.zip --dest ~/work/acme-sme
     """
-    import shutil
-    import zipfile
-
     companion_prompt = _wizard_can_prompt(as_json) and not source
     if not source:
         console.print("\n[bold]Register a brain[/bold]\n")
-        source = click.prompt("  Path to brain directory or .zip", type=str)
+        source = click.prompt("  Path to brain directory", type=str)
         console.print()
 
     source_path = Path(source).expanduser()
-    is_zip = source_path.suffix.lower() == ".zip"
-    extracted_dest: Path | None = None
+
+    # Zip support was removed in 2.16.0. Surface a discoverable error rather
+    # than letting the input fall through to the generic "not a directory"
+    # message, so the user knows where to go next.
+    if source_path.suffix.lower() == ".zip":
+        raise click.ClickException(
+            "kluris register no longer accepts .zip files. "
+            "Unzip first, then run 'kluris register <directory>'. "
+            "For git-hosted brains, use 'git clone <url> <path>' then "
+            "'kluris register <path>'."
+        )
 
     try:
-        if is_zip:
-            if not source_path.exists() or not source_path.is_file():
-                raise click.ClickException(f"Zip file not found: {source_path}")
+        if not source_path.exists():
+            raise click.ClickException(f"Path not found: {source_path}")
+        if not source_path.is_dir():
+            raise click.ClickException(f"{source_path} is not a directory.")
+        brain_root = source_path.resolve()
+        if not (brain_root / "brain.md").exists():
+            raise click.ClickException(
+                f"{brain_root} is not a Kluris brain (missing brain.md)."
+            )
 
-            if extract_dest:
-                dest = Path(extract_dest).expanduser().resolve()
-            else:
-                dest = (Path.home() / source_path.stem).resolve()
-
-            if dest.exists() and dest.is_dir() and any(dest.iterdir()):
-                raise click.ClickException(
-                    f"Destination {dest} already exists and is not empty. "
-                    "Pass --dest with an empty or non-existent directory."
-                )
-            if dest.exists() and not dest.is_dir():
-                raise click.ClickException(
-                    f"Destination {dest} exists and is not a directory."
-                )
-
-            dest.mkdir(parents=True, exist_ok=True)
-            extracted_dest = dest
-
-            # Zip slip defense: extractall() on Python < 3.12 does not validate
-            # member paths. Walk members first, reject any that escape ``dest``.
-            resolved_dest = dest.resolve()
-            with zipfile.ZipFile(source_path) as zf:
-                for member in zf.namelist():
-                    member_path = (resolved_dest / member).resolve()
-                    try:
-                        member_path.relative_to(resolved_dest)
-                    except ValueError:
-                        raise click.ClickException(
-                            f"Zip contains unsafe path outside destination: {member}"
-                        )
-                zf.extractall(dest)
-
-            brain_root = _locate_brain_root(dest)
-            if brain_root is None:
-                raise click.ClickException(
-                    "Zip does not contain a Kluris brain (missing brain.md)."
-                )
-        else:
-            if not source_path.exists():
-                raise click.ClickException(f"Path not found: {source_path}")
-            if not source_path.is_dir():
-                raise click.ClickException(
-                    f"{source_path} is not a directory or .zip file."
-                )
-            brain_root = source_path.resolve()
-            if not (brain_root / "brain.md").exists():
-                raise click.ClickException(
-                    f"{brain_root} is not a Kluris brain (missing brain.md)."
-                )
-
-        # brain_root is now a real brain directory. Identity comes from brain.md.
+        # brain_root is a real brain directory. Identity comes from brain.md.
         fallback_name = brain_root.name
         if not validate_brain_name(fallback_name):
             fallback_name = fallback_name.lower().replace(" ", "-")
@@ -935,39 +718,26 @@ def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
                     "to re-register it under a different name."
                 )
 
-        inferred_type = infer_brain_type(brain_root)
-
         # Author a local kluris.yml when the brain doesn't already have one.
         # (kluris.yml is gitignored, so a fresh brain from a teammate won't
         # carry one; we bootstrap it here so future commands work cleanly.)
         if not (brain_root / "kluris.yml").exists():
-            from kluris.core.config import BrainConfig, GitConfig, write_brain_config
+            from kluris.core.config import BrainConfig, write_brain_config
 
-            local_config = BrainConfig(
-                name=name,
-                description=description,
-                git=GitConfig(),
-            )
+            local_config = BrainConfig(name=name, description=description)
             write_brain_config(local_config, brain_root)
 
         selected_companions = _maybe_prompt_companions_for_new_brain(brain_root, companion_prompt)
         brain_config = read_brain_config(brain_root)
-        remote_url = _get_git_origin_url(brain_root)
 
         entry = BrainEntry(
             path=str(brain_root),
-            repo=remote_url,
             description=brain_config.description or description,
-            type=inferred_type,
         )
         register_brain(name, entry)
         _do_install()
     except Exception as exc:
-        # Cleanup contract:
-        # - zip source  -> remove the dir WE extracted (we created it, we own it)
-        # - dir source  -> NEVER delete; the user's brain lives there
-        if extracted_dest is not None:
-            shutil.rmtree(extracted_dest, ignore_errors=True)
+        # Directory source -> NEVER delete; the user's brain lives there.
         if isinstance(exc, click.ClickException):
             raise
         raise click.ClickException(f"Register failed: {exc}") from exc
@@ -977,14 +747,11 @@ def register_cmd(source: str | None, extract_dest: str | None, as_json: bool):
             "ok": True,
             "name": name,
             "path": str(brain_root),
-            "remote": remote_url,
             "companions": selected_companions,
         }))
     else:
         console.print(f"Brain registered: [bold]{name}[/bold]")
         console.print(f"  Path: {brain_root}")
-        if remote_url:
-            console.print(f"  Remote: {remote_url}")
 
 
 @cli.command("list")
@@ -1008,7 +775,6 @@ def list_cmd(as_json: bool):
 
     table = Table(title="Registered Brains")
     table.add_column("Name")
-    table.add_column("Type")
     table.add_column("Path")
     table.add_column("Description")
     table.add_column("Companions")
@@ -1016,7 +782,7 @@ def list_cmd(as_json: bool):
     for name, entry in config.brains.items():
         state = _read_companion_state(entry)
         companion_text = "(unknown)" if state is None else (", ".join(state) if state else "(none)")
-        table.add_row(name, entry.type, entry.path, entry.description, companion_text)
+        table.add_row(name, entry.path, entry.description, companion_text)
 
     console.print(table)
 
@@ -1302,15 +1068,11 @@ def wake_up(brain_name: str | None, as_json: bool):
         description=entry.get("description", ""),
     )
 
-    # Layer scaffold-type metadata back on top — the runtime intentionally
-    # does not know about ``BRAIN_TYPES`` because the packed Docker image
-    # has no scaffold concept (real brains can diverge from their original
-    # scaffold).
-    brain_type = entry.get("type", "product-group")
-    type_structure = BRAIN_TYPES.get(brain_type, {}).get("structure", {})
+    # The wake-up payload describes the live on-disk brain via `lobes[]`.
+    # Older versions overlaid the scaffold-time `type` / `type_structure`
+    # back on top, but those fields go stale the moment the user adds or
+    # removes a lobe. Agents should trust the live structure.
     data = dict(payload)
-    data["type"] = brain_type
-    data["type_structure"] = type_structure
 
     if as_json:
         click.echo(json_lib.dumps(data))
@@ -1445,7 +1207,7 @@ def status(brain_name: str | None, as_json: bool):
         })
 
         if not as_json:
-            console.print(f"\n[bold]{name}[/bold] ({entry['type']})")
+            console.print(f"\n[bold]{name}[/bold]")
             console.print(f"  Lobes: {len(lobes)}, Neurons: {len(neurons)}")
             if not git_enabled:
                 console.print("  Git: disabled")
@@ -1567,267 +1329,6 @@ def dream(brain_name: str | None, as_json: bool, broken_only: bool):
             console.print("\n[bold yellow]Remaining issues need manual attention.[/bold yellow]")
 
     if not healthy:
-        raise SystemExit(1)
-
-
-@cli.command()
-@click.argument("name", required=False)
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--list", "list_branches", is_flag=True, help="List all branches")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def branch(name: str | None, brain_name: str | None, list_branches: bool, as_json: bool):
-    """Show, switch, or create a git branch in the brain.
-
-    \b
-      kluris branch                    # show current branch
-      kluris branch feature/monitoring # switch to (or create) branch
-      kluris branch --list             # list all branches
-      kluris branch main               # switch back to main
-    """
-    brains = _resolve_brains(brain_name, allow_all=False, as_json=as_json)
-    bname, entry = brains[0]
-    brain_path = Path(entry["path"])
-
-    if not is_git_repo(brain_path):
-        if as_json:
-            click.echo(json_lib.dumps({"ok": False, "error": f"{bname}: git is disabled"}))
-        else:
-            console.print(f"{bname}: git is disabled (--no-git)")
-        raise SystemExit(1)
-
-    current = git_current_branch(brain_path)
-
-    if list_branches:
-        branches = git_list_branches(brain_path)
-        if as_json:
-            click.echo(json_lib.dumps({
-                "ok": True, "name": bname, "current": current,
-                "branches": branches,
-            }))
-        else:
-            for b in branches:
-                marker = "* " if b == current else "  "
-                console.print(f"{marker}{b}")
-        return
-
-    if name is None:
-        if as_json:
-            click.echo(json_lib.dumps({
-                "ok": True, "name": bname, "current": current,
-            }))
-        else:
-            console.print(f"{bname}: on branch [bold]{current}[/bold]")
-            console.print(f"  switch: kluris branch <name>    list: kluris branch --list")
-        return
-
-    if name == current:
-        if as_json:
-            click.echo(json_lib.dumps({
-                "ok": True, "name": bname, "current": current,
-                "switched": False,
-            }))
-        else:
-            console.print(f"{bname}: already on [bold]{current}[/bold]")
-        return
-
-    if git_status(brain_path):
-        raise click.ClickException(
-            f"{bname}: brain has uncommitted changes. "
-            "Commit with 'kluris push' or stash them first."
-        )
-
-    git_checkout(brain_path, name)
-    new_branch = git_current_branch(brain_path)
-
-    if as_json:
-        click.echo(json_lib.dumps({
-            "ok": True, "name": bname, "current": new_branch,
-            "previous": current, "switched": True,
-        }))
-    else:
-        console.print(f"{bname}: switched to [bold]{new_branch}[/bold]")
-
-
-@cli.command()
-@click.option("--message", "-m", "msg", help="Commit message")
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def push(msg: str | None, brain_name: str | None, as_json: bool):
-    """Commit and push brain changes."""
-    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
-    results = []
-
-    for name, entry in brains:
-        brain_path = Path(entry["path"])
-        if not is_git_repo(brain_path):
-            result = {
-                "name": name,
-                "files_committed": 0,
-                "branch": None,
-                "pushed": False,
-                "git_enabled": False,
-            }
-            results.append(result)
-            if not as_json:
-                console.print(f"{name}: git is disabled (--no-git)")
-            continue
-
-        current_branch = git_current_branch(brain_path)
-        status_out = git_status(brain_path)
-        if not status_out:
-            if not as_json:
-                console.print(f"{name}: nothing to push")
-            results.append({
-                "name": name,
-                "files_committed": 0,
-                "branch": current_branch,
-                "pushed": False,
-                "git_enabled": True,
-            })
-            continue
-
-        git_add(brain_path)
-        brain_config = read_brain_config(brain_path)
-
-        if msg:
-            message = msg
-        elif not as_json:
-            # Show what changed so the human can write a good message
-            console.print(f"\n[bold]{name}[/bold] -- files changed:")
-            for line in status_out.strip().splitlines():
-                console.print(f"  {line.strip()}")
-            message = click.prompt("\n  Commit message")
-        else:
-            prefix = brain_config.git.commit_prefix or "brain:"
-            message = f"{prefix} update"
-
-        git_commit(brain_path, message)
-
-        pushed = False
-        try:
-            git_push(brain_path, "origin", current_branch)
-            pushed = True
-        except Exception:
-            if not as_json:
-                console.print(f"  [yellow]Warning: no remote configured. Committed locally.[/yellow]")
-
-        files = len(status_out.strip().splitlines())
-        results.append({
-            "name": name,
-            "files_committed": files,
-            "branch": current_branch,
-            "pushed": pushed,
-            "git_enabled": True,
-        })
-
-        if not as_json:
-            console.print(f"{name}: {files} files committed" + (" and pushed" if pushed else ""))
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": True, "brains": results}))
-
-
-@cli.command()
-@click.option("--brain", "brain_name", help="Specific brain")
-@click.option("--json", "as_json", is_flag=True, help="JSON output")
-def pull(brain_name: str | None, as_json: bool):
-    """Pull remote changes for the current branch."""
-    brains = _resolve_brains(brain_name, allow_all=True, as_json=as_json)
-    results: list[dict] = []
-    any_conflict = False
-
-    for name, entry in brains:
-        brain_path = Path(entry["path"])
-
-        if not is_git_repo(brain_path):
-            result = {
-                "name": name,
-                "git_enabled": False,
-                "branch": None,
-                "pulled": False,
-                "files_changed": 0,
-                "conflicts": [],
-            }
-            results.append(result)
-            if not as_json:
-                console.print(f"{name}: git is disabled (--no-git)")
-            continue
-
-        if git_status(brain_path):
-            raise click.ClickException(
-                f"{name}: brain has uncommitted changes. "
-                "Commit with 'kluris push' or stash them first."
-            )
-
-        try:
-            git_fetch(brain_path)
-        except subprocess.CalledProcessError as exc:
-            stderr = (exc.stderr or "").strip() or f"git fetch exited {exc.returncode}"
-            raise click.ClickException(f"{name}: fetch failed -- {stderr}") from exc
-
-        current = git_current_branch(brain_path)
-        head_before = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=brain_path,
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-
-        pulled = False
-        conflicts: list[str] = []
-
-        if git_has_upstream(brain_path):
-            try:
-                git_pull(brain_path)
-                pulled = True
-            except subprocess.CalledProcessError:
-                conflicts = git_conflicted_files(brain_path)
-
-        head_after = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=brain_path,
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        if head_before != head_after and not conflicts:
-            diff = subprocess.run(
-                ["git", "diff", "--name-only", head_before, head_after],
-                cwd=brain_path, capture_output=True, text=True, check=False,
-            )
-            files_changed = len([l for l in diff.stdout.splitlines() if l.strip()])
-        else:
-            files_changed = 0
-
-        results.append({
-            "name": name,
-            "git_enabled": True,
-            "branch": current,
-            "pulled": pulled,
-            "files_changed": files_changed,
-            "conflicts": conflicts,
-        })
-
-        if conflicts:
-            any_conflict = True
-            if not as_json:
-                console.print(f"\n[bold red]{name}: merge conflicts in:[/bold red]")
-                for f in conflicts:
-                    console.print(f"  {f}")
-                console.print(
-                    "\nResolve the conflicts in your editor, then:\n"
-                    f"  git -C {brain_path} mergetool    # use your configured merge tool\n"
-                    f"  kluris push                       # commit the merged result and push\n"
-                    "  OR\n"
-                    f"  git -C {brain_path} merge --abort  # throw away the pull\n"
-                )
-            continue
-
-        if not as_json:
-            if pulled:
-                console.print(f"{name}: pulled from origin/{current} ({files_changed} files changed)")
-            else:
-                console.print(f"{name}: nothing to pull")
-
-    if as_json:
-        click.echo(json_lib.dumps({"ok": not any_conflict, "brains": results}))
-
-    if any_conflict:
         raise SystemExit(1)
 
 
@@ -2158,15 +1659,12 @@ def _do_install(as_json: bool = False):
 
 @cli.command()
 @click.argument("brain_name")
-@click.option("--force", is_flag=True, help="Unregister even if the brain has uncommitted changes")
 @click.option("--json", "as_json", is_flag=True, help="JSON output")
-def remove(brain_name: str, force: bool, as_json: bool):
+def remove(brain_name: str, as_json: bool):
     """Unregister a brain (does not delete files).
 
-    Refuses to unregister a brain whose git repo has uncommitted changes
-    unless --force is passed. The files on disk are always preserved; this
-    guard only exists to prevent an in-flight commit from getting lost in
-    the user's active brain registry.
+    Always preserves the files on disk. Git state is the user's
+    responsibility after unregistering.
     """
     config = read_global_config()
     if brain_name not in config.brains:
@@ -2174,20 +1672,6 @@ def remove(brain_name: str, force: bool, as_json: bool):
             f"No brain named '{brain_name}' is registered. "
             f"Run 'kluris list' to see available brains."
         )
-
-    entry = config.brains[brain_name]
-    brain_path = Path(entry.path)
-    if not force and brain_path.is_dir() and is_git_repo(brain_path):
-        try:
-            dirty = git_status(brain_path).strip()
-        except Exception:
-            dirty = ""
-        if dirty:
-            raise click.ClickException(
-                f"Brain '{brain_name}' has uncommitted changes at {brain_path}.\n"
-                f"Commit or stash them first, or pass --force to unregister anyway.\n"
-                f"The files on disk are preserved either way."
-            )
 
     unregister_brain(brain_name)
     _do_install()
@@ -2310,17 +1794,14 @@ def help_cmd(command: str | None, as_json: bool):
     """Show help for kluris commands."""
     commands_info = [
         ("create", "Create a new brain (--type, --remote, --no-git)"),
-        ("clone", "Clone a brain from a git remote"),
-        ("register", "Register an existing brain on disk, or extract a brain zip and register it"),
+        ("register", "Register an existing brain directory on disk"),
         ("list", "List registered brains"),
         ("status", "Show brain tree, recent changes, and neuron counts"),
         ("search", "Search a brain for a query string (neurons, glossary, brain.md)"),
         ("wake-up", "Compact brain snapshot for agent session bootstrap"),
         ("companion", "Opt brains into embedded companion playbooks"),
         ("dream", "Regenerate maps, auto-fix safe issues, and validate links"),
-        ("branch", "Show, switch, or create a git branch in the brain"),
-        ("push", "Commit and push brain changes to the current branch"),
-        ("pull", "Pull remote changes for the current branch"),
+        ("pack", "Pack a brain into a self-contained Docker chat server"),
         ("mri", "Generate interactive brain visualization and open in browser"),
         ("remove", "Unregister a brain (keeps files on disk)"),
         ("doctor", "Check prerequisites and refresh installed agent skills (--no-refresh to skip)"),

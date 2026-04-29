@@ -2,9 +2,9 @@
 
 Produces a compact snapshot of a brain's live state — brain.md, lobes,
 recent neurons, glossary, deprecation diagnostics — discovered from
-the on-disk structure. The runtime version intentionally omits any
-scaffold metadata (``type`` / ``type_structure``) so it stays decoupled
-from create/scaffold flows; the kluris CLI layers those fields on top.
+the on-disk structure. The runtime version intentionally omits scaffold
+metadata (``type`` / ``type_structure``); callers should use the live
+``lobes[]`` payload to understand the current brain structure.
 """
 
 from __future__ import annotations
@@ -168,9 +168,8 @@ def build_payload(
     ``recent``, ``glossary``, ``deprecation_count``, ``deprecation``.
 
     Does NOT include scaffold metadata (``type``, ``type_structure``).
-    The CLI's ``wake-up`` command layers those on top from the brain
-    registration, so the runtime stays usable for any brain regardless
-    of its scaffold history.
+    Callers should use the live ``lobes[]`` payload to understand the
+    current brain structure.
 
     The brain path must exist; ``FileNotFoundError`` is the caller's
     problem (the CLI wraps it in a JSON error envelope).

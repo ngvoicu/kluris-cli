@@ -20,7 +20,7 @@ pytest tests/test_create.py -v   # single test file
 
 ```
 src/kluris/
-  cli.py              # Click CLI -- all 16 commands in one file (incl. search, wake-up, branch, pull, register, companion)
+  cli.py              # Click CLI -- all 13 commands in one file (incl. search, wake-up, pack, register, companion)
   core/
     config.py          # Pydantic models (GlobalConfig, BrainConfig, BrainEntry)
     brain.py           # BRAIN_TYPES, scaffold_brain(), validate_brain_name()
@@ -43,7 +43,7 @@ src/kluris/
 
 - **All commands in one cli.py** -- not split into separate files. Works fine at current size.
 - **No Jinja2** -- templates are inline Python strings in brain.py and agents.py. Jinja2 was removed from dependencies.
-- **kluris.yml is gitignored** -- local config only (agents, git branch). Not shared between team members.
+- **kluris.yml is gitignored** -- local config only (agents, companions). Not shared between team members.
 - **Brain types are scaffold-only** -- after creation, type is irrelevant. Same commands everywhere.
 - **brain.md is lightweight** -- root lobes + glossary link only. No neuron index. Agents navigate through map.md hierarchy.
 - **Agent skill/workflow templates are inline** in agents.py, not .j2 template files.
@@ -52,7 +52,7 @@ src/kluris/
 - **wake-up bootstrap protocol** -- SKILL.md instructs the agent to run `kluris wake-up --json` (or `kluris wake-up --brain <name> --json` for per-brain skills) on the first `/<skill>` of a session (via Bash), cache the snapshot, and refresh only after brain-mutating commands. This replaces walking brain.md -> map.md -> neurons on every turn.
 - **Per-brain skill scheme** -- with 1 brain registered, install one skill named `kluris` with that brain's path baked in. With 2+ brains, install one `kluris-<name>` skill per brain so each is addressable unambiguously. Transitions in either direction sweep the entire `kluris*` artifact set before writing the new layout (`_sweep_kluris`). Per-destination atomic via stage-then-rename so a partial-write failure leaves the OLD skill in place.
 - **No default brain** -- the legacy `default_brain` field was removed in the multi-brain refactor. Resolution order is: explicit `--brain NAME` → exactly 1 brain registered → interactive picker (TTY only). Non-TTY / `--json` / `KLURIS_NO_PROMPT=1` all force the resolver to error out instead of prompting.
-- **`--brain all`** -- accepted only on fan-out commands (dream, push, status, mri). Other commands reject it with a clear error. `all` is also a reserved brain name to prevent collision.
+- **`--brain all`** -- accepted only on fan-out commands (dream, status, mri, companion add/remove). Other commands reject it with a clear error. `all` is also a reserved brain name to prevent collision.
 - **Sticky-selection tradeoff** -- `kluris use` was removed deliberately. Repeated commands in a terminal session each trigger the picker (or take `--brain`). The compensating affordances are `KLURIS_NO_PROMPT`, `--brain all`, the integer-pick UX, and the per-brain slash command names that make ambiguity disappear in agent workflows.
 - **Deprecation frontmatter is opt-in** -- neurons may set `status: deprecated` + `deprecated_at` + `replaced_by`. Absence of `status` means active. `linker.detect_deprecation_issues()` surfaces 4 kinds of warnings (`active_links_to_deprecated`, `deprecated_without_replacement`, `replaced_by_missing`, `replaced_by_not_active`) through `kluris dream`; they are non-blocking (do not break `healthy`). `kluris wake-up` exposes a `deprecation_count` summary.
 - **KlurisGroup detects --json via ctx args** -- scans `ctx.protected_args + ctx.args` in addition to `sys.argv` so JSON error output works under CliRunner (tests) as well as shell.
@@ -98,15 +98,15 @@ The skill body contains six load-bearing sections (in order):
 
 - **0 brains** → resolver errors with a hint to run `kluris create`.
 - **1 brain** → auto-resolves; no `--brain` flag needed; skill installed as `kluris`.
-- **2+ brains + TTY** → interactive picker `[1] foo [2] bar [3] all` for fan-out commands (dream/push/pull/status/mri/companion add/remove); `[1] foo [2] bar` (no `all`) for single-brain commands (wake-up/search).
+- **2+ brains + TTY** → interactive picker `[1] foo [2] bar [3] all` for fan-out commands (dream/status/mri/companion add/remove); `[1] foo [2] bar` (no `all`) for single-brain commands (wake-up/search).
 - **2+ brains + non-interactive** (`--json`, no TTY, or `KLURIS_NO_PROMPT=1`) → resolver errors with the available brains listed and a hint to pass `--brain NAME` or `--brain all`.
 - **Stale brain paths** → annotated `(missing)` in the picker; resolver raises `ClickException` if the user actually tries to use one.
 
-## CLI Commands (16)
+## CLI Commands (13)
 
-create, clone, register, list, status, search, wake-up, companion, dream, branch, push, pull, mri, remove, doctor, help
+create, register, list, status, search, wake-up, companion, dream, pack, mri, remove, doctor, help
 
-- **`register` (v2.9.0)** -- register a brain already on disk (in-place, no copy) or extract a `.zip` and register the extracted tree. Sibling to `clone` for the non-git-remote path: on-disk directories, teammate-shared zips, restored backups. Identity comes from `brain.md` H1. Auto-detects `git remote get-url origin` to populate `repo` when the directory already has a git remote. Zip extraction defends against zip-slip by resolving each member and rejecting anything outside the extraction root. Cleanup contract: zip source -> rmtree(extracted dir) on any failure (we created it); directory source -> NEVER delete (the user's real brain lives there). Calls `_do_install()` on success so agent skills refresh to include the new brain.
+- **`register`** -- register a brain directory already on disk (in-place, no copy). Use `git clone <url> <path>` first if the brain is hosted on git, then `kluris register <path>`. Identity comes from `brain.md` H1. Calls `_do_install()` on success so agent skills refresh to include the new brain. Passing a `.zip` errors with a hint to `unzip` first (zip support was removed in 2.16.0).
 
 ## Brain File Structure
 
@@ -138,22 +138,28 @@ create, clone, register, list, status, search, wake-up, companion, dream, branch
 - **search output schema** -- `{ok, brain, query, total, results[{file, title, matched_fields[], snippet, score, deprecated}]}`
 - **dream uses batch git** -- `_sync_brain_state` calls `is_git_repo()` once, then `git_log_file_dates()` once to fetch `(latest_by_path, created_by_path)`. For a 100-neuron brain that's exactly 2 subprocess calls (was ~200). Uses `%aI` (author date).
 - **mri output schema (unified)** -- always `{ok, brains: [{name, output_path, preflight_fixes, nodes, edges}, ...]}` regardless of brain count.
-- **`_do_install` callers** -- six command paths rewrite installed SKILL.md files: `create`, `clone`, `register`, `remove`, `companion add/remove`, and `doctor`. `doctor` is the muscle-memory refresh path after `pipx upgrade kluris` -- it runs prerequisite checks, refreshes companions, AND `_do_install`. Pass `--no-refresh` to skip the refresh.
+- **`_do_install` callers** -- five command paths rewrite installed SKILL.md files: `create`, `register`, `remove`, `companion add/remove`, and `doctor`. `doctor` is the muscle-memory refresh path after `pipx upgrade kluris` -- it runs prerequisite checks, refreshes companions, AND `_do_install`. Pass `--no-refresh` to skip the refresh.
 - **`_is_interactive()`** helper wraps `sys.stdin.isatty()` so tests can monkeypatch it (CliRunner replaces sys.stdin during invoke and `monkeypatch.setattr("sys.stdin.isatty", ...)` does not survive the swap)
 
-## Migration from kluris ≤ 1.6.x
+## Migration
 
-- The legacy `default_brain` field is silently dropped at parse time inside `read_global_config`. Existing YAML loads cleanly; the next mutation rewrites it without that field.
-- The `kluris use <name>` command is gone. Pass `--brain NAME` per call (or pick interactively).
-- The first post-upgrade `_do_install` (triggered by any mutation: `create`, `clone`, `register`, `remove`, `companion add/remove`, or `doctor`) sweeps every `kluris/` and `kluris-*/` artifact across all 8 agent dirs + the universal slot + the Windsurf workflow dir, then writes the new layout.
+### kluris 2.15.x → 2.16.0
+
+- Removed git-sync wrapper commands: `kluris clone`, `kluris push`, `kluris pull`, `kluris branch`. Replace with `git clone <url> <path>` + `kluris register <path>` for adoption, and plain `git push` / `git pull` / `git checkout` for sync. See [`MIGRATION.md`](./MIGRATION.md) for the full guide.
+- `kluris register` no longer accepts `.zip` files. Unzip first, then register the directory.
+- `BrainEntry.type` and `BrainEntry.repo` were dropped from `~/.kluris/config.yml`. `GitConfig` and `BrainConfig.git` (the `commit_prefix` setting) were dropped from per-brain `kluris.yml`. **Old config files are NOT migrated** — Pydantic ignores the legacy keys at runtime, so old installs keep working. Manual cleanup is documented in `MIGRATION.md`.
+- `kluris wake-up --json` no longer overlays scaffold-derived `type` / `type_structure`; agents read live structure from `lobes[]`.
+
+### kluris ≤ 1.6.x
+
+- The `kluris use <name>` command is gone. Pass `--brain NAME` per call (or pick interactively). The legacy `default_brain` field in `~/.kluris/config.yml` is silently ignored on read (Pydantic's default behavior).
+- The first post-upgrade `_do_install` (triggered by any mutation: `create`, `register`, `remove`, `companion add/remove`, or `doctor`) sweeps every `kluris/` and `kluris-*/` artifact across all 8 agent dirs + the universal slot + the Windsurf workflow dir, then writes the new layout.
 
 ## Testing
 
-- 482 tests across 33 test files
-- conftest.py has 5 fixtures: cli_runner, temp_config, temp_home, temp_brain, bare_remote
+- conftest.py has 4 fixtures: cli_runner, temp_config, temp_home, temp_brain
 - Tests use monkeypatch for KLURIS_CONFIG and HOME env vars
 - Git tests use real git in tmp_path (not mocked)
-- bare_remote fixture sets HEAD to refs/heads/main (CI compat)
 - Picker tests monkeypatch `kluris.cli._is_interactive`, NOT `sys.stdin.isatty` (CliRunner stdin swap)
 
 ## CI/CD

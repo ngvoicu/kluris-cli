@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kluris"
-version = "2.15.9"
+version = "2.16.0"
 description = "Turn your AI agents into team subject matter experts with shared, human-curated knowledge"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,6 +47,5 @@ include = ["packaging/*"]
 
 [tool.pytest.ini_options]
 markers = [
-    "llm_eval: opt-in live-model evals; require KLURIS_EVAL_* env vars",
     "docker_network: opt-in Docker e2e tests; need a Docker daemon",
 ]

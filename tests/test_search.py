@@ -943,7 +943,10 @@ def test_search_command_listed_in_help(tmp_path, monkeypatch):
     names = {c["name"] for c in data["commands"]}
     assert "search" in names
     assert "companion" in names
-    assert len(data["commands"]) == 16
+    assert "pack" in names
+    for removed in ("clone", "push", "pull", "branch"):
+        assert removed not in names
+    assert len(data["commands"]) == 13
 
 
 # --- yaml-neurons search tests ---
