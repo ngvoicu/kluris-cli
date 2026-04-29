@@ -108,6 +108,24 @@ def test_generated_readme_teaches_git_native_workflow(tmp_path):
     assert "kluris mri" in readme
 
 
+def test_generated_readme_does_not_freeze_scaffold_structure(tmp_path):
+    """The generated README is durable guidance, not a static tree of the
+    initial scaffold. The live structure belongs in status/mri/wake-up output.
+    """
+    scaffold_brain(tmp_path / "brain", "brain", "Test", "product-group")
+    readme = (tmp_path / "brain" / "README.md").read_text()
+
+    assert "## Current structure" in readme
+    assert "intentionally does not list the current lobes or neurons" in readme
+    assert "kluris status --brain brain" in readme
+    assert "kluris mri --brain brain" in readme
+    assert "kluris wake-up --brain brain" in readme
+    assert "## Brain structure" not in readme
+    assert "| Lobe | What goes in it |" not in readme
+    for scaffold_lobe in ("`projects/`", "`infrastructure/`", "`knowledge/`"):
+        assert scaffold_lobe not in readme
+
+
 def test_generated_readme_uses_brain_named_slash(tmp_path):
     """Generated README must use /kluris-<name> consistently and explain the alias."""
     scaffold_brain(tmp_path / "foo", "foo", "Foo brain", "product-group")
