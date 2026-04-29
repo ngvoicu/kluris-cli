@@ -620,58 +620,153 @@ def test_sidebars_are_collapsible(tmp_path):
     assert "function togglePanel" in html
 
 
-def test_mri_defaults_to_lobe_overview_with_drilldown(tmp_path):
-    """MRI starts in the new C4 'brain' mode (Level 1: lobes + cross-lobe synapses).
-
-    Stage modes are 'brain' | 'lobe' | 'sublobe' | 'force'.
-    Default at startup is 'brain'. Clicking a lobe transitions to 'lobe'
-    (Level 2); from there a sublobe transitions to 'sublobe' (Level 3).
-    'force' is the legacy force graph available as Expert mode.
+def test_mri_starts_at_brain_root_with_lobes_and_top_files(tmp_path):
+    """MRI starts at the brain root (currentPath = []) and the root view
+    shows BOTH top-level lobe folders AND top-level files (glossary.md,
+    brain.md). No more separate 'brain'/'lobe'/'sublobe' stage modes —
+    a single path-based view drills arbitrarily deep.
     """
     brain = _make_brain_with_sublobes(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    # Default startup mode
-    assert "let stageMode = 'brain'" in html
-    # Each of the 4 modes is a button in the header switch
-    assert 'data-stage-mode="brain"' in html
-    assert 'data-stage-mode="lobe"' in html
-    assert 'data-stage-mode="sublobe"' in html
-    assert 'data-stage-mode="force"' in html
-    # Drill-in entry points
-    assert "function drawBrainMap" in html
-    assert "function drawLobeMap" in html
-    assert "function drawSublobeMap" in html
-    assert "function focusLobe" in html
-    assert "function focusSublobe" in html
-    # Hit testers per level
-    assert "function hitTestBrainMap" in html
-    assert "function hitTestLobeMap" in html
-    assert "function hitTestSublobeMap" in html
-    # Bootstraps into 'brain' mode
-    assert "setStageMode('brain', null, null, { instant: true })" in html
+    # Path-based navigation primitives are present
+    assert "let currentPath = []" in html
+    assert "function navigateTo" in html
+    assert "function childrenOf" in html
+    assert "function drawCurrent" in html
+
+    # Old mode-based dispatch must be gone
+    assert "let stageMode" not in html
+    assert "function drawBrainMap" not in html
+    assert "function drawLobeMap" not in html
+    assert "function drawSublobeMap" not in html
+    assert 'data-stage-mode' not in html
 
 
-def test_mri_big_brain_force_graph_has_performance_caps(tmp_path):
-    """The legacy force graph (Expert mode) keeps the v2.16.3 perf caps.
+def test_root_includes_top_level_files_alongside_lobes(tmp_path):
+    """The root view (currentPath === []) renders top-level files (e.g.
+    glossary.md, brain.md) as siblings of the lobe folders. Folders and
+    files coexist as children at every level.
+    """
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
 
-    FORCE_PAIRWISE_LIMIT and DETAIL_EDGE_LIMIT still gate O(n²) physics;
-    the loop only ticks when stageMode === 'force'. C4 modes use the
-    needsDraw idle path.
+    # The childrenOf primitive walks node.path to collect direct children
+    # — both folders and leaves.
+    assert "function childrenOf" in html
+    # Folder kicker switches between LOBE (depth 0) and SUBLOBE (deeper)
+    assert "'LOBE'" in html
+    assert "'SUBLOBE'" in html
+    # Glossary kicker stays distinct so root-level glossary.md renders as GLOSSARY
+    assert "'GLOSSARY'" in html
+
+
+def test_layout_never_single_row_for_three_or_more_items(tmp_path):
+    """layoutGrid must never lay >=3 items in a single horizontal row or
+    switch back to a radial orbit.
+
+    The fixture brain has 3 lobes (arch, std, product); we assert that the
+    layout function explicitly branches on item count and uses an adaptive
+    grid for n >= 3, rather than the 1..4 single-row cell-spread or radial
+    orbit that made large folders unreadable.
+    """
+    brain = _make_brain_with_neurons(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # The single-row branch covers only n === 1 (centered) and n === 2
+    # (horizontal pair). n >= 3 must use a multi-row grid or radial.
+    assert "function layoutGrid" in html
+    # Critical guards: no `n <= 4` single-row regression and no radial-orbit
+    # fallback for big folders.
+    assert "n <= 4" not in html
+    assert "radial orbit" not in html
+    assert "Math.cos(angle)" not in html
+    # The adaptive grid branch points must be present.
+    assert "n === 1" in html
+    assert "n === 2" in html
+    assert "density = n > 60 ? 'tiny'" in html
+    assert "worldH" in html
+
+
+def test_large_folder_layout_uses_compact_grid_and_fit(tmp_path):
+    """Large brains need a flexible browser layout: compact cards, capped
+    aggregate edges, wrapped outbound stubs, and a real fit-to-current-view
+    helper instead of forcing everything into the viewport at scale=1.
     """
     brain = _make_brain_with_sublobes(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    assert "const FORCE_PAIRWISE_LIMIT = 180" in html
-    assert "filteredNodes.length <= FORCE_PAIRWISE_LIMIT" in html
-    assert "const DETAIL_EDGE_LIMIT = 700" in html
-    # loop() ticks physics only in 'force' mode; otherwise idle on needsDraw.
-    assert "if (stageMode === 'force')" in html
-    assert "else if (needsDraw)" in html
+    assert "function fitCurrentToView" in html
+    assert "fitCurrentToView(true)" in html
+    assert "fitCurrentToView(false)" in html
+    assert "function visibleAggregateEdges" in html
+    assert "itemCount > 36 ? 0" in html
+    assert "stubs.slice(0, 8)" in html
+    assert "+ extra + ' more'" in html
+
+
+def test_back_button_navigates_up_one_level(tmp_path):
+    """The header back button decrements currentPath by one when clicked.
+
+    We assert the click handler exists and that it slices currentPath:
+    `currentPath.slice(0, -1)` is the canonical parent-path expression.
+    """
+    brain = _make_brain_with_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="btn-back"' in html
+    # Click handler invokes navigateTo with the parent path
+    assert "currentPath.slice(0, -1)" in html
+    # The back button is hidden / disabled at the root depth
+    assert "currentPath.length === 0" in html
+
+
+def test_nested_sublobes_drill_arbitrarily_deep(tmp_path):
+    """Drilling into a folder pushes its name onto currentPath; the same
+    primitive (childrenOf + drawCurrent) renders any depth.
+
+    Fixture: projects/backend/endpoints/* (3 levels deep).
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    output = tmp_path / "brain-mri.html"
+    generate_mri_html(brain, output)
+    html = output.read_text(encoding="utf-8")
+
+    # Path-based navigation is the only model — it works for any depth.
+    assert "function navigateTo" in html
+    # Click on a folder pushes its name
+    assert "[...currentPath" in html
+    # childrenOf walks node.path parts, agnostic to depth
+    assert "function childrenOf" in html
+    # path.length comparison is the depth predicate (no hardcoded depth-2 cap)
+    assert "parts.length === path.length + 1" in html
+
+
+def test_layered_neuron_layout_is_deterministic(tmp_path):
+    """Two MRI runs over the same brain must produce byte-identical HTML.
+
+    layoutGrid + the path-based navigation are pure functions of (graph,
+    currentPath, viewport). Stable JSON encoding + deterministic ordering
+    keeps snapshots stable across runs.
+    """
+    brain = _make_brain_with_inner_sublobes(tmp_path)
+    out1 = tmp_path / "first.html"
+    out2 = tmp_path / "second.html"
+    generate_mri_html(brain, out1)
+    generate_mri_html(brain, out2)
+    h1 = out1.read_text(encoding="utf-8")
+    h2 = out2.read_text(encoding="utf-8")
+    assert h1 == h2, "MRI HTML must be deterministic across runs"
 
 
 def test_search_chips_removed(tmp_path):
@@ -801,20 +896,6 @@ def test_inner_sublobe_html_generation_succeeds(tmp_path):
     assert size_kb < 500
 
 
-def test_inner_sublobe_l3_includes_descendants(tmp_path):
-    """The Level 3 sublobe map must include 3rd-level descendants in the
-    layered DAG so neurons inside an inner lobe (e.g. backend/endpoints/*)
-    show up when drilling into the parent sublobe (backend).
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # The L3 member-collection filter uses startsWith to include descendants.
-    assert "n.sublobe.startsWith(sublobeKey + '/')" in html
-
-
 def test_modal_nav_collapsed_with_toggle(tmp_path):
     """Modal nav buttons must be collapsed to one row by default with a
     toggle button to expand when there are many connections.
@@ -880,66 +961,43 @@ def _make_brain_with_cross_lobe_synapses(tmp_path):
     return brain
 
 
-def test_brain_map_renders_inter_lobe_edges_with_counts(tmp_path):
-    """Level 1 (drawBrainMap) must render aggregate cross-lobe edges using
-    the aggregateEdges helper and the drawAggregateEdge primitive.
+def test_root_renders_inter_child_edges_with_counts(tmp_path):
+    """At the brain root (currentPath === []) the renderer must draw
+    aggregate edges between child boxes using a generic aggregator.
 
-    The fixture brain has known cross-lobe synapses; we assert that the
-    generated HTML contains both helpers wired up (the canvas drawing
-    happens at runtime, but the JS must be present and the helper must
-    iterate over `aggregateEdges(g, 'brain')`).
+    Children at the root are top-level lobes plus top-level files. Edges
+    between any two of those siblings render as a single labeled stub
+    with the synapse count.
     """
     brain = _make_brain_with_cross_lobe_synapses(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    # Helpers + L1 draw path
-    assert "function aggregateEdges" in html
+    # Generic aggregator + box renderer wired up
+    assert "function aggregateEdgesAt" in html
     assert "function drawAggregateEdge" in html
-    assert "function drawBrainMap" in html
-    # L1 specifically calls aggregateEdges with 'brain' as the level argument.
-    assert "aggregateEdges(graph, 'brain')" in html
+    assert "function drawCurrent" in html
     # Edge label format with synapse count (the unicode arrow + total)
-    # appears in the drawAggregateEdge body.
     assert "↔ " in html
 
 
-def test_lobe_map_renders_outbound_stubs(tmp_path):
-    """Level 2 (drawLobeMap) must render outbound stubs at the lobe boundary
-    listing synapses that leave the lobe, grouped by target lobe.
+def test_inside_lobe_renders_outbound_stubs(tmp_path):
+    """At any non-root path (e.g. inside a lobe) the renderer must render
+    outbound stubs for edges that cross the container boundary, grouped
+    by the other side's child key.
     """
     brain = _make_brain_with_cross_lobe_synapses(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    # The outbound builder + the L2 draw path are present
-    assert "function buildLobeOutbound" in html
-    assert "function drawLobeMap" in html
-    # The grouped-by-other-lobe shape is what the spec calls for.
-    assert "lobeOutbound" in html
-
-
-def test_sublobe_map_layered_layout_is_deterministic(tmp_path):
-    """layoutSublobeMap is a pure function of (lobeKey, sublobeKey, members,
-    viewport). Two calls with the same brain produce byte-identical HTML
-    so snapshots stay stable across kluris mri runs.
-    """
-    brain = _make_brain_with_inner_sublobes(tmp_path)
-    out1 = tmp_path / "first.html"
-    out2 = tmp_path / "second.html"
-    generate_mri_html(brain, out1)
-    generate_mri_html(brain, out2)
-    h1 = out1.read_text(encoding="utf-8")
-    h2 = out2.read_text(encoding="utf-8")
-    assert h1 == h2, "MRI HTML must be deterministic across runs"
-    # The layered layout is the function the spec adds; assert it exists
-    # and that it sorts ranks deterministically.
-    assert "function layoutSublobeMap" in h1
-    # Sort key: tags[0] then filename (the spec's deterministic ordering).
-    assert "tagFor" in h1
-    assert "file_name" in h1
+    # The unified aggregator returns both inside-edges and outbound stubs.
+    assert "function aggregateEdgesAt" in html
+    assert "function drawCurrent" in html
+    # The outbound list flows through drawCurrent's stub renderer.
+    assert "function drawOutboundStubs" in html
+    assert "currentOutbound" in html
 
 
 def test_aggregate_edges_drops_self_loops(tmp_path):
@@ -960,26 +1018,10 @@ def test_aggregate_edges_drops_self_loops(tmp_path):
     assert "if (edge.type === 'parent') continue" in html
 
 
-def test_expert_mode_toggle_re_enables_force_graph(tmp_path):
-    """Setting stageMode === 'force' re-enters the legacy force graph
-    (Expert mode) — the loop ticks physics and draws via legacyForce.draw().
-    """
-    brain = _make_brain_with_sublobes(tmp_path)
-    output = tmp_path / "brain-mri.html"
-    generate_mri_html(brain, output)
-    html = output.read_text(encoding="utf-8")
-
-    # The loop branches on 'force' to invoke tick().
-    assert "if (stageMode === 'force')" in html
-    assert "legacyForce.tick()" in html
-    # legacyForce wraps the physics + draw + hit-test code.
-    assert "function initLegacyForce" in html
-
-
 def test_breadcrumb_segments_are_clickable(tmp_path):
-    """The breadcrumb in the header bar must render each segment with a
-    `data-level="brain|lobe|sublobe"` attribute so click handlers can
-    route back to the correct stage mode.
+    """The breadcrumb in the header bar walks currentPath and renders each
+    segment as a clickable button. Clicks jump straight to that depth via
+    navigateTo(currentPath.slice(0, idx)).
     """
     brain = _make_brain_with_cross_lobe_synapses(tmp_path)
     output = tmp_path / "brain-mri.html"
@@ -987,38 +1029,35 @@ def test_breadcrumb_segments_are_clickable(tmp_path):
     html = output.read_text(encoding="utf-8")
 
     assert 'id="breadcrumb"' in html
-    # The static initial breadcrumb has a data-level attribute on the brain crumb.
-    assert 'data-level="brain"' in html
-    # The renderer sets data-level dynamically as well — assert the JS path.
-    assert "btn.dataset.level = seg.level" in html
-    # Click handler maps level → setStageMode.
-    assert "setStageMode('brain')" in html
-    assert "setStageMode('lobe', seg.key)" in html
+    # Breadcrumb renderer walks currentPath; segments are buttons.
+    assert "function renderBreadcrumb" in html
+    # Click handler invokes navigateTo with a sliced prefix of currentPath.
+    assert "navigateTo(" in html
 
 
-def test_mri_header_has_full_width_bar_with_mode_switch(tmp_path):
+def test_mri_header_has_full_width_bar_with_back_button(tmp_path):
     """The header bar lives full-width above the three-column body and contains
-    the brain title, stats, breadcrumb pill, mode switch, and Fit/Reset icons.
+    the brain title, stats, breadcrumb pill, a single back button, and
+    Fit/Reset icons. The 4-button mode-switch is GONE.
     """
     brain = _make_brain_with_neurons(tmp_path)
     output = tmp_path / "brain-mri.html"
     generate_mri_html(brain, output)
     html = output.read_text(encoding="utf-8")
 
-    # Header structure
+    # Header structure (back button replaces mode switch)
     assert 'class="mri-header"' in html
     assert 'class="brain-title"' in html
     assert 'class="stats"' in html
     assert 'class="breadcrumb"' in html
-    assert 'class="mode-switch"' in html
-    # Mode switch buttons in spec order: Brain, Lobe, Sublobe, Expert
-    assert html.find('data-stage-mode="brain"') < html.find('data-stage-mode="lobe"')
-    assert html.find('data-stage-mode="lobe"') < html.find('data-stage-mode="sublobe"')
-    assert html.find('data-stage-mode="sublobe"') < html.find('data-stage-mode="force"')
-    # Fit + Reset icon buttons
+    assert 'id="btn-back"' in html
+    # Mode-switch DOM is gone — no buttons left with data-stage-mode.
+    assert 'class="mode-switch"' not in html
+    assert 'data-stage-mode' not in html
+    # Fit + Reset icon buttons stay
     assert 'id="btn-fit"' in html
     assert 'id="btn-reset"' in html
-    # Stats line numbers (lobes / neurons / synapses)
+    # Stats line numbers (lobes / neurons / synapses) stay
     assert 'id="stat-lobes"' in html
     assert 'id="stat-neurons"' in html
     assert 'id="stat-synapses"' in html
